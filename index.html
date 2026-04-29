@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PDF Annotator</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside id="sidebar">
+        <div class="sidebar-actions">
+          <button id="open-file">+ file</button>
+          <button id="open-folder">+ folder</button>
+        </div>
+        <div class="sidebar-section" id="workspace-section">
+          <div class="sidebar-section-header">
+            <span>Workspace</span>
+            <button id="clear-workspace" title="Clear workspace">clear</button>
+          </div>
+          <ul id="file-list"></ul>
+        </div>
+        <div class="sidebar-section" id="recents-section" hidden>
+          <div class="sidebar-section-header">
+            <span>Recent</span>
+            <button id="clear-recents" title="Clear recents">clear</button>
+          </div>
+          <ul id="recents-list"></ul>
+        </div>
+      </aside>
+      <div class="resize-handle" id="resize-left" data-side="sidebar"></div>
+      <main id="viewer-pane">
+        <div id="viewer-toolbar">
+          <span id="doc-title" title=""></span>
+          <span class="toolbar-spacer"></span>
+          <div class="seg-toggle tool-toggle">
+            <button class="seg-btn tool-btn active" data-tool="select" title="Select text (T)">text</button>
+            <button class="seg-btn tool-btn" data-tool="rect" title="Clip region (R)">rect</button>
+          </div>
+          <button id="zoom-out" title="Zoom out (⌘−)">−</button>
+          <span id="zoom-level">100%</span>
+          <button id="zoom-in" title="Zoom in (⌘=)">+</button>
+          <button id="zoom-fit" title="Fit width (⌘0)">fit</button>
+        </div>
+        <div id="viewer-scroll">
+          <div id="viewer-empty">Open a PDF or folder to begin.</div>
+          <div id="viewer-container"></div>
+        </div>
+      </main>
+      <div class="resize-handle" id="resize-right" data-side="snippets"></div>
+      <aside id="snippets-pane">
+        <div class="snippets-header">
+          <div class="header-tabs">
+            <button class="tab-btn active" data-view="list">list</button>
+            <button class="tab-btn" data-view="map">map</button>
+            <button class="tab-btn" data-view="groups">groups</button>
+          </div>
+          <div class="header-tools">
+            <div id="layout-toggle" class="seg-toggle" hidden>
+              <button class="seg-btn active" data-layout="page">page order</button>
+              <button class="seg-btn" data-layout="group">groupings</button>
+            </div>
+            <button id="summary-btn" title="Show summary">summary</button>
+          </div>
+        </div>
+        <ul id="snippets-list"></ul>
+        <ul id="groups-list" hidden></ul>
+        <div id="group-overlay" hidden></div>
+        <div id="map-view" hidden>
+          <div id="cy"></div>
+          <div id="edge-editor" hidden>
+            <input id="edge-label-input" placeholder="label this connection…" />
+            <button id="edge-save">save</button>
+            <button id="edge-delete" title="Delete connection">×</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+    <div id="summary-modal" hidden>
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <header class="modal-header">
+          <div class="modal-title">
+            <h2 id="summary-title">Summary</h2>
+            <span id="summary-meta"></span>
+          </div>
+          <div class="modal-actions">
+            <button id="summary-copy">copy all</button>
+            <button id="summary-close" title="Close (Esc)">×</button>
+          </div>
+        </header>
+        <div id="summary-content"></div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
