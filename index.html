@@ -7,6 +7,10 @@
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
+    <div id="workspace-tabs">
+      <div id="ws-tabs-list"></div>
+      <button id="ws-tab-add" title="New workspace">+</button>
+    </div>
     <div id="app">
       <aside id="sidebar">
         <div class="sidebar-actions">
@@ -49,32 +53,99 @@
       </main>
       <div class="resize-handle" id="resize-right" data-side="snippets"></div>
       <aside id="snippets-pane">
+        <div id="local-search" hidden>
+          <input id="local-search-input" placeholder="filter snippets… (Esc to close)" />
+          <span id="local-search-count"></span>
+        </div>
         <div class="snippets-header">
           <div class="header-tabs">
             <button class="tab-btn active" data-view="list">list</button>
             <button class="tab-btn" data-view="map">map</button>
-            <button class="tab-btn" data-view="groups">groups</button>
+            <button class="tab-btn" data-view="lineage">lineage</button>
           </div>
           <div class="header-tools">
-            <div id="layout-toggle" class="seg-toggle" hidden>
-              <button class="seg-btn active" data-layout="page">page order</button>
-              <button class="seg-btn" data-layout="group">groupings</button>
+            <div id="map-scope" class="seg-toggle" hidden>
+              <button class="seg-btn active" data-scope="doc">this doc</button>
+              <button class="seg-btn" data-scope="workspace">workspace</button>
             </div>
+            <button id="help-btn" title="How to group + shortcuts">?</button>
             <button id="summary-btn" title="Show summary">summary</button>
           </div>
         </div>
-        <ul id="snippets-list"></ul>
-        <ul id="groups-list" hidden></ul>
+        <div id="view-stack">
+          <ul id="snippets-list"></ul>
+          <div id="map-view" hidden>
+            <div id="cy"></div>
+            <div id="edge-editor" hidden>
+              <input id="edge-label-input" placeholder="label this connection…" />
+              <button id="edge-save">save</button>
+              <button id="edge-delete" title="Delete connection">×</button>
+            </div>
+          </div>
+          <div id="lineage-view" hidden>
+            <div id="lineage-cy"></div>
+          </div>
+        </div>
+        <div id="groups-panel">
+          <div class="groups-panel-header">
+            <span>Groups</span>
+            <div class="groups-panel-actions">
+              <button id="groups-import" title="Import groups from JSON">import</button>
+              <button id="groups-export" title="Export groups to JSON">export</button>
+              <button id="groups-collapse" title="Collapse / expand">▾</button>
+            </div>
+          </div>
+          <ul id="groups-list"></ul>
+        </div>
         <div id="group-overlay" hidden></div>
-        <div id="map-view" hidden>
-          <div id="cy"></div>
-          <div id="edge-editor" hidden>
-            <input id="edge-label-input" placeholder="label this connection…" />
-            <button id="edge-save">save</button>
-            <button id="edge-delete" title="Delete connection">×</button>
+        <div id="help-popover" hidden>
+          <div class="help-section">
+            <div class="help-title">Capture</div>
+            <div class="help-row"><kbd>T</kbd> text-select tool</div>
+            <div class="help-row"><kbd>R</kbd> rectangle clip tool (image snippet)</div>
+            <div class="help-row">drag-select text or rectangle on the PDF</div>
+          </div>
+          <div class="help-section">
+            <div class="help-title">Group</div>
+            <div class="help-row">right-click a snippet → drop on a bubble</div>
+            <div class="help-row">drag one card onto another → shared group</div>
+            <div class="help-row">click <span class="help-x">×</span> on a group pill → unlink</div>
+            <div class="help-row">click the color dot in <b>Groups</b> panel → custom color</div>
+          </div>
+          <div class="help-section">
+            <div class="help-title">Search</div>
+            <div class="help-row"><kbd>⌘F</kbd> filter snippets in this doc</div>
+            <div class="help-row"><kbd>⌘⇧F</kbd> search workspace + drag to group</div>
+          </div>
+          <div class="help-section">
+            <div class="help-title">Navigate</div>
+            <div class="help-row">hover a snippet → PDF scrolls to it</div>
+            <div class="help-row">click a PDF highlight → focuses comment</div>
+            <div class="help-row"><kbd>⌘=</kbd>/<kbd>⌘-</kbd>/<kbd>⌘0</kbd> zoom in/out/fit</div>
+            <div class="help-row"><kbd>⌘Z</kbd> undo last add or delete</div>
+            <div class="help-row"><kbd>Esc</kbd> close overlays</div>
           </div>
         </div>
       </aside>
+    </div>
+    <div id="global-search" hidden>
+      <div class="modal-backdrop"></div>
+      <div class="search-panel">
+        <header class="search-header">
+          <input id="global-search-input" placeholder="search across workspace…" />
+          <span id="global-search-count"></span>
+          <button id="global-search-close" title="Close (Esc)">×</button>
+        </header>
+        <div class="search-body">
+          <div id="search-results-pane">
+            <ul id="search-results"></ul>
+          </div>
+          <aside id="search-groups-pane">
+            <div class="search-groups-header">drop on a group to add</div>
+            <ul id="search-groups-list"></ul>
+          </aside>
+        </div>
+      </div>
     </div>
     <div id="summary-modal" hidden>
       <div class="modal-backdrop"></div>
@@ -85,7 +156,16 @@
             <span id="summary-meta"></span>
           </div>
           <div class="modal-actions">
+            <div class="seg-toggle" id="summary-scope">
+              <button class="seg-btn active" data-scope="doc">this doc</button>
+              <button class="seg-btn" data-scope="workspace">workspace</button>
+            </div>
+            <div class="seg-toggle" id="summary-format">
+              <button class="seg-btn active" data-format="rich">rich</button>
+              <button class="seg-btn" data-format="plain">plain</button>
+            </div>
             <button id="summary-copy">copy all</button>
+            <button id="summary-export">export html</button>
             <button id="summary-close" title="Close (Esc)">×</button>
           </div>
         </header>

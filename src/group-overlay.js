@@ -22,7 +22,7 @@ function pillWidth(label) {
   return Math.max(PILL_MIN_W, Math.min(PILL_MAX_W, PILL_PAD_X * 2 + len * CHAR_W));
 }
 
-export function openGroupOverlay({ snippet, allSnippets, allGroups, container, anchor, groupColor, groupName, paneRect }) {
+export function openGroupOverlay({ snippet, allSnippets, allGroups, container, anchor, groupColor, groupName, paneRect, dragMode = false }) {
   return new Promise((resolve) => {
     const overlay = container;
     overlay.innerHTML = "";
@@ -34,9 +34,14 @@ export function openGroupOverlay({ snippet, allSnippets, allGroups, container, a
     for (const s of allSnippets) {
       for (const g of s.groups || []) counts.set(g, (counts.get(g) || 0) + 1);
     }
+    const hiddenIds = new Set((allGroups || []).filter((m) => m.hidden).map((m) => m.id));
     const knownIds = new Set();
-    for (const m of allGroups || []) knownIds.add(m.id);
-    for (const id of counts.keys()) knownIds.add(id);
+    for (const m of allGroups || []) {
+      if (!m.hidden) knownIds.add(m.id);
+    }
+    for (const id of counts.keys()) {
+      if (!hiddenIds.has(id)) knownIds.add(id);
+    }
     const memberOf = new Set(snippet.groups || []);
     const NEW_ID = "__new__";
 
@@ -193,15 +198,14 @@ export function openGroupOverlay({ snippet, allSnippets, allGroups, container, a
       }
     };
 
-    // Mouse handlers
-    const onMove = (e) => {
-      cursor.x = e.clientX - paneRect.left;
-      cursor.y = e.clientY - paneRect.top;
+    const updateCursor = (clientX, clientY) => {
+      cursor.x = clientX - paneRect.left;
+      cursor.y = clientY - paneRect.top;
       placeCard();
       if (sim.alpha() < 0.05) sim.alpha(0.15).restart();
     };
-    const onUp = (e) => {
-      const droppedOn = hoveredId;
+
+    const finalize = (droppedOn) => {
       cleanup();
       if (!droppedOn) return resolve(null);
       const bubble = bubbleEls.find(({ bubble: b }) => b.id === droppedOn)?.bubble;
@@ -210,6 +214,19 @@ export function openGroupOverlay({ snippet, allSnippets, allGroups, container, a
       if (bubble.isMember) return resolve(null);
       return resolve({ kind: "existing", groupId: bubble.id });
     };
+
+    const onMove = (e) => updateCursor(e.clientX, e.clientY);
+    const onUp = () => finalize(hoveredId);
+    const onDragOver = (e) => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "link";
+      updateCursor(e.clientX, e.clientY);
+    };
+    const onDrop = (e) => {
+      e.preventDefault();
+      finalize(hoveredId);
+    };
+    const onDragEnd = () => finalize(null);
     const onKey = (e) => {
       if (e.key === "Escape") {
         cleanup();
@@ -222,10 +239,12 @@ export function openGroupOverlay({ snippet, allSnippets, allGroups, container, a
       sim.stop();
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      overlay.removeEventListener("dragover", onDragOver);
+      overlay.removeEventListener("drop", onDrop);
+      window.removeEventListener("dragend", onDragEnd, true);
       window.removeEventListener("keydown", onKey, true);
       overlay.removeEventListener("contextmenu", onContextMenu);
       overlay.classList.remove("active");
-      // Fade
       overlay.classList.add("closing");
       setTimeout(() => {
         overlay.hidden = true;
@@ -234,8 +253,14 @@ export function openGroupOverlay({ snippet, allSnippets, allGroups, container, a
       }, 160);
     }
 
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    if (dragMode) {
+      overlay.addEventListener("dragover", onDragOver);
+      overlay.addEventListener("drop", onDrop);
+      window.addEventListener("dragend", onDragEnd, true);
+    } else {
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    }
     window.addEventListener("keydown", onKey, true);
     overlay.addEventListener("contextmenu", onContextMenu);
   });

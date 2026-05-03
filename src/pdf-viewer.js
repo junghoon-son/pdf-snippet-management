@@ -60,7 +60,7 @@ export async function fitWidthScale(pdf, availableWidth) {
   return availableWidth / baseViewport.width;
 }
 
-export async function renderRegionPng(pdf, pageNum, fracRect, hiresScale = 4) {
+export async function renderRegionPng(pdf, pageNum, fracRect, hiresScale = 2) {
   const page = await pdf.getPage(pageNum);
   const viewport = page.getViewport({ scale: hiresScale });
   const fullW = Math.floor(viewport.width);
@@ -71,18 +71,14 @@ export async function renderRegionPng(pdf, pageNum, fracRect, hiresScale = 4) {
   const cropW = Math.min(fullW - cropX, Math.ceil(fracRect.width * fullW));
   const cropH = Math.min(fullH - cropY, Math.ceil(fracRect.height * fullH));
 
-  const fullCanvas = document.createElement("canvas");
-  fullCanvas.width = fullW;
-  fullCanvas.height = fullH;
-  await page.render({
-    canvasContext: fullCanvas.getContext("2d"),
-    viewport,
-  }).promise;
-
   const out = document.createElement("canvas");
   out.width = cropW;
   out.height = cropH;
-  out.getContext("2d").drawImage(fullCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+  await page.render({
+    canvasContext: out.getContext("2d"),
+    viewport,
+    transform: [1, 0, 0, 1, -cropX, -cropY],
+  }).promise;
 
   return await new Promise((resolve, reject) => {
     out.toBlob((blob) => {
@@ -139,6 +135,7 @@ export function applyHighlights(container, snippets) {
       const div = document.createElement("div");
       div.className = s.kind === "image" ? "hl hl-image" : "hl";
       div.dataset.snippetId = s.id;
+      div.draggable = true;
       div.style.left = `${r.left * 100}%`;
       div.style.top = `${r.top * 100}%`;
       div.style.width = `${r.width * 100}%`;

@@ -10,6 +10,7 @@ import {
   renderRegionPng,
 } from "./pdf-viewer.js";
 import * as MapView from "./map-view.js";
+import * as LineageView from "./lineage-view.js";
 import { openGroupOverlay } from "./group-overlay.js";
 
 const fileListEl = document.getElementById("file-list");
@@ -33,10 +34,14 @@ const state = {
   groupsMeta: [],
   source: { path: "", filename: "", title: "", author: "" },
   view: "list",
-  layout: "page",
+  layout: "group",
+  mapScope: "doc",
+  summaryScope: "doc",
+  summaryFormat: "rich",
 };
 let selectedEdge = null;
 let mapInitialized = false;
+let lineageInitialized = false;
 let rectDraw = null;
 const clipUrlCache = new Map();
 state.tool = "select";
@@ -47,23 +52,173 @@ const undoStack = [];
 const expandedIds = new Set();
 
 const WORKSPACE_KEY = "pdf-annotator-workspace";
-state.workspace = loadWorkspace();
+const WORKSPACES_KEY = "pdf-annotator-workspaces";
+state.workspaces = loadAllWorkspaces();
+state.workspace = activeWorkspaceData();
 const collapsedFolders = new Set();
 
-function loadWorkspace() {
+function makeWorkspaceId() {
+  return "ws_" + Math.random().toString(36).slice(2, 10);
+}
+
+function loadAllWorkspaces() {
   try {
-    const json = localStorage.getItem(WORKSPACE_KEY);
-    if (json) {
-      const parsed = JSON.parse(json);
-      return { folders: parsed.folders || [], files: parsed.files || [] };
+    const raw = localStorage.getItem(WORKSPACES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.byId && parsed.order && parsed.active) {
+        return parsed;
+      }
     }
   } catch {}
-  return { folders: [], files: [] };
+  let seed = { folders: [], files: [] };
+  try {
+    const legacy = localStorage.getItem(WORKSPACE_KEY);
+    if (legacy) {
+      const p = JSON.parse(legacy);
+      seed = { folders: p.folders || [], files: p.files || [] };
+    }
+  } catch {}
+  const id = makeWorkspaceId();
+  return {
+    byId: {
+      [id]: {
+        id,
+        name: "Workspace 1",
+        files: seed.files,
+        folders: seed.folders,
+        currentPdfPath: null,
+      },
+    },
+    order: [id],
+    active: id,
+  };
+}
+
+function activeWorkspaceData() {
+  const ws = state.workspaces.byId[state.workspaces.active];
+  if (!ws) return { folders: [], files: [] };
+  return { folders: ws.folders || [], files: ws.files || [] };
+}
+
+function saveAllWorkspaces() {
+  // Snapshot current active workspace before serializing
+  const cur = state.workspaces.byId[state.workspaces.active];
+  if (cur) {
+    cur.files = state.workspace.files;
+    cur.folders = state.workspace.folders;
+    cur.currentPdfPath = state.currentPdfPath;
+  }
+  try { localStorage.setItem(WORKSPACES_KEY, JSON.stringify(state.workspaces)); } catch {}
 }
 
 function saveWorkspace() {
-  try { localStorage.setItem(WORKSPACE_KEY, JSON.stringify(state.workspace)); } catch {}
+  saveAllWorkspaces();
 }
+
+function renderWorkspaceTabs() {
+  const list = document.getElementById("ws-tabs-list");
+  list.innerHTML = "";
+  for (const id of state.workspaces.order) {
+    const ws = state.workspaces.byId[id];
+    if (!ws) continue;
+    const tab = document.createElement("div");
+    tab.className = "ws-tab";
+    if (id === state.workspaces.active) tab.classList.add("active");
+    tab.dataset.wsId = id;
+
+    const name = document.createElement("input");
+    name.className = "ws-tab-name";
+    name.value = ws.name;
+    name.readOnly = true;
+    name.addEventListener("dblclick", (e) => {
+      e.stopPropagation();
+      name.readOnly = false;
+      name.focus();
+      name.select();
+    });
+    name.addEventListener("blur", () => {
+      name.readOnly = true;
+      const v = name.value.trim() || ws.name;
+      ws.name = v;
+      name.value = v;
+      saveAllWorkspaces();
+    });
+    name.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") name.blur();
+      if (e.key === "Escape") { name.value = ws.name; name.blur(); }
+    });
+
+    const close = document.createElement("button");
+    close.className = "ws-tab-close";
+    close.textContent = "×";
+    close.title = "Close workspace";
+    close.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeWorkspace(id);
+    });
+
+    tab.append(name, close);
+    tab.addEventListener("click", () => switchWorkspace(id));
+    list.appendChild(tab);
+  }
+}
+
+function switchWorkspace(id) {
+  if (id === state.workspaces.active) return;
+  saveAllWorkspaces();
+  state.workspaces.active = id;
+  closeCurrentPdf();
+  state.workspace = activeWorkspaceData();
+  saveAllWorkspaces();
+  renderWorkspaceTabs();
+  renderWorkspace();
+  const next = state.workspaces.byId[id];
+  if (next.currentPdfPath) {
+    const exists = next.files.includes(next.currentPdfPath) ||
+      next.folders.some((f) => (f.pdfs || []).includes(next.currentPdfPath));
+    if (exists) loadPdf(next.currentPdfPath);
+  }
+}
+
+function newWorkspace() {
+  const id = makeWorkspaceId();
+  const n = state.workspaces.order.length + 1;
+  state.workspaces.byId[id] = {
+    id,
+    name: `Workspace ${n}`,
+    files: [],
+    folders: [],
+    currentPdfPath: null,
+  };
+  state.workspaces.order.push(id);
+  saveAllWorkspaces();
+  switchWorkspace(id);
+}
+
+function closeWorkspace(id) {
+  if (state.workspaces.order.length === 1) return;
+  const idx = state.workspaces.order.indexOf(id);
+  state.workspaces.order.splice(idx, 1);
+  delete state.workspaces.byId[id];
+  if (state.workspaces.active === id) {
+    const fallback = state.workspaces.order[Math.max(0, idx - 1)];
+    state.workspaces.active = fallback;
+    state.workspace = activeWorkspaceData();
+    closeCurrentPdf();
+  }
+  saveAllWorkspaces();
+  renderWorkspaceTabs();
+  renderWorkspace();
+  const next = state.workspaces.byId[state.workspaces.active];
+  if (next?.currentPdfPath) {
+    const exists = next.files.includes(next.currentPdfPath) ||
+      next.folders.some((f) => (f.pdfs || []).includes(next.currentPdfPath));
+    if (exists) loadPdf(next.currentPdfPath);
+  }
+}
+
+document.getElementById("ws-tab-add").addEventListener("click", newWorkspace);
 
 document.getElementById("open-file").addEventListener("click", async () => {
   const path = await open({
@@ -101,8 +256,25 @@ document.getElementById("clear-workspace").addEventListener("click", () => {
   if (!confirm("Clear all files and folders from the workspace?")) return;
   state.workspace = { folders: [], files: [] };
   saveWorkspace();
+  closeCurrentPdf();
   renderWorkspace();
 });
+
+function closeCurrentPdf() {
+  state.currentPdfPath = null;
+  state.pdfDoc = null;
+  state.snippets = [];
+  state.edges = [];
+  state.source = { path: "", filename: "", title: "", author: "" };
+  undoStack.length = 0;
+  expandedIds.clear();
+  viewerContainer.innerHTML = "";
+  viewerEmpty.style.display = "";
+  docTitleEl.textContent = "";
+  docTitleEl.title = "";
+  refreshActiveView();
+  applyAllHighlights();
+}
 
 async function renderWorkspace() {
   fileListEl.innerHTML = "";
@@ -210,8 +382,26 @@ document.getElementById("zoom-in").addEventListener("click", () => setScale(stat
 document.getElementById("zoom-out").addEventListener("click", () => setScale(state.scale / SCALE_STEP));
 document.getElementById("zoom-fit").addEventListener("click", () => fitWidth());
 document.getElementById("summary-btn").addEventListener("click", openSummary);
+
+document.getElementById("help-btn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  const pop = document.getElementById("help-popover");
+  pop.hidden = !pop.hidden;
+});
+document.addEventListener("click", (e) => {
+  const pop = document.getElementById("help-popover");
+  if (pop.hidden) return;
+  if (!pop.contains(e.target) && e.target.id !== "help-btn") pop.hidden = true;
+});
 document.getElementById("summary-close").addEventListener("click", closeSummary);
 document.getElementById("summary-copy").addEventListener("click", copySummary);
+document.getElementById("summary-export").addEventListener("click", exportSummaryHtml);
+document.querySelectorAll("#summary-scope .seg-btn").forEach((b) => {
+  b.addEventListener("click", () => setSummaryScope(b.dataset.scope));
+});
+document.querySelectorAll("#summary-format .seg-btn").forEach((b) => {
+  b.addEventListener("click", () => setSummaryFormat(b.dataset.format));
+});
 document.querySelector("#summary-modal .modal-backdrop").addEventListener("click", closeSummary);
 
 document.querySelectorAll(".tool-btn").forEach((b) => {
@@ -221,8 +411,9 @@ document.querySelectorAll(".tool-btn").forEach((b) => {
 document.querySelectorAll(".tab-btn").forEach((b) => {
   b.addEventListener("click", () => switchView(b.dataset.view));
 });
-document.querySelectorAll("#layout-toggle .seg-btn").forEach((b) => {
-  b.addEventListener("click", () => switchLayout(b.dataset.layout));
+
+document.querySelectorAll("#map-scope .seg-btn").forEach((b) => {
+  b.addEventListener("click", () => setMapScope(b.dataset.scope));
 });
 
 document.getElementById("edge-save").addEventListener("click", saveEdgeLabel);
@@ -248,13 +439,65 @@ document.addEventListener("keydown", (e) => {
       e.preventDefault();
       undo();
     }
+    else if ((e.key === "f" || e.key === "F") && e.shiftKey) {
+      e.preventDefault();
+      openGlobalSearch();
+    }
+    else if (e.key === "f" || e.key === "F") {
+      e.preventDefault();
+      openLocalSearch();
+    }
     return;
   }
   const tag = e.target.tagName;
+  if (e.key === "Escape") {
+    const ls = document.getElementById("local-search");
+    if (!ls.hidden && document.activeElement && document.activeElement.id === "local-search-input") {
+      closeLocalSearch();
+      return;
+    }
+    const gs = document.getElementById("global-search");
+    if (!gs.hidden) { closeGlobalSearch(); return; }
+  }
   if (tag === "TEXTAREA" || tag === "INPUT") return;
   if (e.key === "t" || e.key === "T") setTool("select");
   else if (e.key === "r" || e.key === "R") setTool("rect");
 });
+
+let localSearchQuery = "";
+function openLocalSearch() {
+  const box = document.getElementById("local-search");
+  const input = document.getElementById("local-search-input");
+  box.hidden = false;
+  input.value = localSearchQuery;
+  input.focus();
+  input.select();
+}
+function closeLocalSearch() {
+  document.getElementById("local-search").hidden = true;
+  const input = document.getElementById("local-search-input");
+  input.value = "";
+  localSearchQuery = "";
+  input.blur();
+  refreshActiveView();
+}
+document.getElementById("local-search-input").addEventListener("input", (e) => {
+  localSearchQuery = e.target.value;
+  refreshActiveView();
+});
+
+function snippetMatchesLocal(s) {
+  if (!localSearchQuery) return true;
+  const ql = localSearchQuery.toLowerCase();
+  return (s.text || "").toLowerCase().includes(ql) ||
+         (s.comment || "").toLowerCase().includes(ql);
+}
+
+function updateLocalSearchCount(n) {
+  const el = document.getElementById("local-search-count");
+  if (!el) return;
+  el.textContent = localSearchQuery ? `${n}` : "";
+}
 
 function setTool(tool) {
   state.tool = tool;
@@ -262,6 +505,7 @@ function setTool(tool) {
     b.classList.toggle("active", b.dataset.tool === tool);
   });
   document.body.classList.toggle("tool-rect", tool === "rect");
+  document.body.classList.toggle("tool-select", tool === "select");
 }
 
 document.addEventListener("keydown", (e) => {
@@ -358,12 +602,107 @@ document.getElementById("clear-recents").addEventListener("click", () => {
 });
 
 renderRecents();
+renderWorkspaceTabs();
 renderWorkspace();
+renderGroups();
+
+document.getElementById("groups-collapse").addEventListener("click", () => {
+  document.getElementById("groups-panel").classList.toggle("collapsed");
+});
+
+document.getElementById("groups-export").addEventListener("click", exportGroups);
+document.getElementById("groups-import").addEventListener("click", importGroups);
+
+function exportGroups() {
+  const payload = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    groups: state.groupsMeta || [],
+  };
+  const json = JSON.stringify(payload, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `pdf-annotator-groups-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  flashButton("groups-export", "exported");
+}
+
+async function importGroups() {
+  const path = await open({
+    multiple: false,
+    directory: false,
+    filters: [{ name: "JSON", extensions: ["json"] }],
+  });
+  if (!path) return;
+  try {
+    const bytes = await invoke("read_pdf", { path });
+    const json = new TextDecoder().decode(new Uint8Array(bytes));
+    const parsed = JSON.parse(json);
+    const incoming = Array.isArray(parsed) ? parsed : (parsed.groups || []);
+    if (!Array.isArray(incoming)) throw new Error("File doesn't contain a groups array");
+
+    const choice = confirm(
+      `Import ${incoming.length} group(s)?\n\n` +
+      `OK: merge with existing (incoming names/colors win on duplicate ids)\n` +
+      `Cancel: abort`,
+    );
+    if (!choice) return;
+
+    const map = new Map((state.groupsMeta || []).map((g) => [g.id, { ...g }]));
+    let added = 0;
+    let updated = 0;
+    for (const g of incoming) {
+      if (!g || !g.id) continue;
+      if (map.has(g.id)) {
+        const e = map.get(g.id);
+        if (g.name) e.name = g.name;
+        if (g.color) e.color = g.color;
+        updated++;
+      } else {
+        map.set(g.id, { id: g.id, name: g.name || "", color: g.color || undefined });
+        added++;
+      }
+    }
+    state.groupsMeta = [...map.values()];
+    await invoke("write_global_groups", { groups: state.groupsMeta });
+    refreshActiveView();
+    applyAllHighlights();
+    flashButton("groups-import", `+${added} ~${updated}`);
+  } catch (err) {
+    console.error("import failed", err);
+    alert(`Import failed: ${err.message || err}`);
+  }
+}
+
+function flashButton(id, text) {
+  const btn = document.getElementById(id);
+  if (!btn) return;
+  const prev = btn.textContent;
+  btn.textContent = text;
+  setTimeout(() => { btn.textContent = prev; }, 1100);
+}
+
+const DEFAULT_GROUP = { id: "__notes__", name: "Notes" };
+const DEFAULT_GROUP_SEEDED_KEY = "pdf-annotator-default-group-seeded";
 
 (async () => {
   try {
     const g = await invoke("read_global_groups");
     state.groupsMeta = g || [];
+    const alreadySeeded = (() => {
+      try { return localStorage.getItem(DEFAULT_GROUP_SEEDED_KEY) === "1"; } catch { return false; }
+    })();
+    if (state.groupsMeta.length === 0 && !alreadySeeded) {
+      state.groupsMeta.push({ ...DEFAULT_GROUP });
+      try { localStorage.setItem(DEFAULT_GROUP_SEEDED_KEY, "1"); } catch {}
+      try { await invoke("write_global_groups", { groups: state.groupsMeta }); } catch {}
+    }
+    renderGroups();
   } catch (err) {
     console.warn("global groups load failed", err);
   }
@@ -378,6 +717,7 @@ function setActiveFile(path) {
 async function loadPdf(path) {
   state.currentPdfPath = path;
   addRecent(path);
+  saveAllWorkspaces();
   undoStack.length = 0;
   expandedIds.clear();
   setActiveFile(path);
@@ -507,7 +847,7 @@ async function createImageSnippet(page, fracRect) {
   const id = crypto.randomUUID();
   let pngBytes;
   try {
-    pngBytes = await renderRegionPng(state.pdfDoc, page, fracRect, 4);
+    pngBytes = await renderRegionPng(state.pdfDoc, page, fracRect, 2);
   } catch (err) {
     console.error("clip render failed", err);
     return;
@@ -569,6 +909,29 @@ viewerContainer.addEventListener("click", (e) => {
   li.scrollIntoView({ behavior: "smooth", block: "center" });
   const ta = li.querySelector("textarea");
   if (ta) setTimeout(() => ta.focus(), 250);
+});
+
+viewerContainer.addEventListener("dragstart", (e) => {
+  const hl = e.target.closest?.(".hl");
+  if (!hl) return;
+  const id = hl.dataset.snippetId;
+  if (!id) return;
+  e.dataTransfer.setData("text/plain", id);
+  if (state.currentPdfPath) {
+    e.dataTransfer.setData(
+      "application/x-snippet",
+      JSON.stringify({ snippetId: id, pdfPath: state.currentPdfPath }),
+    );
+  }
+  e.dataTransfer.effectAllowed = "link";
+  document.body.classList.add("dragging-snippet");
+  const snippet = state.snippets.find((x) => x.id === id);
+  if (snippet) startSnippetDragOverlay(snippet, e);
+});
+viewerContainer.addEventListener("dragend", (e) => {
+  if (e.target.closest?.(".hl")) {
+    document.body.classList.remove("dragging-snippet");
+  }
 });
 
 function hitTestHighlight(e) {
@@ -641,10 +1004,19 @@ function canonicalGroupIds() {
   return list;
 }
 
-function renderSnippets() {
+async function renderSnippets() {
   snippetsListEl.innerHTML = "";
-  const ordered = orderedSnippets();
+  const isWorkspace = state.mapScope === "workspace";
+  let source;
+  if (isWorkspace) {
+    const data = await loadWorkspaceMapData();
+    source = data.snippets;
+  } else {
+    source = state.snippets;
+  }
+  const ordered = orderedSnippets(source).filter(snippetMatchesLocal);
   const canonical = canonicalGroupIds();
+  updateLocalSearchCount(ordered.length);
   ordered.forEach((s) => {
     const li = document.createElement("li");
     li.className = "snippet";
@@ -652,49 +1024,56 @@ function renderSnippets() {
     li.dataset.snippetId = s.id;
     li.setAttribute("draggable", "true");
     const groups = s.groups || [];
-    if (groups.length > 0) li.classList.add("has-groups");
 
     if (groups.length > 0) {
-      const memberSet = new Set(groups);
-      const spine = document.createElement("div");
-      spine.className = "group-spine";
-      for (const gid of canonical) {
-        if (memberSet.has(gid)) {
-          const band = document.createElement("div");
-          band.className = "spine-band";
-          band.dataset.groupId = gid;
-          band.style.background = groupColor(gid);
-          band.title = groupName(gid);
-          const lbl = document.createElement("span");
-          lbl.className = "spine-label";
-          lbl.textContent = groupName(gid);
-          band.appendChild(lbl);
-          const x = document.createElement("button");
-          x.className = "spine-x";
-          x.textContent = "×";
-          x.title = `Remove from “${groupName(gid)}”`;
-          x.addEventListener("click", async (e) => {
-            e.stopPropagation();
-            s.groups = (s.groups || []).filter((g) => g !== gid);
-            await persist();
-            refreshActiveView();
-          });
-          band.appendChild(x);
-          spine.appendChild(band);
-        } else {
-          const spacer = document.createElement("div");
-          spacer.className = "spine-band spine-band-empty";
-          spine.appendChild(spacer);
-        }
+      const sortedGroups = [...groups].sort(
+        (a, b) => (canonical.indexOf(a) + 1 || 9999) - (canonical.indexOf(b) + 1 || 9999),
+      );
+      const chipRow = document.createElement("div");
+      chipRow.className = "group-pill-row";
+      for (const gid of sortedGroups) {
+        const c = groupColor(gid);
+        const pill = document.createElement("span");
+        pill.className = "group-pill";
+        pill.style.background = lightenColor(c);
+        pill.style.borderColor = c;
+        pill.style.color = darkenColor(c);
+        pill.dataset.groupId = gid;
+        const dot = document.createElement("span");
+        dot.className = "group-pill-dot";
+        dot.style.background = c;
+        const name = document.createElement("span");
+        name.className = "group-pill-name";
+        name.textContent = groupName(gid);
+        const x = document.createElement("button");
+        x.className = "group-pill-x";
+        x.textContent = "×";
+        x.title = `Remove from "${groupName(gid)}"`;
+        x.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          s.groups = (s.groups || []).filter((g) => g !== gid);
+          await persist();
+          refreshActiveView();
+        });
+        pill.append(dot, name, x);
+        chipRow.appendChild(pill);
       }
-      li.appendChild(spine);
-      li.style.setProperty("--spine-cols", String(canonical.length));
+      li.appendChild(chipRow);
     }
 
+    const ownerPath = s._pdfPath || state.currentPdfPath;
+    const isCrossDoc = isWorkspace && ownerPath && ownerPath !== state.currentPdfPath;
     const meta = document.createElement("div");
     meta.className = "meta";
     const label = document.createElement("span");
     label.className = "meta-label";
+    if (isCrossDoc) {
+      const docSpan = document.createElement("span");
+      docSpan.className = "meta-doc";
+      docSpan.textContent = (ownerPath.split("/").pop() || ownerPath);
+      docSpan.title = ownerPath;
+      label.appendChild(docSpan);
+    }
     const pageSpan = document.createElement("span");
     pageSpan.textContent = `p.${s.page}`;
     label.appendChild(pageSpan);
@@ -704,11 +1083,10 @@ function renderSnippets() {
       e.stopPropagation();
       try {
         if (s.kind === "image" && s.imagePath) {
-          const url = await loadClipUrl(s.imagePath);
-          if (url) {
-            const blob = await fetch(url).then((r) => r.blob());
-            await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-          }
+          await invoke("copy_image_to_clipboard", {
+            pdfPath: ownerPath,
+            imagePath: s.imagePath,
+          });
         } else {
           await navigator.clipboard.writeText(s.text);
         }
@@ -744,7 +1122,8 @@ function renderSnippets() {
     });
     const actions = document.createElement("span");
     actions.className = "actions";
-    actions.append(copy, del);
+    if (isCrossDoc) actions.append(copy);
+    else actions.append(copy, del);
     meta.append(label, actions);
 
     let text;
@@ -754,7 +1133,7 @@ function renderSnippets() {
       const img = document.createElement("img");
       img.alt = s.text || `clip p.${s.page}`;
       img.loading = "lazy";
-      loadClipUrl(s.imagePath).then((url) => {
+      loadClipUrl(s.imagePath, ownerPath).then((url) => {
         if (url) img.src = url;
         else {
           text.classList.add("missing");
@@ -769,44 +1148,83 @@ function renderSnippets() {
       text = document.createElement("div");
       text.className = "text";
       text.textContent = s.text;
-      text.title = "Click to expand/collapse";
+      text.title = "Click to jump to page · ⌥-click to expand/collapse";
       text.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (expandedIds.has(s.id)) {
-          expandedIds.delete(s.id);
-          li.classList.remove("expanded");
-        } else {
-          expandedIds.add(s.id);
-          li.classList.add("expanded");
+        if (e.altKey) {
+          e.stopPropagation();
+          if (expandedIds.has(s.id)) {
+            expandedIds.delete(s.id);
+            li.classList.remove("expanded");
+          } else {
+            expandedIds.add(s.id);
+            li.classList.add("expanded");
+          }
         }
       });
     }
 
     const ta = document.createElement("textarea");
-    ta.placeholder = "Add a comment…";
+    ta.placeholder = "type a comment…";
+    ta.rows = 1;
     ta.value = s.comment || "";
+    const autoresize = () => {
+      ta.style.height = "auto";
+      ta.style.height = ta.scrollHeight + "px";
+    };
     let saveTimer;
     ta.addEventListener("input", () => {
       s.comment = ta.value;
+      autoresize();
       clearTimeout(saveTimer);
       saveTimer = setTimeout(persist, 300);
     });
+    ta.addEventListener("focus", autoresize);
+    setTimeout(autoresize, 0);
 
-    li.append(meta, text, ta);
-    li.addEventListener("click", (e) => {
-      if (e.target === ta || e.target === del) return;
-      scrollToSnippet(s);
+    const addBtn = document.createElement("button");
+    addBtn.className = "add-comment-btn";
+    addBtn.textContent = "+ comment";
+    addBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      addBtn.replaceWith(ta);
+      ta.focus();
+    });
+    ta.addEventListener("blur", () => {
+      if (!ta.value.trim()) {
+        s.comment = "";
+        ta.replaceWith(addBtn);
+        clearTimeout(saveTimer);
+        persist();
+      }
     });
 
-    let hoverPreviewTimer;
+    if (isCrossDoc) {
+      const tail = s.comment
+        ? Object.assign(document.createElement("div"), {
+            className: "snippet-comment-readonly",
+            textContent: s.comment,
+          })
+        : null;
+      if (tail) li.append(meta, text, tail);
+      else li.append(meta, text);
+    } else {
+      li.append(meta, text, s.comment ? ta : addBtn);
+    }
+    li.addEventListener("click", async (e) => {
+      if (e.target === ta || e.target === del) return;
+      if (isCrossDoc) {
+        await loadPdf(ownerPath);
+        setTimeout(() => previewSnippetInPdf(s), 60);
+        return;
+      }
+      previewSnippetInPdf(s);
+    });
+
     li.addEventListener("mouseenter", () => {
-      clearTimeout(hoverPreviewTimer);
-      hoverPreviewTimer = setTimeout(() => previewSnippetInPdf(s), 220);
       hoverSnippetId = s.id;
       updateHoverClasses();
     });
     li.addEventListener("mouseleave", () => {
-      clearTimeout(hoverPreviewTimer);
       hoverSnippetId = null;
       updateHoverClasses();
     });
@@ -820,8 +1238,13 @@ function renderSnippets() {
       e.dataTransfer.setData("text/plain", s.id);
       e.dataTransfer.effectAllowed = "link";
       li.classList.add("dragging");
+      document.body.classList.add("dragging-snippet");
+      startSnippetDragOverlay(s, e);
     });
-    li.addEventListener("dragend", () => li.classList.remove("dragging"));
+    li.addEventListener("dragend", () => {
+      li.classList.remove("dragging");
+      document.body.classList.remove("dragging-snippet");
+    });
     li.addEventListener("dragover", (e) => {
       const srcId = e.dataTransfer.types.includes("text/plain");
       if (!srcId) return;
@@ -842,19 +1265,32 @@ function renderSnippets() {
   });
 }
 
-function orderedSnippets() {
-  const posKey = (s) => [s.page, s.rects?.[0]?.top ?? 0, s.rects?.[0]?.left ?? 0];
-  return [...state.snippets].sort((a, b) => {
+function orderedSnippets(input) {
+  const list = input || state.snippets;
+  const posKey = (s) => [s._pdfPath || "", s.page, s.rects?.[0]?.top ?? 0, s.rects?.[0]?.left ?? 0];
+  return [...list].sort((a, b) => {
     const ka = posKey(a), kb = posKey(b);
-    return ka[0] - kb[0] || ka[1] - kb[1] || ka[2] - kb[2];
+    if (ka[0] !== kb[0]) return ka[0] < kb[0] ? -1 : 1;
+    return ka[1] - kb[1] || ka[2] - kb[2] || ka[3] - kb[3];
   });
 }
 
 async function handleSnippetRightClick(s, e) {
+  const result = await openSnippetGroupOverlay(s, e, false);
+  await applyGroupOverlayResult(s, result);
+}
+
+function startSnippetDragOverlay(s, e) {
+  openSnippetGroupOverlay(s, e, true).then((result) => {
+    return applyGroupOverlayResult(s, result);
+  });
+}
+
+function openSnippetGroupOverlay(s, e, dragMode) {
   const pane = document.getElementById("snippets-pane");
   const overlay = document.getElementById("group-overlay");
   const paneRect = pane.getBoundingClientRect();
-  const result = await openGroupOverlay({
+  return openGroupOverlay({
     snippet: s,
     allSnippets: state.snippets,
     allGroups: state.groupsMeta || [],
@@ -863,21 +1299,33 @@ async function handleSnippetRightClick(s, e) {
     groupColor,
     groupName,
     paneRect,
+    dragMode,
   });
+}
+
+async function applyGroupOverlayResult(s, result) {
   if (!result) return;
-  s.groups = s.groups || [];
+  const ownerPath = s._pdfPath || state.currentPdfPath;
+  const isRemote = ownerPath && ownerPath !== state.currentPdfPath;
   let createdGroupId = null;
+  let targetGroupId = null;
   if (result.kind === "new") {
-    const id = crypto.randomUUID();
-    s.groups.push(id);
-    ensureGroupMeta(id, "");
-    createdGroupId = id;
-  } else if (result.kind === "existing" && !s.groups.includes(result.groupId)) {
-    s.groups.push(result.groupId);
+    targetGroupId = crypto.randomUUID();
+    ensureGroupMeta(targetGroupId, "");
+    createdGroupId = targetGroupId;
+  } else if (result.kind === "existing") {
+    targetGroupId = result.groupId;
   }
-  await persist();
-  refreshActiveView();
-  applyAllHighlights();
+  if (!targetGroupId) return;
+  if (isRemote) {
+    await addSnippetToGroupRemote(ownerPath, s.id, targetGroupId);
+  } else {
+    s.groups = s.groups || [];
+    if (!s.groups.includes(targetGroupId)) s.groups.push(targetGroupId);
+    await persist();
+    refreshActiveView();
+    applyAllHighlights();
+  }
   if (createdGroupId) {
     promptGroupName(createdGroupId);
   }
@@ -919,13 +1367,14 @@ async function linkSnippets(srcId, dstId) {
   applyAllHighlights();
 }
 
-async function loadClipUrl(path) {
-  if (!path || !state.currentPdfPath) return null;
-  const cacheKey = `${state.currentPdfPath}::${path}`;
+async function loadClipUrl(path, pdfPath) {
+  const owner = pdfPath || state.currentPdfPath;
+  if (!path || !owner) return null;
+  const cacheKey = `${owner}::${path}`;
   if (clipUrlCache.has(cacheKey)) return clipUrlCache.get(cacheKey);
   try {
     const bytes = await invoke("read_clip", {
-      pdfPath: state.currentPdfPath,
+      pdfPath: owner,
       imagePath: path,
     });
     const blob = new Blob([new Uint8Array(bytes)], { type: "image/png" });
@@ -938,10 +1387,96 @@ async function loadClipUrl(path) {
   }
 }
 
-function groupColor(id) {
+function defaultGroupColor(id) {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return `hsl(${h % 360} 70% 55%)`;
+  return `hsl(${h % 360}, 70%, 55%)`;
+}
+
+function hslToHex(hsl) {
+  const m = /hsl\(\s*(\d+(?:\.\d+)?)[\s,]+(\d+(?:\.\d+)?)%[\s,]+(\d+(?:\.\d+)?)%\s*\)/.exec(hsl);
+  if (!m) return "#888888";
+  const h = +m[1] / 360, s = +m[2] / 100, l = +m[3] / 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => {
+    const k = (n + h * 12) % 12;
+    const c = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return Math.round(255 * c).toString(16).padStart(2, "0");
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+function groupColor(id) {
+  const meta = (state.groupsMeta || []).find((g) => g.id === id);
+  if (meta?.color) return meta.color;
+  return defaultGroupColor(id);
+}
+
+function groupColorHex(id) {
+  const c = groupColor(id);
+  return c.startsWith("#") ? c : hslToHex(c);
+}
+
+async function setGroupColor(id, color) {
+  ensureGroupMeta(id, "");
+  const meta = state.groupsMeta.find((g) => g.id === id);
+  if (meta) meta.color = color;
+  await persist();
+  refreshActiveView();
+  applyAllHighlights();
+  if (mapInitialized) {
+    const data = await getMapData();
+    MapView.renderMap(data.snippets, data.edges, state.layout, loadClipUrl);
+  }
+}
+
+async function setGroupHidden(id, hidden) {
+  ensureGroupMeta(id, "");
+  const meta = state.groupsMeta.find((g) => g.id === id);
+  if (meta) meta.hidden = hidden;
+  await persist();
+  renderGroups();
+}
+
+function lightenColor(c) {
+  let m = /hsl\(\s*(\d+(?:\.\d+)?)[\s,]+(\d+(?:\.\d+)?)%[\s,]+(\d+(?:\.\d+)?)%\s*\)/.exec(c);
+  if (m) {
+    const h = +m[1];
+    const s = Math.min(70, +m[2]);
+    return `hsl(${h}, ${s}%, 90%)`;
+  }
+  m = /^#([0-9a-fA-F]{3,6})$/.exec(c);
+  if (m) {
+    let hex = m[1];
+    if (hex.length === 3) hex = hex.split("").map((x) => x + x).join("");
+    const r = parseInt(hex.slice(0, 2), 16) / 255;
+    const g = parseInt(hex.slice(2, 4), 16) / 255;
+    const b = parseInt(hex.slice(4, 6), 16) / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    let h, s;
+    if (max === min) { h = 0; s = 0; }
+    else {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+      else if (max === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h *= 60;
+    }
+    return `hsl(${Math.round(h)}, ${Math.min(70, Math.round(s * 100))}%, 90%)`;
+  }
+  return c;
+}
+
+function darkenColor(c) {
+  let m = /hsl\(\s*(\d+(?:\.\d+)?)[\s,]+(\d+(?:\.\d+)?)%[\s,]+(\d+(?:\.\d+)?)%\s*\)/.exec(c);
+  if (m) {
+    const h = +m[1];
+    const s = +m[2];
+    return `hsl(${h}, ${Math.min(80, s + 5)}%, 32%)`;
+  }
+  return c;
 }
 
 function previewSnippetInPdf(s) {
@@ -960,11 +1495,6 @@ function pulseHighlights(snippetId) {
     void el.offsetWidth;
     el.classList.add("pulse");
   });
-}
-
-function scrollToSnippet(s) {
-  const wrap = viewerContainer.querySelector(`.page-wrap[data-page="${s.page}"]`);
-  if (wrap) wrap.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 function applyAllHighlights() {
@@ -1049,14 +1579,14 @@ function switchView(view) {
     b.classList.toggle("active", b.dataset.view === view);
   });
   const isMap = view === "map";
-  const isGroups = view === "groups";
   const isList = view === "list";
+  const isLineage = view === "lineage";
   document.getElementById("snippets-list").hidden = !isList;
-  document.getElementById("groups-list").hidden = !isGroups;
   document.getElementById("map-view").hidden = !isMap;
-  document.getElementById("layout-toggle").hidden = !isMap;
+  document.getElementById("lineage-view").hidden = !isLineage;
+  document.getElementById("map-scope").hidden = false;
   if (isMap) {
-    requestAnimationFrame(() => {
+    requestAnimationFrame(async () => {
       if (!mapInitialized) {
         MapView.initMap(document.getElementById("cy"), {
           onChange: persist,
@@ -1066,23 +1596,292 @@ function switchView(view) {
         mapInitialized = true;
       }
       MapView.resize();
-      MapView.renderMap(state.snippets, state.edges, state.layout);
+      const data = await getMapData();
+      MapView.renderMap(data.snippets, data.edges, state.layout, loadClipUrl);
     });
-  } else if (isGroups) {
-    renderGroups();
+  } else if (isLineage) {
+    requestAnimationFrame(async () => {
+      if (!lineageInitialized) {
+        LineageView.initLineage(document.getElementById("lineage-cy"), {
+          onSnippetClick: async (snippetId, pdfPath) => {
+            if (pdfPath && pdfPath !== state.currentPdfPath) {
+              await loadPdf(pdfPath);
+            }
+            const s = state.snippets.find((x) => x.id === snippetId);
+            if (s) previewSnippetInPdf(s);
+          },
+          onDocClick: async (pdfPath) => {
+            if (pdfPath && pdfPath !== state.currentPdfPath) await loadPdf(pdfPath);
+          },
+          groupName,
+          groupColor,
+        });
+        lineageInitialized = true;
+      }
+      LineageView.resize();
+      const data = await getLineageData();
+      LineageView.renderLineage(data.snippets, state.groupsMeta || [], loadClipUrl);
+    });
   } else {
     renderSnippets();
   }
 }
 
-function refreshActiveView() {
+async function refreshActiveView() {
   if (state.view === "map" && mapInitialized) {
-    MapView.renderMap(state.snippets, state.edges, state.layout);
-  } else if (state.view === "groups") {
-    renderGroups();
+    const data = await getMapData();
+    MapView.renderMap(data.snippets, data.edges, state.layout, loadClipUrl);
+  } else if (state.view === "lineage" && lineageInitialized) {
+    const data = await getLineageData();
+    LineageView.renderLineage(data.snippets, state.groupsMeta || [], loadClipUrl);
   } else {
-    renderSnippets();
+    await renderSnippets();
   }
+  renderGroups();
+}
+
+async function getLineageData() {
+  if (state.mapScope === "workspace") return await loadWorkspaceMapData();
+  const taggedSnippets = state.snippets.map((s) => ({
+    ...s,
+    _pdfPath: s._pdfPath || state.currentPdfPath || "(untitled)",
+  }));
+  return { snippets: taggedSnippets, edges: state.edges };
+}
+
+async function getMapData() {
+  if (state.mapScope === "workspace") return await loadWorkspaceMapData();
+  return { snippets: state.snippets, edges: state.edges };
+}
+
+async function loadWorkspaceMapData() {
+  for (const folder of state.workspace.folders || []) {
+    try {
+      folder.pdfs = await invoke("list_pdfs", { dir: folder.path });
+    } catch {}
+  }
+  const folderPdfs = (state.workspace.folders || []).flatMap((f) => f.pdfs || []);
+  const allPaths = [...new Set([...(state.workspace.files || []), ...folderPdfs])];
+  if (allPaths.length === 0) {
+    return state.currentPdfPath
+      ? { snippets: state.snippets.map((s) => ({ ...s, _pdfPath: state.currentPdfPath })), edges: state.edges }
+      : { snippets: [], edges: [] };
+  }
+  const results = await Promise.all(
+    allPaths.map((p) => invoke("read_annot", { pdfPath: p }).catch(() => null)),
+  );
+  const snippets = [];
+  const edges = [];
+  for (let i = 0; i < allPaths.length; i++) {
+    const r = results[i];
+    if (!r) continue;
+    for (const s of r.snippets || []) {
+      snippets.push({ ...s, _pdfPath: allPaths[i] });
+    }
+    for (const e of r.edges || []) edges.push(e);
+  }
+  if (state.currentPdfPath && !allPaths.includes(state.currentPdfPath)) {
+    for (const s of state.snippets) snippets.push({ ...s, _pdfPath: state.currentPdfPath });
+    edges.push(...state.edges);
+  }
+  return { snippets, edges };
+}
+
+async function openGlobalSearch() {
+  const modal = document.getElementById("global-search");
+  modal.hidden = false;
+  const input = document.getElementById("global-search-input");
+  input.value = "";
+  document.getElementById("search-results").innerHTML = "";
+  document.getElementById("global-search-count").textContent = "";
+  renderSearchGroups();
+  setTimeout(() => { input.focus(); }, 30);
+}
+
+function closeGlobalSearch() {
+  document.getElementById("global-search").hidden = true;
+}
+
+document.getElementById("global-search-close").addEventListener("click", closeGlobalSearch);
+document.querySelector("#global-search .modal-backdrop").addEventListener("click", closeGlobalSearch);
+
+let globalSearchTimer = null;
+document.getElementById("global-search-input").addEventListener("input", (e) => {
+  const q = e.target.value;
+  clearTimeout(globalSearchTimer);
+  globalSearchTimer = setTimeout(() => runGlobalSearch(q), 120);
+});
+
+async function runGlobalSearch(query) {
+  const list = document.getElementById("search-results");
+  const counter = document.getElementById("global-search-count");
+  if (!query || query.trim().length < 1) {
+    list.innerHTML = "";
+    counter.textContent = "";
+    return;
+  }
+  const data = await loadWorkspaceMapData();
+  const ql = query.toLowerCase();
+  const matches = (data.snippets || []).filter((s) => {
+    return (s.text || "").toLowerCase().includes(ql) ||
+           (s.comment || "").toLowerCase().includes(ql);
+  });
+  counter.textContent = `${matches.length} match${matches.length === 1 ? "" : "es"}`;
+  renderSearchResults(matches, query);
+}
+
+function renderSearchResults(matches, query) {
+  const list = document.getElementById("search-results");
+  list.innerHTML = "";
+  if (matches.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "search-empty";
+    empty.textContent = "No matches.";
+    list.appendChild(empty);
+    return;
+  }
+  for (const s of matches.slice(0, 200)) {
+    const li = document.createElement("li");
+    li.className = "search-result";
+    li.draggable = true;
+    li.dataset.snippetId = s.id;
+    li.dataset.pdfPath = s._pdfPath || state.currentPdfPath || "";
+    const filename = (li.dataset.pdfPath || "").split("/").pop() || "?";
+
+    const meta = document.createElement("div");
+    meta.className = "search-result-meta";
+    const fileSpan = document.createElement("span");
+    fileSpan.className = "search-result-file";
+    fileSpan.textContent = filename;
+    const pageSpan = document.createElement("span");
+    pageSpan.className = "search-result-page";
+    pageSpan.textContent = `p.${s.page}`;
+    meta.append(fileSpan, pageSpan);
+
+    const text = document.createElement("div");
+    text.className = "search-result-text";
+    text.innerHTML = highlightExcerpt(s.text || "", query, 140);
+
+    li.append(meta, text);
+    if (s.comment) {
+      const c = document.createElement("div");
+      c.className = "search-result-comment";
+      c.innerHTML = highlightExcerpt(s.comment, query, 100);
+      li.appendChild(c);
+    }
+
+    li.addEventListener("dragstart", (e) => {
+      e.dataTransfer.setData(
+        "application/x-snippet",
+        JSON.stringify({ snippetId: s.id, pdfPath: li.dataset.pdfPath }),
+      );
+      e.dataTransfer.effectAllowed = "link";
+      li.classList.add("dragging");
+    });
+    li.addEventListener("dragend", () => li.classList.remove("dragging"));
+
+    list.appendChild(li);
+  }
+}
+
+function highlightExcerpt(text, query, maxLen) {
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx < 0) return escapeHtmlString(text.slice(0, maxLen));
+  const before = Math.max(0, idx - 30);
+  const after = Math.min(text.length, idx + query.length + (maxLen - 30 - query.length));
+  const prefix = before > 0 ? "…" : "";
+  const suffix = after < text.length ? "…" : "";
+  return prefix +
+    escapeHtmlString(text.slice(before, idx)) +
+    "<mark>" + escapeHtmlString(text.slice(idx, idx + query.length)) + "</mark>" +
+    escapeHtmlString(text.slice(idx + query.length, after)) +
+    suffix;
+}
+
+function escapeHtmlString(s) {
+  const div = document.createElement("div");
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+function renderSearchGroups() {
+  const list = document.getElementById("search-groups-list");
+  list.innerHTML = "";
+  const groups = state.groupsMeta || [];
+  if (groups.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "search-groups-empty";
+    empty.textContent = "no groups yet";
+    list.appendChild(empty);
+    return;
+  }
+  for (const g of groups) {
+    const li = document.createElement("li");
+    li.className = "search-group";
+    li.dataset.groupId = g.id;
+    const dot = document.createElement("span");
+    dot.className = "search-group-dot";
+    dot.style.background = groupColor(g.id);
+    const name = document.createElement("span");
+    name.className = "search-group-name";
+    name.textContent = groupName(g.id);
+    li.append(dot, name);
+    li.addEventListener("dragover", (e) => {
+      if (e.dataTransfer.types.includes("application/x-snippet")) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "link";
+        li.classList.add("drop-target");
+      }
+    });
+    li.addEventListener("dragleave", () => li.classList.remove("drop-target"));
+    li.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      li.classList.remove("drop-target");
+      const raw = e.dataTransfer.getData("application/x-snippet");
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      await addSnippetToGroupRemote(data.pdfPath, data.snippetId, g.id);
+      flashElement(li);
+    });
+    list.appendChild(li);
+  }
+}
+
+async function addSnippetToGroupRemote(pdfPath, snippetId, groupId) {
+  if (!pdfPath) return;
+  try {
+    const af = await invoke("read_annot", { pdfPath });
+    const snippet = (af.snippets || []).find((s) => s.id === snippetId);
+    if (!snippet) return;
+    snippet.groups = snippet.groups || [];
+    if (!snippet.groups.includes(groupId)) snippet.groups.push(groupId);
+    await invoke("write_annot", { pdfPath, payload: af });
+    if (pdfPath === state.currentPdfPath) {
+      const local = state.snippets.find((s) => s.id === snippetId);
+      if (local) {
+        local.groups = local.groups || [];
+        if (!local.groups.includes(groupId)) local.groups.push(groupId);
+      }
+      refreshActiveView();
+      applyAllHighlights();
+    }
+  } catch (err) {
+    console.error("addSnippetToGroupRemote failed", err);
+  }
+}
+
+function flashElement(el) {
+  el.classList.add("flash");
+  setTimeout(() => el.classList.remove("flash"), 400);
+}
+
+async function setMapScope(scope) {
+  if (scope === state.mapScope) return;
+  state.mapScope = scope;
+  document.querySelectorAll("#map-scope .seg-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.scope === scope);
+  });
+  await refreshActiveView();
 }
 
 function renderGroups() {
@@ -1106,10 +1905,35 @@ function renderGroups() {
     li.dataset.groupId = id;
     const memberCount = counts.get(id) || 0;
     if (memberCount === 0) li.classList.add("empty");
+    if (meta.hidden) li.classList.add("bubble-hidden");
 
-    const dot = document.createElement("span");
+    li.addEventListener("dragover", (e) => {
+      if (!e.dataTransfer.types.includes("text/plain")) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "link";
+      li.classList.add("drop-target");
+    });
+    li.addEventListener("dragleave", () => li.classList.remove("drop-target"));
+    li.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      li.classList.remove("drop-target");
+      const snippetId = e.dataTransfer.getData("text/plain");
+      if (!snippetId) return;
+      const snippet = state.snippets.find((x) => x.id === snippetId);
+      if (!snippet) return;
+      snippet.groups = snippet.groups || [];
+      if (!snippet.groups.includes(id)) snippet.groups.push(id);
+      await persist();
+      refreshActiveView();
+      applyAllHighlights();
+    });
+
+    const dot = document.createElement("input");
+    dot.type = "color";
     dot.className = "group-row-dot";
-    dot.style.background = groupColor(id);
+    dot.value = groupColorHex(id);
+    dot.title = "Click to change group color";
+    dot.addEventListener("input", () => setGroupColor(id, dot.value));
 
     const input = document.createElement("input");
     input.type = "text";
@@ -1127,6 +1951,15 @@ function renderGroups() {
     const n = counts.get(id) || 0;
     count.textContent = n === 0 ? "not in this doc" : `${n} here`;
 
+    const eye = document.createElement("button");
+    eye.className = "group-row-eye";
+    eye.textContent = meta.hidden ? "○" : "●";
+    eye.title = meta.hidden ? "Group hidden from bubbles — click to show" : "Click to hide group from drag-bubbles";
+    eye.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setGroupHidden(id, !meta.hidden);
+    });
+
     const del = document.createElement("button");
     del.className = "group-row-delete";
     del.textContent = "delete";
@@ -1136,20 +1969,13 @@ function renderGroups() {
       await deleteGroup(id);
     });
 
-    li.append(dot, input, count, del);
+    li.append(dot, input, count, eye, del);
     list.appendChild(li);
   }
 }
 
-function switchLayout(layout) {
-  state.layout = layout;
-  document.querySelectorAll("#layout-toggle .seg-btn").forEach((b) => {
-    b.classList.toggle("active", b.dataset.layout === layout);
-  });
-  MapView.renderMap(state.snippets, state.edges, state.layout);
-}
-
 function handleEdgeSelection(edge) {
+  if (edge && edge.data("isMembership")) return;
   selectedEdge = edge;
   const editor = document.getElementById("edge-editor");
   if (!edge) {
@@ -1212,20 +2038,62 @@ function attachResize(handle, side, sign) {
   });
 }
 
-function openSummary() {
+async function getSummaryData() {
+  if (state.summaryScope === "workspace") {
+    const data = await loadWorkspaceMapData();
+    const sources = new Set();
+    for (const s of data.snippets) {
+      sources.add(s._pdfPath || state.currentPdfPath || "");
+    }
+    return { snippets: data.snippets, sources: [...sources].filter(Boolean) };
+  }
+  return {
+    snippets: state.snippets.map((s) => ({ ...s, _pdfPath: state.currentPdfPath })),
+    sources: state.currentPdfPath ? [state.currentPdfPath] : [],
+  };
+}
+
+function setSummaryScope(scope) {
+  if (scope === state.summaryScope) return;
+  state.summaryScope = scope;
+  document.querySelectorAll("#summary-scope .seg-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.scope === scope);
+  });
+  openSummary();
+}
+
+function setSummaryFormat(fmt) {
+  if (fmt === state.summaryFormat) return;
+  state.summaryFormat = fmt;
+  document.querySelectorAll("#summary-format .seg-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.format === fmt);
+  });
+}
+
+async function openSummary() {
   const modal = document.getElementById("summary-modal");
   const titleEl = document.getElementById("summary-title");
   const metaEl = document.getElementById("summary-meta");
   const contentEl = document.getElementById("summary-content");
 
-  titleEl.textContent = state.source.title || "Summary";
+  const { snippets, sources } = await getSummaryData();
+  const isWorkspace = state.summaryScope === "workspace";
+
+  titleEl.textContent = isWorkspace
+    ? `Workspace summary`
+    : (state.source.title || "Summary");
   metaEl.textContent = [
-    state.source.author,
-    `${state.snippets.length} snippet${state.snippets.length === 1 ? "" : "s"}`,
+    isWorkspace ? `${sources.length} sources` : state.source.author,
+    `${snippets.length} snippet${snippets.length === 1 ? "" : "s"}`,
   ].filter(Boolean).join(" · ");
 
   contentEl.innerHTML = "";
-  const ordered = orderedSnippets();
+  const ordered = [...snippets].sort((a, b) => {
+    const ka = [a._pdfPath || "", a.page, a.rects?.[0]?.top ?? 0];
+    const kb = [b._pdfPath || "", b.page, b.rects?.[0]?.top ?? 0];
+    if (ka[0] !== kb[0]) return ka[0] < kb[0] ? -1 : 1;
+    return ka[1] - kb[1] || ka[2] - kb[2];
+  });
 
   const sections = new Map();
   const ungrouped = [];
@@ -1250,7 +2118,8 @@ function openSummary() {
     }
     const itemMeta = document.createElement("div");
     itemMeta.className = "summary-item-meta";
-    itemMeta.textContent = `p.${s.page}`;
+    const fname = (s._pdfPath || "").split("/").pop();
+    itemMeta.textContent = isWorkspace && fname ? `${fname} · p.${s.page}` : `p.${s.page}`;
     const itemText = document.createElement("blockquote");
     itemText.textContent = s.text;
     item.append(itemMeta, itemText);
@@ -1267,7 +2136,7 @@ function openSummary() {
     const groupHeader = document.createElement("div");
     groupHeader.className = "summary-group-header";
     groupHeader.style.color = groupColor(gid);
-    groupHeader.textContent = `● group (${members.length})`;
+    groupHeader.textContent = `● ${groupName(gid)} (${members.length})`;
     contentEl.appendChild(groupHeader);
     for (const s of members) contentEl.appendChild(renderItem(s, gid));
   }
@@ -1291,14 +2160,19 @@ function closeSummary() {
 
 async function copySummary() {
   const lines = [];
-  if (state.source.title) lines.push(state.source.title);
-  if (state.source.author) lines.push(state.source.author);
+  const { snippets, sources } = await getSummaryData();
+  const isWorkspace = state.summaryScope === "workspace";
+  if (!isWorkspace) {
+    if (state.source.title) lines.push(state.source.title);
+    if (state.source.author) lines.push(state.source.author);
+  } else {
+    lines.push(`Workspace summary (${sources.length} sources, ${snippets.length} snippets)`);
+  }
   if (lines.length) lines.push("");
 
-  const ordered = orderedSnippets();
   const sections = new Map();
   const ungrouped = [];
-  for (const s of ordered) {
+  for (const s of snippets) {
     const groups = s.groups || [];
     if (groups.length === 0) {
       ungrouped.push(s);
@@ -1310,13 +2184,14 @@ async function copySummary() {
     }
   }
   const writeSnippet = (s) => {
-    lines.push(`[p.${s.page}] "${s.text}"`);
+    const fname = (s._pdfPath || "").split("/").pop();
+    const ref = isWorkspace && fname ? `${fname} p.${s.page}` : `p.${s.page}`;
+    lines.push(`[${ref}] "${s.text}"`);
     if (s.comment) lines.push(`  → ${s.comment}`);
     lines.push("");
   };
-  let i = 0;
-  for (const [, members] of sections) {
-    lines.push(`— group ${++i} —`);
+  for (const [gid, members] of sections) {
+    lines.push(`— ${groupName(gid)} —`);
     members.forEach(writeSnippet);
   }
   if (ungrouped.length > 0) {
@@ -1332,4 +2207,233 @@ async function copySummary() {
   } catch (err) {
     console.error("clipboard write failed", err);
   }
+}
+
+async function exportSummaryHtml() {
+  const exportBtn = document.getElementById("summary-export");
+  const prev = exportBtn.textContent;
+  exportBtn.textContent = "preparing…";
+  try {
+    const { snippets, sources } = await getSummaryData();
+    const isWorkspace = state.summaryScope === "workspace";
+
+    const imageMap = new Map();
+    const imageSnippets = snippets.filter((s) => s.kind === "image" && s.imagePath);
+    await Promise.all(imageSnippets.map(async (s) => {
+      try {
+        const bytes = await invoke("read_clip", {
+          pdfPath: s._pdfPath || state.currentPdfPath,
+          imagePath: s.imagePath,
+        });
+        const u8 = new Uint8Array(bytes);
+        let binary = "";
+        for (let i = 0; i < u8.length; i++) binary += String.fromCharCode(u8[i]);
+        imageMap.set(s.id, `data:image/png;base64,${btoa(binary)}`);
+      } catch (err) {
+        console.warn("clip read failed for export:", s.imagePath);
+      }
+    }));
+
+    const sections = new Map();
+    const ungrouped = [];
+    for (const s of snippets) {
+      const gs = s.groups || [];
+      if (gs.length === 0) ungrouped.push(s);
+      else for (const gid of gs) {
+        if (!sections.has(gid)) sections.set(gid, []);
+        sections.get(gid).push(s);
+      }
+    }
+
+    const title = isWorkspace
+      ? "Workspace summary"
+      : (state.source.title || "Snippet compilation");
+
+    const html = state.summaryFormat === "plain"
+      ? renderHtmlExportPlain({ title, sources, snippets, sections, ungrouped, imageMap, isWorkspace })
+      : renderHtmlExport({ title, sources, snippets, sections, ungrouped, imageMap, isWorkspace });
+
+    const filename = sanitizeFilename(`${title}.html`);
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+    exportBtn.textContent = "exported";
+    setTimeout(() => { exportBtn.textContent = prev; }, 1100);
+  } catch (err) {
+    console.error("HTML export failed", err);
+    exportBtn.textContent = "failed";
+    setTimeout(() => { exportBtn.textContent = prev; }, 1100);
+  }
+}
+
+function sanitizeFilename(s) {
+  return s.replace(/[\\/:*?"<>|]+/g, "_").trim() || "summary.html";
+}
+
+function renderHtmlExportPlain({ title, sources, snippets, sections, ungrouped, imageMap, isWorkspace }) {
+  const esc = (s) => {
+    const d = document.createElement("div");
+    d.textContent = s == null ? "" : String(s);
+    return d.innerHTML;
+  };
+  const renderSnippet = (s) => {
+    const path = s._pdfPath || "";
+    const filename = path.split("/").pop() || "?";
+    const href = path ? `file://${encodeURI(path)}#page=${s.page}` : "";
+    const cite = href
+      ? `<a href="${esc(href)}">${esc(filename)} p.${s.page}</a>`
+      : `${esc(filename)} p.${s.page}`;
+    let body;
+    if (s.kind === "image" && imageMap.get(s.id)) {
+      body = `<p><img src="${imageMap.get(s.id)}" alt="${esc(s.text || "")}"></p>`;
+    } else if (s.kind === "image") {
+      body = `<p><em>[image clip missing]</em></p>`;
+    } else {
+      body = `<blockquote>${esc(s.text || "")}</blockquote>`;
+    }
+    const comment = s.comment ? `<p>→ ${esc(s.comment)}</p>` : "";
+    return `<p><small>[${cite}]</small></p>\n${body}\n${comment}`;
+  };
+  const sortByDocAndPage = (a, b) => {
+    if ((a._pdfPath || "") !== (b._pdfPath || "")) {
+      return (a._pdfPath || "") < (b._pdfPath || "") ? -1 : 1;
+    }
+    return a.page - b.page;
+  };
+  const out = [];
+  out.push(`<h1>${esc(title)}</h1>`);
+  out.push(`<p>${snippets.length} snippets · ${sections.size} groups${isWorkspace ? ` · ${sources.length} sources` : ""}</p>`);
+  if (sources.length > 0) {
+    out.push(`<p><small>${sources.map((p) => esc(p.split("/").pop() || p)).join(" · ")}</small></p>`);
+  }
+  out.push(`<hr>`);
+  for (const [gid, members] of sections) {
+    members.sort(sortByDocAndPage);
+    out.push(`<h2>${esc(groupName(gid))} (${members.length})</h2>`);
+    for (const s of members) out.push(renderSnippet(s));
+  }
+  if (ungrouped.length > 0) {
+    ungrouped.sort(sortByDocAndPage);
+    out.push(`<h2>Unfiled (${ungrouped.length})</h2>`);
+    for (const s of ungrouped) out.push(renderSnippet(s));
+  }
+  out.push(`<hr><p><small>Exported ${esc(new Date().toLocaleString())}</small></p>`);
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>${esc(title)}</title>
+</head>
+<body>
+${out.join("\n")}
+</body>
+</html>`;
+}
+
+function renderHtmlExport({ title, sources, snippets, sections, ungrouped, imageMap, isWorkspace }) {
+  const esc = (s) => {
+    const d = document.createElement("div");
+    d.textContent = s == null ? "" : String(s);
+    return d.innerHTML;
+  };
+
+  const renderSnippet = (s, color) => {
+    const path = s._pdfPath || "";
+    const filename = path.split("/").pop() || "?";
+    const href = path ? `file://${encodeURI(path)}#page=${s.page}` : "";
+    const cite = href
+      ? `<a href="${esc(href)}">${esc(filename)} · p.${s.page}</a>`
+      : `${esc(filename)} · p.${s.page}`;
+    let body;
+    if (s.kind === "image" && imageMap.get(s.id)) {
+      body = `<div class="snippet-image"><img src="${imageMap.get(s.id)}" alt="${esc(s.text || "")}"></div>`;
+    } else if (s.kind === "image") {
+      body = `<div class="snippet-text muted">[image clip missing]</div>`;
+    } else {
+      body = `<div class="snippet-text">${esc(s.text || "")}</div>`;
+    }
+    const comment = s.comment
+      ? `<div class="snippet-comment">${esc(s.comment)}</div>`
+      : "";
+    return `<div class="snippet" style="border-left-color:${color};">
+      <div class="snippet-meta">${cite}</div>
+      ${body}
+      ${comment}
+    </div>`;
+  };
+
+  const sortByDocAndPage = (a, b) => {
+    if ((a._pdfPath || "") !== (b._pdfPath || "")) {
+      return (a._pdfPath || "") < (b._pdfPath || "") ? -1 : 1;
+    }
+    return a.page - b.page;
+  };
+
+  const sectionHtml = [];
+  for (const [gid, members] of sections) {
+    const color = groupColor(gid);
+    const light = lightenColor(color);
+    const dark = darkenColor(color);
+    members.sort(sortByDocAndPage);
+    sectionHtml.push(`<section class="group-section">
+      <h2 class="group-heading" style="background:${light};color:${dark};border-color:${color};">
+        <span class="group-dot" style="background:${color};"></span>${esc(groupName(gid))}
+        <span class="group-count">${members.length}</span>
+      </h2>
+      ${members.map((s) => renderSnippet(s, color)).join("\n")}
+    </section>`);
+  }
+  if (ungrouped.length > 0) {
+    ungrouped.sort(sortByDocAndPage);
+    sectionHtml.push(`<section class="group-section">
+      <h2 class="group-heading unfiled">Unfiled <span class="group-count">${ungrouped.length}</span></h2>
+      ${ungrouped.map((s) => renderSnippet(s, "#bbb")).join("\n")}
+    </section>`);
+  }
+
+  const sourceList = sources.map((p) => esc(p.split("/").pop() || p)).join(" · ");
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>${esc(title)}</title>
+<style>
+  :root { --fg: #1f1f1f; --dim: #666; --paper: #f6f4ee; --line: #e2dfd6; }
+  body { font-family: ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif; max-width: 820px; margin: 56px auto; padding: 0 28px; color: var(--fg); line-height: 1.55; background: var(--paper); }
+  h1 { font-family: ui-serif, "Iowan Old Style", Charter, Georgia, serif; font-size: 28px; margin: 0 0 6px; }
+  .doc-meta { color: var(--dim); font-size: 13px; }
+  .sources { color: var(--dim); font-size: 11px; font-family: ui-monospace, "SF Mono", monospace; margin: 6px 0 40px; padding-bottom: 16px; border-bottom: 1px solid var(--line); letter-spacing: 0.2px; }
+  .group-section { margin: 32px 0; }
+  .group-heading { display: inline-flex; align-items: center; gap: 8px; font-family: ui-serif, "Iowan Old Style", Charter, Georgia, serif; font-style: italic; font-size: 15px; font-weight: 600; padding: 6px 14px; border-radius: 14px; border: 1px solid; margin-bottom: 14px; }
+  .group-heading.unfiled { background: #ececec; color: #666; border-color: #d4d2c8; font-style: normal; }
+  .group-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .group-count { font-family: ui-monospace, "SF Mono", monospace; font-size: 11px; opacity: 0.7; font-weight: 400; }
+  .snippet { margin: 14px 0 22px; padding: 4px 0 4px 14px; border-left: 3px solid; }
+  .snippet-meta { font-family: ui-monospace, "SF Mono", monospace; font-size: 11px; color: var(--dim); margin-bottom: 5px; letter-spacing: 0.2px; }
+  .snippet-meta a { color: #0a6; text-decoration: none; }
+  .snippet-meta a:hover { text-decoration: underline; }
+  .snippet-text { font-family: ui-serif, "Iowan Old Style", Charter, Georgia, serif; font-size: 14.5px; line-height: 1.55; color: #1f1f1f; }
+  .snippet-text.muted { color: #999; font-style: italic; }
+  .snippet-image img { max-width: 100%; border: 1px solid var(--line); border-radius: 3px; display: block; }
+  .snippet-comment { margin-top: 8px; padding: 8px 12px; background: #ece9df; border-radius: 4px; font-size: 12.5px; color: #2a2a2a; line-height: 1.5; }
+  footer { color: var(--dim); font-size: 11px; margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); font-family: ui-monospace, "SF Mono", monospace; }
+  @media print { body { background: white; } .group-heading { background: white !important; border-color: #000 !important; } }
+</style>
+</head>
+<body>
+  <h1>${esc(title)}</h1>
+  <div class="doc-meta">${snippets.length} snippets · ${sections.size} groups${isWorkspace ? ` · ${sources.length} sources` : ""}</div>
+  <div class="sources">${sourceList}</div>
+  ${sectionHtml.join("\n")}
+  <footer>Exported ${esc(new Date().toLocaleString())}</footer>
+</body>
+</html>`;
 }

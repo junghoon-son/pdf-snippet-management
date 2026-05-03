@@ -50,6 +50,8 @@ struct GroupMeta {
     id: String,
     #[serde(default)]
     name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    color: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone)]
@@ -161,6 +163,24 @@ fn check_paths(paths: Vec<String>) -> Vec<bool> {
     paths.iter().map(|p| Path::new(p).exists()).collect()
 }
 
+#[tauri::command]
+fn copy_image_to_clipboard(pdf_path: String, image_path: String) -> Result<(), String> {
+    let p = resolve_clip(&pdf_path, &image_path);
+    let bytes = fs::read(&p).map_err(|e| e.to_string())?;
+    let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
+    let rgba = img.to_rgba8();
+    let (w, h) = rgba.dimensions();
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    clipboard
+        .set_image(arboard::ImageData {
+            width: w as usize,
+            height: h as usize,
+            bytes: std::borrow::Cow::Owned(rgba.into_raw()),
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn global_groups_path() -> Result<PathBuf, String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
     let dir = Path::new(&home).join(".pdf-annotator");
@@ -221,6 +241,7 @@ fn read_annot(pdf_path: String) -> Result<AnnotFile, String> {
                 af.groups.push(GroupMeta {
                     id: gid.clone(),
                     name: String::new(),
+                    color: None,
                 });
             }
         }
@@ -251,7 +272,8 @@ pub fn run() {
             delete_clip,
             check_paths,
             read_global_groups,
-            write_global_groups
+            write_global_groups,
+            copy_image_to_clipboard
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
