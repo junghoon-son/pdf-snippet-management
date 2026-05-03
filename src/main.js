@@ -434,8 +434,14 @@ async function renderWorkspace() {
     remove.title = "Remove from workspace";
     remove.addEventListener("click", (e) => {
       e.stopPropagation();
+      const removedPaths = folder.pdfs || [];
       state.workspace.folders = state.workspace.folders.filter((f) => f.path !== folder.path);
+      if (removedPaths.includes(state.currentPdfPath)) {
+        state.currentPdfPath = null;
+        state.workspace.currentPdfPath = null;
+      }
       saveWorkspace();
+      for (const p of removedPaths) removeRecent(p);
       renderWorkspace();
     });
 
@@ -499,7 +505,12 @@ async function renderWorkspace() {
       x.addEventListener("click", (e) => {
         e.stopPropagation();
         state.workspace.files = state.workspace.files.filter((f) => f !== p);
+        if (state.currentPdfPath === p) {
+          state.currentPdfPath = null;
+          state.workspace.currentPdfPath = null;
+        }
         saveWorkspace();
+        removeRecent(p);
         renderWorkspace();
       });
       li.appendChild(x);
@@ -755,6 +766,12 @@ function addRecent(path) {
   const next = getRecents().filter((p) => p !== path);
   next.unshift(path);
   next.splice(RECENTS_LIMIT);
+  try { localStorage.setItem(RECENTS_KEY, JSON.stringify(next)); } catch {}
+  renderRecents();
+}
+
+function removeRecent(path) {
+  const next = getRecents().filter((p) => p !== path);
   try { localStorage.setItem(RECENTS_KEY, JSON.stringify(next)); } catch {}
   renderRecents();
 }
