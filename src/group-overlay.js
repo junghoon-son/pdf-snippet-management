@@ -154,15 +154,35 @@ export function openGroupOverlay({ snippet, allSnippets, allGroups, container, a
     let cursor = { x: anchor.x - paneRect.left, y: anchor.y - paneRect.top };
     let cardW = 0, cardH = 0;
     let pendingFrame = false;
+    let renderedX = cursor.x, renderedY = cursor.y;
+    const SNAP_PULL = 0.55;
+    const SNAP_EASE = 0.28;
     const placeCard = () => {
       if (pendingFrame) return;
       pendingFrame = true;
       requestAnimationFrame(() => {
         pendingFrame = false;
         if (!cardW) { cardW = card.offsetWidth; cardH = card.offsetHeight; }
-        const x = cursor.x - cardW / 2;
-        const y = cursor.y - cardH / 2;
+        let targetX = cursor.x;
+        let targetY = cursor.y;
+        if (hoveredId) {
+          const hot = bubbleEls.find(({ bubble: b }) => b.id === hoveredId);
+          if (hot) {
+            targetX = cursor.x + (hot.bubble.x - cursor.x) * SNAP_PULL;
+            targetY = cursor.y + (hot.bubble.y - cursor.y) * SNAP_PULL;
+          }
+        }
+        renderedX += (targetX - renderedX) * SNAP_EASE;
+        renderedY += (targetY - renderedY) * SNAP_EASE;
+        if (Math.abs(targetX - renderedX) < 0.5) renderedX = targetX;
+        if (Math.abs(targetY - renderedY) < 0.5) renderedY = targetY;
+        const x = renderedX - cardW / 2;
+        const y = renderedY - cardH / 2;
         card.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+        if (renderedX !== targetX || renderedY !== targetY) {
+          pendingFrame = false;
+          placeCard();
+        }
       });
     };
     requestAnimationFrame(() => { cardW = card.offsetWidth; cardH = card.offsetHeight; placeCard(); });
@@ -207,6 +227,7 @@ export function openGroupOverlay({ snippet, allSnippets, allGroups, container, a
           el.classList.toggle("hot", bubble.id === bestId);
         }
         card.classList.toggle("over-target", bestId !== null);
+        placeCard();
       }
     };
 

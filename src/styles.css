@@ -148,10 +148,8 @@ body.resizing * { cursor: col-resize !important; }
 }
 
 #sidebar-collapse {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  z-index: 4;
+  align-self: flex-end;
+  margin: 4px 6px 0;
   width: 22px;
   height: 22px;
   border: 1px solid var(--border);
@@ -161,6 +159,7 @@ body.resizing * { cursor: col-resize !important; }
   cursor: pointer;
   font-size: 13px;
   line-height: 1;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -170,8 +169,8 @@ body.resizing * { cursor: col-resize !important; }
 body.sidebar-collapsed #sidebar > *:not(#sidebar-collapse) { display: none; }
 body.sidebar-collapsed #sidebar { overflow: hidden; }
 body.sidebar-collapsed #sidebar-collapse {
-  position: static;
-  margin: 4px auto;
+  align-self: center;
+  margin: 4px 0 0;
 }
 body.sidebar-collapsed #app { grid-template-columns: 32px 4px 1fr 4px var(--snippets-w); }
 body.sidebar-collapsed #resize-left { pointer-events: none; opacity: 0.3; }
@@ -512,8 +511,8 @@ body.pane-max #snippets-pane { border-left: none; }
 .group-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 12px 4px 18px;
+  gap: 6px;
+  padding: 2px 10px 2px 14px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.05);
 }
 .group-row:last-child { border-bottom: none; }
@@ -521,15 +520,15 @@ body.pane-max #snippets-pane { border-left: none; }
 .group-row.empty .group-row-count { color: #8a8a8a; font-style: italic; }
 .group-row.empty input { color: var(--text-dim); }
 .group-row-dot {
-  flex: 0 0 14px;
-  inline-size: 14px;
-  block-size: 14px;
-  width: 14px;
-  height: 14px;
-  min-width: 14px;
-  min-height: 14px;
-  max-width: 14px;
-  max-height: 14px;
+  flex: 0 0 12px;
+  inline-size: 12px;
+  block-size: 12px;
+  width: 12px;
+  height: 12px;
+  min-width: 12px;
+  min-height: 12px;
+  max-width: 12px;
+  max-height: 12px;
   border-radius: 50%;
   border: 1px solid rgba(0, 0, 0, 0.12);
   padding: 0;
@@ -549,8 +548,8 @@ body.pane-max #snippets-pane { border-left: none; }
   border: none;
   color: var(--text);
   font-family: inherit;
-  font-size: 12px;
-  padding: 4px 0;
+  font-size: 11.5px;
+  padding: 2px 0;
   border-bottom: 1px dashed var(--border);
 }
 .group-row input::placeholder { color: #a8a292; font-style: italic; }
@@ -1172,10 +1171,12 @@ body.dragging-snippet .group-row:hover {
 }
 #group-overlay .bubble.hot rect,
 #group-overlay .bubble.hot circle {
-  filter: drop-shadow(0 0 12px rgba(78, 201, 176, 0.85));
+  filter: drop-shadow(0 0 18px rgba(46, 165, 140, 0.95)) drop-shadow(0 0 6px rgba(46, 165, 140, 0.6));
   fill-opacity: 1;
-  stroke-width: 3;
+  stroke-width: 4;
+  stroke: #2ea58c;
 }
+#group-overlay .bubble.hot { transform-origin: center; }
 #group-overlay .bubble.hot { animation: bubble-pulse 600ms ease-out infinite; }
 @keyframes bubble-pulse {
   0%, 100% { transform-origin: center; }
@@ -1185,20 +1186,27 @@ body.dragging-snippet .group-row:hover {
   position: absolute;
   pointer-events: none;
   width: 220px;
-  background: #fbf9f1;
+  background: rgba(251, 249, 241, 0.92);
+  backdrop-filter: blur(6px);
   border: 1px solid var(--accent);
   border-radius: 6px;
   padding: 10px 12px;
   box-shadow: 0 12px 30px rgba(60, 50, 30, 0.35), 0 0 0 1px rgba(46, 165, 140, 0.4);
   font-family: inherit;
   opacity: 0;
-  transition: opacity 160ms ease-out, box-shadow 180ms ease-out;
+  transition: opacity 160ms ease-out, box-shadow 180ms ease-out, background 180ms ease-out, border-color 180ms ease-out;
   will-change: transform;
   transform: translate3d(0, 0, 0);
 }
-#group-overlay.active .lifted-card { opacity: 1; }
+#group-overlay.active .lifted-card { opacity: 0.95; }
 .lifted-card.over-target {
-  box-shadow: 0 12px 30px rgba(60, 50, 30, 0.35), 0 0 0 2px var(--accent), 0 0 24px rgba(46, 165, 140, 0.5);
+  background: rgba(251, 249, 241, 1);
+  border-color: var(--accent);
+  border-width: 2px;
+  box-shadow:
+    0 14px 34px rgba(46, 165, 140, 0.35),
+    0 0 0 3px var(--accent),
+    0 0 36px rgba(46, 165, 140, 0.7);
 }
 .lifted-card .lifted-meta {
   font-family: ui-monospace, "SF Mono", monospace;

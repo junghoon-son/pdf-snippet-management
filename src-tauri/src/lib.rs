@@ -152,6 +152,11 @@ fn read_pdf(path: String) -> Result<Vec<u8>, String> {
     fs::read(&path).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn write_file(path: String, bytes: Vec<u8>) -> Result<(), String> {
+    fs::write(&path, bytes).map_err(|e| e.to_string())
+}
+
 fn clip_dir_for(pdf_path: &str) -> Result<(PathBuf, String), String> {
     let pdf = Path::new(pdf_path);
     let parent = pdf.parent().ok_or("PDF has no parent directory")?;
@@ -307,6 +312,7 @@ pub fn run() {
             list_pdfs,
             list_documents,
             read_pdf,
+            write_file,
             read_annot,
             write_annot,
             write_clip,

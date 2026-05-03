@@ -21,6 +21,47 @@ const fsaStore = IS_TAURI ? null : new FsaStore();
 setStore(IS_TAURI ? new TauriStore() : fsaStore);
 document.body.dataset.runtime = IS_TAURI ? "tauri" : "web";
 
+async function saveFile({ suggestedName, mimeType, content }) {
+  const isText = typeof content === "string";
+  if (IS_TAURI) {
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    const { invoke } = await import("@tauri-apps/api/core");
+    const chosen = await save({ defaultPath: suggestedName });
+    if (!chosen) return null;
+    const bytes = isText ? new TextEncoder().encode(content) : new Uint8Array(content);
+    await invoke("write_file", { path: chosen, bytes: Array.from(bytes) });
+    return chosen;
+  }
+  if ("showSaveFilePicker" in window) {
+    try {
+      const ext = suggestedName.includes(".") ? "." + suggestedName.split(".").pop() : "";
+      const types = mimeType
+        ? [{ description: mimeType, accept: { [mimeType]: ext ? [ext] : [] } }]
+        : undefined;
+      const handle = await window.showSaveFilePicker({ suggestedName, types });
+      const writable = await handle.createWritable();
+      await writable.write(isText ? content : (content instanceof Blob ? content : new Blob([content], { type: mimeType })));
+      await writable.close();
+      return handle.name;
+    } catch (err) {
+      if (err && err.name === "AbortError") return null;
+      throw err;
+    }
+  }
+  const blob = isText
+    ? new Blob([content], { type: mimeType })
+    : (content instanceof Blob ? content : new Blob([content], { type: mimeType }));
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = suggestedName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return suggestedName;
+}
+
 async function pickBrowserFile(types) {
   if ("showOpenFilePicker" in window) {
     try {
@@ -725,23 +766,21 @@ document.getElementById("groups-collapse").addEventListener("click", () => {
 document.getElementById("groups-export").addEventListener("click", exportGroups);
 document.getElementById("groups-import").addEventListener("click", importGroups);
 
-function exportGroups() {
+async function exportGroups() {
   const payload = {
     version: 1,
     exportedAt: new Date().toISOString(),
     groups: state.groupsMeta || [],
   };
   const json = JSON.stringify(payload, null, 2);
-  const blob = new Blob([json], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `pdf-annotator-groups-${new Date().toISOString().slice(0, 10)}.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  flashButton("groups-export", "exported");
+  const suggestedName = `pdf-annotator-groups-${new Date().toISOString().slice(0, 10)}.json`;
+  try {
+    const saved = await saveFile({ suggestedName, mimeType: "application/json", content: json });
+    if (saved) flashButton("groups-export", "exported");
+  } catch (err) {
+    console.error("groups export failed", err);
+    flashButton("groups-export", "failed");
+  }
 }
 
 async function importGroups() {
@@ -2528,17 +2567,12 @@ async function exportSummaryHtml() {
       : renderHtmlExport({ title, sources, snippets, sections, ungrouped, imageMap, isWorkspace });
 
     const filename = sanitizeFilename(`${title}.html`);
-    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-
-    exportBtn.textContent = "exported";
+    const saved = await saveFile({
+      suggestedName: filename,
+      mimeType: "text/html",
+      content: html,
+    });
+    exportBtn.textContent = saved ? "exported" : "cancelled";
     setTimeout(() => { exportBtn.textContent = prev; }, 1100);
   } catch (err) {
     console.error("HTML export failed", err);
