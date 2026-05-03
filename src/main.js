@@ -987,14 +987,52 @@ async function setScale(next) {
   applyAllHighlights();
 }
 
+let pinchActive = false;
+let pinchPreviewScale = 1;
+let pinchSettleTimer = null;
+viewerScroll.addEventListener("wheel", (e) => {
+  if (!e.ctrlKey) return;
+  if (!state.pdfDoc) return;
+  e.preventDefault();
+  if (!pinchActive) {
+    pinchActive = true;
+    pinchPreviewScale = 1;
+    const rect = viewerContainer.getBoundingClientRect();
+    const ox = e.clientX - rect.left;
+    const oy = e.clientY - rect.top;
+    viewerContainer.style.transformOrigin = `${ox}px ${oy}px`;
+    viewerContainer.style.willChange = "transform";
+  }
+  const factor = Math.exp(-e.deltaY * 0.012);
+  let target = pinchPreviewScale * factor;
+  const minPreview = MIN_SCALE / state.scale;
+  const maxPreview = MAX_SCALE / state.scale;
+  target = Math.max(minPreview, Math.min(maxPreview, target));
+  pinchPreviewScale = target;
+  viewerContainer.style.transform = `scale(${pinchPreviewScale})`;
+  updateZoomLabel(state.scale * pinchPreviewScale);
+
+  clearTimeout(pinchSettleTimer);
+  pinchSettleTimer = setTimeout(async () => {
+    pinchActive = false;
+    const finalScale = state.scale * pinchPreviewScale;
+    pinchPreviewScale = 1;
+    viewerContainer.style.transform = "";
+    viewerContainer.style.transformOrigin = "";
+    viewerContainer.style.willChange = "";
+    await setScale(finalScale);
+  }, 220);
+}, { passive: false });
+
 async function fitWidth() {
   if (!state.pdfDoc) return;
   const next = await fitWidthScale(state.pdfDoc, viewerScroll.clientWidth - FIT_PADDING);
   await setScale(next);
 }
 
-function updateZoomLabel() {
-  zoomLevelEl.textContent = `${Math.round(state.scale * 100)}%`;
+function updateZoomLabel(overrideScale) {
+  const s = typeof overrideScale === "number" ? overrideScale : state.scale;
+  zoomLevelEl.textContent = `${Math.round(s * 100)}%`;
 }
 
 viewerContainer.addEventListener("mousedown", (e) => {
