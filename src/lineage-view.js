@@ -46,6 +46,9 @@ export function initLineage(container, callbacks) {
           "text-halign": "center",
           "padding": 6,
           "min-zoomed-font-size": 6,
+          "transition-property": "opacity background-opacity border-width border-color",
+          "transition-duration": "200ms",
+          "transition-timing-function": "ease-out",
         },
       },
       {
@@ -124,6 +127,9 @@ export function initLineage(container, callbacks) {
           "line-color": "#c0b89c",
           "target-arrow-shape": "none",
           "opacity": 0.55,
+          "transition-property": "opacity line-color width",
+          "transition-duration": "200ms",
+          "transition-timing-function": "ease-out",
         },
       },
       {
