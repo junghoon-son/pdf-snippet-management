@@ -290,26 +290,49 @@ function rangeAtFlatOffset(article, start, end) {
   return range;
 }
 
+const TABLE_STRUCTURAL = new Set([
+  "TABLE", "THEAD", "TBODY", "TFOOT", "TR", "COLGROUP", "COL",
+]);
+
+function isWrappable(textNode) {
+  const parent = textNode.parentNode;
+  if (!parent || parent.nodeType !== 1) return false;
+  // <mark> inside table-structural elements (not td/th) gets moved
+  // out by the browser table layout algorithm; skip those.
+  if (TABLE_STRUCTURAL.has(parent.tagName)) return false;
+  return true;
+}
+
+function wrapTextSpan(tn, s, e, snippetId) {
+  if (s >= e) return;
+  if (s < 0) s = 0;
+  if (e > tn.nodeValue.length) e = tn.nodeValue.length;
+  const middle = tn.nodeValue.slice(s, e);
+  if (!middle.trim()) return;
+  const before = tn.nodeValue.slice(0, s);
+  const after = tn.nodeValue.slice(e);
+  const mark = document.createElement("mark");
+  mark.className = "hl";
+  mark.dataset.snippetId = snippetId;
+  mark.textContent = middle;
+  const parent = tn.parentNode;
+  if (before) parent.insertBefore(document.createTextNode(before), tn);
+  parent.insertBefore(mark, tn);
+  if (after) parent.insertBefore(document.createTextNode(after), tn);
+  parent.removeChild(tn);
+}
+
 function wrapRangeAsMark(range, snippetId) {
   if (range.startContainer === range.endContainer && range.startContainer.nodeType === 3) {
     const tn = range.startContainer;
-    const before = tn.nodeValue.slice(0, range.startOffset);
-    const middle = tn.nodeValue.slice(range.startOffset, range.endOffset);
-    const after = tn.nodeValue.slice(range.endOffset);
-    const mark = document.createElement("mark");
-    mark.className = "hl";
-    mark.dataset.snippetId = snippetId;
-    mark.textContent = middle;
-    const parent = tn.parentNode;
-    if (before) parent.insertBefore(document.createTextNode(before), tn);
-    parent.insertBefore(mark, tn);
-    if (after) parent.insertBefore(document.createTextNode(after), tn);
-    parent.removeChild(tn);
+    if (!isWrappable(tn)) return;
+    wrapTextSpan(tn, range.startOffset, range.endOffset, snippetId);
     return;
   }
   const textNodes = [];
   const walker = document.createTreeWalker(range.commonAncestorContainer, NodeFilter.SHOW_TEXT, {
     acceptNode(n) {
+      if (!isWrappable(n)) return NodeFilter.FILTER_REJECT;
       const r = document.createRange();
       r.selectNodeContents(n);
       if (range.compareBoundaryPoints(Range.END_TO_START, r) <= 0 &&
@@ -320,27 +343,12 @@ function wrapRangeAsMark(range, snippetId) {
     },
   });
   let n = walker.nextNode();
-  while (n) {
-    textNodes.push(n);
-    n = walker.nextNode();
-  }
+  while (n) { textNodes.push(n); n = walker.nextNode(); }
   for (const tn of textNodes) {
     let s = 0, e = tn.nodeValue.length;
     if (tn === range.startContainer) s = range.startOffset;
     if (tn === range.endContainer) e = range.endOffset;
-    if (s >= e) continue;
-    const before = tn.nodeValue.slice(0, s);
-    const middle = tn.nodeValue.slice(s, e);
-    const after = tn.nodeValue.slice(e);
-    const mark = document.createElement("mark");
-    mark.className = "hl";
-    mark.dataset.snippetId = snippetId;
-    mark.textContent = middle;
-    const parent = tn.parentNode;
-    if (before) parent.insertBefore(document.createTextNode(before), tn);
-    parent.insertBefore(mark, tn);
-    if (after) parent.insertBefore(document.createTextNode(after), tn);
-    parent.removeChild(tn);
+    wrapTextSpan(tn, s, e, snippetId);
   }
 }
 
