@@ -553,9 +553,8 @@ document.addEventListener("keydown", (e) => {
   }
   const tag = e.target.tagName;
   if (e.key === "Escape") {
-    const ls = document.getElementById("local-search");
-    if (!ls.hidden && document.activeElement && document.activeElement.id === "local-search-input") {
-      closeLocalSearch();
+    if (document.activeElement && document.activeElement.id === "local-search-input") {
+      clearLocalSearch();
       return;
     }
     const gs = document.getElementById("global-search");
@@ -568,27 +567,36 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+const LOCAL_SEARCH_KEY = "pdf-annotator-local-search";
 let localSearchQuery = "";
+try { localSearchQuery = localStorage.getItem(LOCAL_SEARCH_KEY) || ""; } catch {}
+
 function openLocalSearch() {
-  const box = document.getElementById("local-search");
   const input = document.getElementById("local-search-input");
-  box.hidden = false;
-  input.value = localSearchQuery;
+  if (input.value !== localSearchQuery) input.value = localSearchQuery;
   input.focus();
   input.select();
 }
-function closeLocalSearch() {
-  document.getElementById("local-search").hidden = true;
+function clearLocalSearch() {
   const input = document.getElementById("local-search-input");
   input.value = "";
   localSearchQuery = "";
+  try { localStorage.setItem(LOCAL_SEARCH_KEY, ""); } catch {}
   input.blur();
   refreshActiveView();
 }
-document.getElementById("local-search-input").addEventListener("input", (e) => {
-  localSearchQuery = e.target.value;
-  refreshActiveView();
-});
+function closeLocalSearch() { clearLocalSearch(); }
+
+(() => {
+  const input = document.getElementById("local-search-input");
+  input.value = localSearchQuery;
+  input.addEventListener("input", (e) => {
+    localSearchQuery = e.target.value;
+    try { localStorage.setItem(LOCAL_SEARCH_KEY, localSearchQuery); } catch {}
+    refreshActiveView();
+  });
+  document.getElementById("local-search-clear")?.addEventListener("click", clearLocalSearch);
+})();
 
 function snippetMatchesLocal(s) {
   if (!localSearchQuery) return true;
