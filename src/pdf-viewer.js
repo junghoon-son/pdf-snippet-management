@@ -125,20 +125,45 @@ function findPageWrap(node) {
   return n;
 }
 
+function rectArea(r) {
+  return Math.max(0, r.width) * Math.max(0, r.height);
+}
+function rectContains(big, small) {
+  const eps = 0.004;
+  return small.left >= big.left - eps &&
+         small.top >= big.top - eps &&
+         small.left + small.width <= big.left + big.width + eps &&
+         small.top + small.height <= big.top + big.height + eps;
+}
+
 export function applyHighlights(container, snippets) {
   container.querySelectorAll(".highlight-layer").forEach((l) => (l.innerHTML = ""));
+  const byPage = new Map();
   for (const s of snippets) {
-    const wrap = container.querySelector(`.page-wrap[data-page="${s.page}"]`);
+    if (!byPage.has(s.page)) byPage.set(s.page, []);
+    for (const r of s.rects || []) {
+      byPage.get(s.page).push({ rect: r, snippet: s });
+    }
+  }
+  for (const [page, items] of byPage) {
+    const wrap = container.querySelector(`.page-wrap[data-page="${page}"]`);
     if (!wrap) continue;
     const layer = wrap.querySelector(".highlight-layer");
-    for (const r of s.rects || []) {
+    items.sort((a, b) => rectArea(b.rect) - rectArea(a.rect));
+    const placed = [];
+    for (const { rect, snippet } of items) {
+      const covered = placed.some((p) =>
+        p.snippet.id !== snippet.id && rectContains(p.rect, rect),
+      );
+      if (covered) continue;
+      placed.push({ rect, snippet });
       const div = document.createElement("div");
-      div.className = s.kind === "image" ? "hl hl-image" : "hl";
-      div.dataset.snippetId = s.id;
-      div.style.left = `${r.left * 100}%`;
-      div.style.top = `${r.top * 100}%`;
-      div.style.width = `${r.width * 100}%`;
-      div.style.height = `${r.height * 100}%`;
+      div.className = snippet.kind === "image" ? "hl hl-image" : "hl";
+      div.dataset.snippetId = snippet.id;
+      div.style.left = `${rect.left * 100}%`;
+      div.style.top = `${rect.top * 100}%`;
+      div.style.width = `${rect.width * 100}%`;
+      div.style.height = `${rect.height * 100}%`;
       layer.appendChild(div);
     }
   }

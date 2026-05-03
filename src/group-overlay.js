@@ -95,6 +95,16 @@ export function openGroupOverlay({ snippet, allSnippets, allGroups, container, a
     svg.classList.add("bubble-svg");
     overlay.appendChild(svg);
 
+    // Linking line (card → hovered bubble)
+    const linkGroup = document.createElementNS(SVG_NS, "g");
+    linkGroup.classList.add("link-group");
+    const linkGlow = document.createElementNS(SVG_NS, "path");
+    linkGlow.classList.add("link-path", "link-glow");
+    const linkCore = document.createElementNS(SVG_NS, "path");
+    linkCore.classList.add("link-path", "link-core");
+    linkGroup.append(linkGlow, linkCore);
+    svg.appendChild(linkGroup);
+
     const bubbleEls = bubbles.map((b) => {
       const g = document.createElementNS(SVG_NS, "g");
       g.classList.add("bubble");
@@ -157,6 +167,25 @@ export function openGroupOverlay({ snippet, allSnippets, allGroups, container, a
     let renderedX = cursor.x, renderedY = cursor.y;
     const SNAP_PULL = 0.55;
     const SNAP_EASE = 0.28;
+    const updateLinkPath = () => {
+      if (hoveredId) {
+        const hot = bubbleEls.find(({ bubble: b }) => b.id === hoveredId);
+        if (hot) {
+          const x1 = renderedX, y1 = renderedY;
+          const x2 = hot.bubble.x, y2 = hot.bubble.y;
+          const dx = x2 - x1, dy = y2 - y1;
+          const cx = (x1 + x2) / 2 - dy * 0.2;
+          const cy = (y1 + y2) / 2 + dx * 0.2;
+          const d = `M ${x1.toFixed(1)} ${y1.toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
+          linkGlow.setAttribute("d", d);
+          linkCore.setAttribute("d", d);
+          linkGroup.classList.add("connected");
+          return;
+        }
+      }
+      linkGroup.classList.remove("connected");
+    };
+
     const placeCard = () => {
       if (pendingFrame) return;
       pendingFrame = true;
@@ -179,6 +208,7 @@ export function openGroupOverlay({ snippet, allSnippets, allGroups, container, a
         const x = renderedX - cardW / 2;
         const y = renderedY - cardH / 2;
         card.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+        updateLinkPath();
         if (renderedX !== targetX || renderedY !== targetY) {
           pendingFrame = false;
           placeCard();
