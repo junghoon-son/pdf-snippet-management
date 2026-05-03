@@ -1186,12 +1186,11 @@ body.dragging-snippet .group-row:hover {
   position: absolute;
   pointer-events: none;
   width: 220px;
-  background: rgba(251, 249, 241, 0.6);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(46, 165, 140, 0.6);
+  background: #fbf9f1;
+  border: 1px solid var(--accent);
   border-radius: 6px;
   padding: 10px 12px;
-  box-shadow: 0 10px 24px rgba(60, 50, 30, 0.25), 0 0 0 1px rgba(46, 165, 140, 0.25);
+  box-shadow: 0 12px 30px rgba(60, 50, 30, 0.32), 0 0 0 1px rgba(46, 165, 140, 0.4);
   font-family: inherit;
   opacity: 0;
   will-change: transform;
@@ -1199,21 +1198,20 @@ body.dragging-snippet .group-row:hover {
 }
 #group-overlay.active .lifted-card { opacity: 1; }
 .lifted-card.over-target {
-  background: rgba(251, 249, 241, 1);
-  backdrop-filter: none;
-  border-color: var(--accent);
+  background: color-mix(in srgb, var(--target-color, var(--accent)) 18%, #fbf9f1);
+  border-color: var(--target-color, var(--accent));
   border-width: 2px;
   box-shadow:
-    0 14px 34px rgba(46, 165, 140, 0.35),
-    0 0 0 2px var(--accent),
-    0 0 30px rgba(46, 165, 140, 0.6);
+    0 14px 34px color-mix(in srgb, var(--target-color, var(--accent)) 35%, transparent),
+    0 0 0 2px var(--target-color, var(--accent)),
+    0 0 30px color-mix(in srgb, var(--target-color, var(--accent)) 60%, transparent);
+  opacity: 0.6;
 }
 .lifted-card {
   transition:
-    opacity 160ms ease-out,
+    opacity 200ms ease-out,
     box-shadow 200ms ease-out,
     background 200ms ease-out,
-    backdrop-filter 200ms ease-out,
     border-color 200ms ease-out;
 }
 
@@ -1224,16 +1222,16 @@ body.dragging-snippet .group-row:hover {
   stroke-linecap: round;
 }
 #group-overlay .link-glow {
-  stroke: var(--accent);
+  stroke: var(--target-color, var(--accent));
   stroke-width: 12;
-  opacity: 0.18;
+  opacity: 0.22;
   filter: blur(2px);
 }
 #group-overlay .link-core {
-  stroke: var(--accent);
+  stroke: var(--target-color, var(--accent));
   stroke-width: 2.5;
   stroke-dasharray: 6 8;
-  filter: drop-shadow(0 0 6px var(--accent));
+  filter: drop-shadow(0 0 6px var(--target-color, var(--accent)));
   animation: link-flow 0.8s linear infinite;
 }
 @keyframes link-flow {

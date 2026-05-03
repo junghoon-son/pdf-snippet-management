@@ -245,10 +245,21 @@ export function openGroupOverlay({ snippet, allSnippets, allGroups, container, a
       }
       if (bestId !== hoveredId) {
         hoveredId = bestId;
+        const hotBubble = bestId
+          ? bubbleEls.find(({ bubble: b }) => b.id === bestId)?.bubble
+          : null;
         for (const { bubble, el } of bubbleEls) {
           el.classList.toggle("hot", bubble.id === bestId);
         }
         card.classList.toggle("over-target", bestId !== null);
+        const overlayEl = card.parentElement;
+        if (hotBubble) {
+          overlayEl?.style.setProperty("--target-color", hotBubble.color || "#2ea58c");
+          card.style.setProperty("--target-color", hotBubble.color || "#2ea58c");
+        } else {
+          overlayEl?.style.removeProperty("--target-color");
+          card.style.removeProperty("--target-color");
+        }
         placeCard();
       }
     };
