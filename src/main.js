@@ -485,9 +485,33 @@ async function renderWorkspace() {
   await refreshFileExistence();
 }
 
-document.getElementById("zoom-in").addEventListener("click", () => setScale(state.scale * SCALE_STEP));
-document.getElementById("zoom-out").addEventListener("click", () => setScale(state.scale / SCALE_STEP));
-document.getElementById("zoom-fit").addEventListener("click", () => fitWidth());
+function zoomIn() {
+  if (state.source.kind === "pdf" && state.pdfDoc) {
+    setScale(state.scale * SCALE_STEP);
+  } else if (state.flowDoc) {
+    state.flowZoom = Math.min(FLOW_MAX_ZOOM, state.flowZoom * SCALE_STEP);
+    applyFlowZoom();
+  }
+}
+function zoomOut() {
+  if (state.source.kind === "pdf" && state.pdfDoc) {
+    setScale(state.scale / SCALE_STEP);
+  } else if (state.flowDoc) {
+    state.flowZoom = Math.max(FLOW_MIN_ZOOM, state.flowZoom / SCALE_STEP);
+    applyFlowZoom();
+  }
+}
+function zoomFit() {
+  if (state.source.kind === "pdf" && state.pdfDoc) {
+    fitWidth();
+  } else if (state.flowDoc) {
+    state.flowZoom = 1;
+    applyFlowZoom();
+  }
+}
+document.getElementById("zoom-in").addEventListener("click", zoomIn);
+document.getElementById("zoom-out").addEventListener("click", zoomOut);
+document.getElementById("zoom-fit").addEventListener("click", zoomFit);
 document.getElementById("summary-btn").addEventListener("click", openSummary);
 
 function toggleMaximizePane() {
@@ -563,9 +587,9 @@ document.getElementById("edge-label-input").addEventListener("keydown", (e) => {
 
 document.addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey) {
-    if (e.key === "=" || e.key === "+") { e.preventDefault(); setScale(state.scale * SCALE_STEP); }
-    else if (e.key === "-") { e.preventDefault(); setScale(state.scale / SCALE_STEP); }
-    else if (e.key === "0") { e.preventDefault(); fitWidth(); }
+    if (e.key === "=" || e.key === "+") { e.preventDefault(); zoomIn(); }
+    else if (e.key === "-") { e.preventDefault(); zoomOut(); }
+    else if (e.key === "0") { e.preventDefault(); zoomFit(); }
     else if (e.key === "z" || e.key === "Z") {
       const tag = e.target.tagName;
       if (tag === "TEXTAREA" || tag === "INPUT") return;
@@ -961,10 +985,14 @@ async function loadAnyDocument(path) {
   } else if (kind === "markdown") {
     await FlowView.renderFlowDoc(viewerContainer, state.flowDoc.text, kind);
     if (myToken !== docLoadToken) return;
+    state.flowZoom = 1;
+    applyFlowZoom();
     if (state.tool === "rect") setTool("select");
   } else if (kind === "docx") {
     await FlowView.renderFlowDoc(viewerContainer, state.flowDoc.bytes.buffer, kind);
     if (myToken !== docLoadToken) return;
+    state.flowZoom = 1;
+    applyFlowZoom();
     if (state.tool === "rect") setTool("select");
   }
   updateZoomLabel();
@@ -987,42 +1015,114 @@ async function setScale(next) {
   applyAllHighlights();
 }
 
-let pinchActive = false;
-let pinchPreviewScale = 1;
-let pinchSettleTimer = null;
+state.flowZoom = 1;
+const FLOW_MIN_ZOOM = 0.5;
+const FLOW_MAX_ZOOM = 3;
+
+function applyFlowZoom() {
+  const article = viewerContainer.querySelector(".flow-doc");
+  if (!article) return;
+  article.style.zoom = String(state.flowZoom);
+  updateZoomLabel(state.flowZoom);
+}
+
+function adjustScrollAfterZoom(anchor, factor) {
+  if (!anchor) return;
+  viewerScroll.scrollLeft = anchor.docX * factor - anchor.cursorScrollX;
+  viewerScroll.scrollTop = anchor.docY * factor - anchor.cursorScrollY;
+}
+
+let pinchAnchor = null;
+let pinchPending = false;
+let pinchAccumFactor = 1;
+let pinchEndTimer = null;
+let pdfPinchPreviewScale = 1;
+let pdfPinchActive = false;
+let pdfPinchSettleTimer = null;
+
+function captureAnchor(e) {
+  const sRect = viewerScroll.getBoundingClientRect();
+  const cursorScrollX = e.clientX - sRect.left;
+  const cursorScrollY = e.clientY - sRect.top;
+  return {
+    cursorScrollX,
+    cursorScrollY,
+    docX: viewerScroll.scrollLeft + cursorScrollX,
+    docY: viewerScroll.scrollTop + cursorScrollY,
+  };
+}
+
 viewerScroll.addEventListener("wheel", (e) => {
   if (!e.ctrlKey) return;
-  if (!state.pdfDoc) return;
+  if (state.source.kind === "pdf" && state.pdfDoc) {
+    handlePdfPinch(e);
+  } else if (state.flowDoc && (state.source.kind === "markdown" || state.source.kind === "docx")) {
+    handleFlowPinch(e);
+  }
+}, { passive: false });
+
+function handlePdfPinch(e) {
   e.preventDefault();
-  if (!pinchActive) {
-    pinchActive = true;
-    pinchPreviewScale = 1;
-    const rect = viewerContainer.getBoundingClientRect();
-    const ox = e.clientX - rect.left;
-    const oy = e.clientY - rect.top;
+  if (!pdfPinchActive) {
+    pdfPinchActive = true;
+    pdfPinchPreviewScale = 1;
+    pinchAnchor = captureAnchor(e);
+    const cRect = viewerContainer.getBoundingClientRect();
+    const ox = e.clientX - cRect.left;
+    const oy = e.clientY - cRect.top;
     viewerContainer.style.transformOrigin = `${ox}px ${oy}px`;
     viewerContainer.style.willChange = "transform";
   }
   const factor = Math.exp(-e.deltaY * 0.012);
-  let target = pinchPreviewScale * factor;
   const minPreview = MIN_SCALE / state.scale;
   const maxPreview = MAX_SCALE / state.scale;
-  target = Math.max(minPreview, Math.min(maxPreview, target));
-  pinchPreviewScale = target;
-  viewerContainer.style.transform = `scale(${pinchPreviewScale})`;
-  updateZoomLabel(state.scale * pinchPreviewScale);
+  pdfPinchPreviewScale = Math.max(minPreview, Math.min(maxPreview, pdfPinchPreviewScale * factor));
+  viewerContainer.style.transform = `scale(${pdfPinchPreviewScale})`;
+  updateZoomLabel(state.scale * pdfPinchPreviewScale);
 
-  clearTimeout(pinchSettleTimer);
-  pinchSettleTimer = setTimeout(async () => {
-    pinchActive = false;
-    const finalScale = state.scale * pinchPreviewScale;
-    pinchPreviewScale = 1;
+  clearTimeout(pdfPinchSettleTimer);
+  pdfPinchSettleTimer = setTimeout(async () => {
+    pdfPinchActive = false;
+    const finalScale = state.scale * pdfPinchPreviewScale;
+    const realFactor = pdfPinchPreviewScale;
+    const anchor = pinchAnchor;
+    pdfPinchPreviewScale = 1;
     viewerContainer.style.transform = "";
     viewerContainer.style.transformOrigin = "";
     viewerContainer.style.willChange = "";
     await setScale(finalScale);
+    adjustScrollAfterZoom(anchor, realFactor);
+    pinchAnchor = null;
   }, 220);
-}, { passive: false });
+}
+
+function handleFlowPinch(e) {
+  e.preventDefault();
+  if (!pinchAnchor) pinchAnchor = captureAnchor(e);
+  pinchAccumFactor *= Math.exp(-e.deltaY * 0.012);
+
+  if (!pinchPending) {
+    pinchPending = true;
+    requestAnimationFrame(() => {
+      pinchPending = false;
+      const factor = pinchAccumFactor;
+      pinchAccumFactor = 1;
+      const oldZoom = state.flowZoom;
+      const newZoom = Math.max(FLOW_MIN_ZOOM, Math.min(FLOW_MAX_ZOOM, oldZoom * factor));
+      const realFactor = newZoom / oldZoom;
+      state.flowZoom = newZoom;
+      applyFlowZoom();
+      if (pinchAnchor) {
+        adjustScrollAfterZoom(pinchAnchor, realFactor);
+        pinchAnchor.docX *= realFactor;
+        pinchAnchor.docY *= realFactor;
+      }
+    });
+  }
+
+  clearTimeout(pinchEndTimer);
+  pinchEndTimer = setTimeout(() => { pinchAnchor = null; }, 220);
+}
 
 async function fitWidth() {
   if (!state.pdfDoc) return;

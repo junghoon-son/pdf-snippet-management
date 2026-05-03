@@ -1721,14 +1721,6 @@ body[data-runtime="web"] #viewer-empty::after {
   font-size: 11px;
   color: var(--text-dim);
 }
-body[data-source-kind="markdown"] #zoom-out,
-body[data-source-kind="markdown"] #zoom-in,
-body[data-source-kind="markdown"] #zoom-fit,
-body[data-source-kind="markdown"] #zoom-level,
-body[data-source-kind="docx"] #zoom-out,
-body[data-source-kind="docx"] #zoom-in,
-body[data-source-kind="docx"] #zoom-fit,
-body[data-source-kind="docx"] #zoom-level { display: none; }
 
 #viewer-container[data-flow="1"] {
   display: block;
