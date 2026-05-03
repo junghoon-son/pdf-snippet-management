@@ -461,6 +461,20 @@ function toggleMaximizePane() {
 }
 document.getElementById("maximize-btn").addEventListener("click", toggleMaximizePane);
 
+function toggleSidebar() {
+  document.body.classList.toggle("sidebar-collapsed");
+  try {
+    localStorage.setItem("pdf-annotator-sidebar-collapsed",
+      document.body.classList.contains("sidebar-collapsed") ? "1" : "0");
+  } catch {}
+}
+document.getElementById("sidebar-collapse").addEventListener("click", toggleSidebar);
+try {
+  if (localStorage.getItem("pdf-annotator-sidebar-collapsed") === "1") {
+    document.body.classList.add("sidebar-collapsed");
+  }
+} catch {}
+
 document.getElementById("help-btn").addEventListener("click", (e) => {
   e.stopPropagation();
   const pop = document.getElementById("help-popover");
@@ -524,6 +538,12 @@ document.addEventListener("keydown", (e) => {
     else if ((e.key === "m" || e.key === "M") && e.shiftKey) {
       e.preventDefault();
       toggleMaximizePane();
+    }
+    else if (e.key === "b" || e.key === "B") {
+      const tag = e.target.tagName;
+      if (tag === "TEXTAREA" || tag === "INPUT") return;
+      e.preventDefault();
+      toggleSidebar();
     }
     else if (e.key === "f" || e.key === "F") {
       e.preventDefault();
