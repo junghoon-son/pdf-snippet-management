@@ -204,18 +204,30 @@ export function initLineage(container, callbacks) {
 
 function focusNode(node) {
   if (!cy) return;
-  // 2-hop neighborhood: in a doc → snippet → group flow, hovering a doc
-  // should also light up its groups, and hovering a group should also
-  // light up the docs its snippets came from.
-  const oneHop = node.connectedEdges().connectedNodes().union(node);
-  const twoHopEdges = oneHop.connectedEdges();
-  const twoHop = twoHopEdges.connectedNodes().union(oneHop);
-  const focusedEdges = twoHopEdges;
-
+  // Directional traversal so hovering a terminal (doc or group) doesn't
+  // bleed across sibling terminals via shared snippets:
+  //   - doc:     successors only (its snippets + their groups)
+  //   - group:   predecessors only (its snippets + their source docs)
+  //   - snippet: both directions (its doc + all its groups)
+  const type = node.data("type");
+  let focusedNodes, focusedEdges;
+  if (type === "group") {
+    const preds = node.predecessors();
+    focusedNodes = preds.nodes().union(node);
+    focusedEdges = preds.edges();
+  } else if (type === "doc") {
+    const succs = node.successors();
+    focusedNodes = succs.nodes().union(node);
+    focusedEdges = succs.edges();
+  } else {
+    const preds = node.predecessors();
+    const succs = node.successors();
+    focusedNodes = preds.nodes().union(succs.nodes()).union(node);
+    focusedEdges = preds.edges().union(succs.edges());
+  }
   cy.elements().addClass("dim");
-  twoHop.removeClass("dim");
-  focusedEdges.removeClass("dim");
-  focusedEdges.addClass("hot");
+  focusedNodes.removeClass("dim");
+  focusedEdges.removeClass("dim").addClass("hot");
 }
 
 function clearFocus() {
