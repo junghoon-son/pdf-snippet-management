@@ -39,7 +39,7 @@
           <span class="toolbar-spacer"></span>
           <div class="seg-toggle tool-toggle">
             <button class="seg-btn tool-btn active" data-tool="select" title="Select text (T)">text</button>
-            <button class="seg-btn tool-btn" data-tool="rect" title="Clip region (R)">rect</button>
+            <button class="seg-btn tool-btn" data-tool="rect" title="Clip region (R)" data-pdf-only>rect</button>
           </div>
           <button id="zoom-out" title="Zoom out (⌘−)">−</button>
           <span id="zoom-level">100%</span>
@@ -47,7 +47,7 @@
           <button id="zoom-fit" title="Fit width (⌘0)">fit</button>
         </div>
         <div id="viewer-scroll">
-          <div id="viewer-empty">Open a PDF or folder to begin.</div>
+          <div id="viewer-empty">Open a PDF or Markdown file to begin.</div>
           <div id="viewer-container"></div>
         </div>
       </main>
@@ -83,6 +83,11 @@
             </div>
           </div>
           <div id="lineage-view" hidden>
+            <div id="lineage-search">
+              <input id="lineage-search-input" placeholder="filter (regex) — highlights matches + connected" />
+              <span id="lineage-search-count"></span>
+              <button id="lineage-search-clear" title="Clear (Esc)">×</button>
+            </div>
             <div id="lineage-cy"></div>
           </div>
         </div>
@@ -97,7 +102,6 @@
           </div>
           <ul id="groups-list"></ul>
         </div>
-        <div id="group-overlay" hidden></div>
         <div id="help-popover" hidden>
           <div class="help-section">
             <div class="help-title">Capture</div>
@@ -172,6 +176,7 @@
         <div id="summary-content"></div>
       </div>
     </div>
+    <div id="group-overlay" hidden></div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

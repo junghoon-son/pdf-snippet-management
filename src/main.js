@@ -2,16 +2,28 @@ import "pdfjs-dist/web/pdf_viewer.css";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  loadDocument,
+  loadDocument as loadPdfDocument,
   renderPages,
   fitWidthScale,
   getSelectionSnippet,
   applyHighlights,
   renderRegionPng,
 } from "./pdf-viewer.js";
+import * as FlowView from "./flow-viewer.js";
 import * as MapView from "./map-view.js";
 import * as LineageView from "./lineage-view.js";
 import { openGroupOverlay } from "./group-overlay.js";
+
+const FLOW_EXTS = ["md", "markdown"];
+function detectKindFromPath(path) {
+  const m = (path || "").toLowerCase().match(/\.([a-z0-9]+)$/);
+  if (!m) return "pdf";
+  const ext = m[1];
+  if (ext === "pdf") return "pdf";
+  if (ext === "md" || ext === "markdown") return "markdown";
+  if (ext === "docx") return "docx";
+  return "pdf";
+}
 
 const fileListEl = document.getElementById("file-list");
 const snippetsListEl = document.getElementById("snippets-list");
@@ -28,11 +40,12 @@ const FIT_PADDING = 96;
 const state = {
   currentPdfPath: null,
   pdfDoc: null,
+  flowDoc: null,
   scale: 1.5,
   snippets: [],
   edges: [],
   groupsMeta: [],
-  source: { path: "", filename: "", title: "", author: "" },
+  source: { path: "", filename: "", title: "", author: "", kind: "pdf" },
   view: "list",
   layout: "group",
   mapScope: "doc",
@@ -224,7 +237,7 @@ document.getElementById("open-file").addEventListener("click", async () => {
   const path = await open({
     multiple: true,
     directory: false,
-    filters: [{ name: "PDF", extensions: ["pdf"] }],
+    filters: [{ name: "Documents", extensions: ["pdf", "md", "markdown"] }],
   });
   if (!path) return;
   const paths = Array.isArray(path) ? path : [path];
@@ -240,7 +253,8 @@ document.getElementById("open-folder").addEventListener("click", async () => {
   const dir = await open({ multiple: false, directory: true });
   if (!dir) return;
   let folder = state.workspace.folders.find((f) => f.path === dir);
-  const pdfs = await invoke("list_pdfs", { dir });
+  const docs = await invoke("list_documents", { dir });
+  const pdfs = docs.map((d) => d.path);
   if (!folder) {
     folder = { path: dir, pdfs };
     state.workspace.folders.push(folder);
@@ -461,7 +475,9 @@ document.addEventListener("keydown", (e) => {
   }
   if (tag === "TEXTAREA" || tag === "INPUT") return;
   if (e.key === "t" || e.key === "T") setTool("select");
-  else if (e.key === "r" || e.key === "R") setTool("rect");
+  else if (e.key === "r" || e.key === "R") {
+    if (state.source.kind === "pdf") setTool("rect");
+  }
 });
 
 let localSearchQuery = "";
@@ -715,7 +731,13 @@ function setActiveFile(path) {
 }
 
 async function loadPdf(path) {
+  return loadAnyDocument(path);
+}
+
+async function loadAnyDocument(path) {
+  const kind = detectKindFromPath(path);
   state.currentPdfPath = path;
+  state.source.kind = kind;
   addRecent(path);
   saveAllWorkspaces();
   undoStack.length = 0;
@@ -723,26 +745,40 @@ async function loadPdf(path) {
   setActiveFile(path);
   viewerEmpty.style.display = "none";
   viewerContainer.innerHTML = "";
+  document.body.dataset.sourceKind = kind;
+  state.pdfDoc = null;
+  state.flowDoc = null;
 
   const bytes = await invoke("read_pdf", { path });
-  const data = new Uint8Array(bytes);
-  state.pdfDoc = await loadDocument(data);
-
   const filename = path.split("/").pop() || "";
-  const meta = await state.pdfDoc.getMetadata().catch(() => null);
-  const info = meta?.info || {};
-  const title = (info.Title || "").trim() || filename.replace(/\.pdf$/i, "");
-  const author = (info.Author || "").trim();
   const existing = await invoke("read_annot", { pdfPath: path });
+
+  let title = filename.replace(/\.(pdf|md|markdown|docx)$/i, "");
+  let author = "";
+
+  if (kind === "pdf") {
+    const data = new Uint8Array(bytes);
+    state.pdfDoc = await loadPdfDocument(data);
+    const meta = await state.pdfDoc.getMetadata().catch(() => null);
+    const info = meta?.info || {};
+    title = (info.Title || "").trim() || title;
+    author = (info.Author || "").trim();
+  } else if (kind === "markdown") {
+    const text = new TextDecoder("utf-8").decode(new Uint8Array(bytes));
+    state.flowDoc = { kind, text };
+    const firstHeading = text.match(/^#{1,6}\s+(.+)$/m);
+    if (firstHeading) title = firstHeading[1].trim();
+  }
+
   state.source = {
     path,
     filename,
     title: existing.source?.title || title,
     author: existing.source?.author || author,
+    kind,
   };
   state.snippets = existing.snippets || [];
   state.edges = existing.edges || [];
-  // Merge any group meta from this sidecar into the global store.
   for (const g of existing.groups || []) {
     if (!state.groupsMeta.find((x) => x.id === g.id)) {
       state.groupsMeta.push({ id: g.id, name: g.name || "" });
@@ -756,9 +792,14 @@ async function loadPdf(path) {
   docTitleEl.textContent = state.source.title;
   docTitleEl.title = `${state.source.title}${state.source.author ? " — " + state.source.author : ""}\n${path}`;
 
-  const fit = await fitWidthScale(state.pdfDoc, viewerScroll.clientWidth - FIT_PADDING);
-  state.scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, fit));
-  await renderPages(state.pdfDoc, viewerContainer, state.scale);
+  if (kind === "pdf") {
+    const fit = await fitWidthScale(state.pdfDoc, viewerScroll.clientWidth - FIT_PADDING);
+    state.scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, fit));
+    await renderPages(state.pdfDoc, viewerContainer, state.scale);
+  } else if (kind === "markdown") {
+    await FlowView.renderFlowDoc(viewerContainer, state.flowDoc.text, kind);
+    if (state.tool === "rect") setTool("select");
+  }
   updateZoomLabel();
 
   refreshActiveView();
@@ -792,6 +833,7 @@ function updateZoomLabel() {
 viewerContainer.addEventListener("mousedown", (e) => {
   if (e.detail >= 2) e.preventDefault();
   if (state.tool !== "rect") return;
+  if (state.source.kind !== "pdf") return;
   const wrap = e.target.closest?.(".page-wrap");
   if (!wrap) return;
   e.preventDefault();
@@ -882,6 +924,19 @@ async function createImageSnippet(page, fracRect) {
 
 let hoverSnippetId = null;
 
+viewerContainer.addEventListener("mousedown", (e) => {
+  if (e.button !== 0) return;
+  if (state.tool !== "select") return;
+  const tl = e.target.closest?.(".textLayer");
+  if (!tl) return;
+  tl.classList.add("selecting");
+});
+window.addEventListener("mouseup", () => {
+  viewerContainer.querySelectorAll(".textLayer.selecting").forEach((tl) => {
+    tl.classList.remove("selecting");
+  });
+});
+
 viewerContainer.addEventListener("mousemove", (e) => {
   const hit = hitTestHighlight(e);
   const id = hit ? hit.id : null;
@@ -902,37 +957,74 @@ viewerContainer.addEventListener("mouseleave", () => {
 viewerContainer.addEventListener("click", (e) => {
   const sel = window.getSelection();
   if (sel && !sel.isCollapsed) return;
-  const hit = hitTestHighlight(e);
-  if (!hit) return;
-  const li = snippetsListEl.querySelector(`[data-snippet-id="${hit.id}"]`);
+  let snippetId = null;
+  const flowMark = e.target.closest?.("mark.hl");
+  if (flowMark) {
+    snippetId = flowMark.dataset.snippetId;
+  } else {
+    const hit = hitTestHighlight(e);
+    if (hit) snippetId = hit.id;
+  }
+  if (!snippetId) return;
+  const li = snippetsListEl.querySelector(`[data-snippet-id="${snippetId}"]`);
   if (!li) return;
   li.scrollIntoView({ behavior: "smooth", block: "center" });
   const ta = li.querySelector("textarea");
   if (ta) setTimeout(() => ta.focus(), 250);
 });
 
-viewerContainer.addEventListener("dragstart", (e) => {
+viewerContainer.addEventListener("mousedown", (e) => {
+  if (e.button !== 0) return;
   const hl = e.target.closest?.(".hl");
   if (!hl) return;
   const id = hl.dataset.snippetId;
   if (!id) return;
-  e.dataTransfer.setData("text/plain", id);
-  if (state.currentPdfPath) {
-    e.dataTransfer.setData(
-      "application/x-snippet",
-      JSON.stringify({ snippetId: id, pdfPath: state.currentPdfPath }),
-    );
-  }
-  e.dataTransfer.effectAllowed = "link";
-  document.body.classList.add("dragging-snippet");
   const snippet = state.snippets.find((x) => x.id === id);
-  if (snippet) startSnippetDragOverlay(snippet, e);
+  if (!snippet) return;
+  e.stopPropagation();
+  beginPressGesture(snippet, e, hl);
 });
-viewerContainer.addEventListener("dragend", (e) => {
-  if (e.target.closest?.(".hl")) {
-    document.body.classList.remove("dragging-snippet");
-  }
-});
+
+function beginPressGesture(snippet, downEvent, sourceEl) {
+  const DRAG_THRESHOLD = 3;
+  const HOLD_MS = 180;
+  const startX = downEvent.clientX;
+  const startY = downEvent.clientY;
+  let opened = false;
+  let lastEvent = downEvent;
+
+  const cleanup = () => {
+    window.removeEventListener("mousemove", onMove);
+    window.removeEventListener("mouseup", onUp);
+    clearTimeout(holdTimer);
+  };
+  const open = (ev) => {
+    if (opened) return;
+    opened = true;
+    cleanup();
+    document.body.classList.add("dragging-snippet");
+    sourceEl?.classList.add("dragging");
+    ev?.preventDefault?.();
+    openSnippetGroupOverlay(snippet, ev || lastEvent, false)
+      .then((result) => applyGroupOverlayResult(snippet, result))
+      .finally(() => {
+        document.body.classList.remove("dragging-snippet");
+        sourceEl?.classList.remove("dragging");
+      });
+  };
+  const onMove = (ev) => {
+    lastEvent = ev;
+    if (opened) return;
+    const dx = ev.clientX - startX;
+    const dy = ev.clientY - startY;
+    if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+    open(ev);
+  };
+  const onUp = () => cleanup();
+  const holdTimer = setTimeout(() => open(lastEvent), HOLD_MS);
+  window.addEventListener("mousemove", onMove);
+  window.addEventListener("mouseup", onUp);
+}
 
 function hitTestHighlight(e) {
   const wrap = e.target.closest?.(".page-wrap");
@@ -962,23 +1054,60 @@ function updateHoverClasses() {
 }
 
 viewerContainer.addEventListener("mouseup", async () => {
-  const snip = getSelectionSnippet();
-  if (!snip) return;
-  snip.text = normalizeText(snip.text);
-  if (!snip.text) return;
-  if (state.snippets.some((s) => s.page === snip.page && s.text === snip.text)) {
+  if (state.source.kind === "pdf") {
+    const snip = getSelectionSnippet();
+    if (!snip) return;
+    snip.text = normalizeText(snip.text);
+    if (!snip.text) return;
+    if (state.snippets.some((s) => s.page === snip.page && s.text === snip.text)) {
+      window.getSelection().removeAllRanges();
+      return;
+    }
+    snip.id = crypto.randomUUID();
+    snip.kind = "text";
+    snip.comment = "";
+    snip.created = new Date().toISOString();
+    state.snippets.push(snip);
+    undoStack.push({ type: "add", id: snip.id });
+    await persist();
+    refreshActiveView();
+    applyAllHighlights();
     window.getSelection().removeAllRanges();
     return;
   }
-  snip.id = crypto.randomUUID();
-  snip.comment = "";
-  snip.created = new Date().toISOString();
-  state.snippets.push(snip);
-  undoStack.push({ type: "add", id: snip.id });
-  await persist();
-  refreshActiveView();
-  applyAllHighlights();
-  window.getSelection().removeAllRanges();
+  if (state.source.kind === "markdown" || state.source.kind === "docx") {
+    const cap = FlowView.getSelectionFlowSnippet(viewerContainer);
+    if (!cap) return;
+    const text = normalizeText(cap.text);
+    if (!text) return;
+    if (state.snippets.some((s) =>
+      s.text === text &&
+      (s.anchor || "") === (cap.anchor || "") &&
+      (s.flowPos || 0) === (cap.flowPos || 0))) {
+      window.getSelection().removeAllRanges();
+      return;
+    }
+    const snip = {
+      id: crypto.randomUUID(),
+      page: 1,
+      kind: "text",
+      text,
+      rects: [],
+      comment: "",
+      created: new Date().toISOString(),
+      contextBefore: cap.contextBefore,
+      contextAfter: cap.contextAfter,
+      anchor: cap.anchor || null,
+      textNormalized: cap.textNormalized,
+      flowPos: cap.flowPos,
+    };
+    state.snippets.push(snip);
+    undoStack.push({ type: "add", id: snip.id });
+    await persist();
+    refreshActiveView();
+    applyAllHighlights();
+    window.getSelection().removeAllRanges();
+  }
 });
 
 function normalizeText(t) {
@@ -1022,7 +1151,6 @@ async function renderSnippets() {
     li.className = "snippet";
     if (expandedIds.has(s.id)) li.classList.add("expanded");
     li.dataset.snippetId = s.id;
-    li.setAttribute("draggable", "true");
     const groups = s.groups || [];
 
     if (groups.length > 0) {
@@ -1075,7 +1203,8 @@ async function renderSnippets() {
       label.appendChild(docSpan);
     }
     const pageSpan = document.createElement("span");
-    pageSpan.textContent = `p.${s.page}`;
+    pageSpan.textContent = s.anchor ? `§ ${s.anchor}` : `p.${s.page}`;
+    if (s.anchor) pageSpan.title = s.anchor;
     label.appendChild(pageSpan);
     const copy = document.createElement("button");
     copy.textContent = "copy";
@@ -1234,44 +1363,32 @@ async function renderSnippets() {
       handleSnippetRightClick(s, e);
     });
 
-    li.addEventListener("dragstart", (e) => {
-      e.dataTransfer.setData("text/plain", s.id);
-      e.dataTransfer.effectAllowed = "link";
-      li.classList.add("dragging");
-      document.body.classList.add("dragging-snippet");
-      startSnippetDragOverlay(s, e);
-    });
-    li.addEventListener("dragend", () => {
-      li.classList.remove("dragging");
-      document.body.classList.remove("dragging-snippet");
-    });
-    li.addEventListener("dragover", (e) => {
-      const srcId = e.dataTransfer.types.includes("text/plain");
-      if (!srcId) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "link";
-      li.classList.add("drop-target");
-    });
-    li.addEventListener("dragleave", () => li.classList.remove("drop-target"));
-    li.addEventListener("drop", async (e) => {
-      e.preventDefault();
-      li.classList.remove("drop-target");
-      const srcId = e.dataTransfer.getData("text/plain");
-      if (!srcId || srcId === s.id) return;
-      await linkSnippets(srcId, s.id);
-    });
+    attachCardPressGesture(li, s);
 
     snippetsListEl.appendChild(li);
   });
 }
 
+function attachCardPressGesture(li, snippet) {
+  li.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest("textarea, input, button, .group-pill, .group-pill-x")) return;
+    beginPressGesture(snippet, e, li);
+  });
+}
+
 function orderedSnippets(input) {
   const list = input || state.snippets;
-  const posKey = (s) => [s._pdfPath || "", s.page, s.rects?.[0]?.top ?? 0, s.rects?.[0]?.left ?? 0];
+  const posKey = (s) => {
+    if (typeof s.flowPos === "number") {
+      return [s._pdfPath || "", 0, s.flowPos, 0, 0];
+    }
+    return [s._pdfPath || "", 1, s.page, s.rects?.[0]?.top ?? 0, s.rects?.[0]?.left ?? 0];
+  };
   return [...list].sort((a, b) => {
     const ka = posKey(a), kb = posKey(b);
     if (ka[0] !== kb[0]) return ka[0] < kb[0] ? -1 : 1;
-    return ka[1] - kb[1] || ka[2] - kb[2] || ka[3] - kb[3];
+    return ka[1] - kb[1] || ka[2] - kb[2] || ka[3] - kb[3] || ka[4] - kb[4];
   });
 }
 
@@ -1287,9 +1404,8 @@ function startSnippetDragOverlay(s, e) {
 }
 
 function openSnippetGroupOverlay(s, e, dragMode) {
-  const pane = document.getElementById("snippets-pane");
   const overlay = document.getElementById("group-overlay");
-  const paneRect = pane.getBoundingClientRect();
+  const paneRect = { top: 0, left: 0, width: window.innerWidth, height: window.innerHeight };
   return openGroupOverlay({
     snippet: s,
     allSnippets: state.snippets,
@@ -1480,6 +1596,10 @@ function darkenColor(c) {
 }
 
 function previewSnippetInPdf(s) {
+  if (state.source.kind === "markdown" || state.source.kind === "docx") {
+    FlowView.previewFlowSnippet(viewerContainer, s);
+    return;
+  }
   const wrap = viewerContainer.querySelector(`.page-wrap[data-page="${s.page}"]`);
   if (!wrap) return;
   const hl = wrap.querySelector(`.hl[data-snippet-id="${s.id}"]`);
@@ -1498,7 +1618,11 @@ function pulseHighlights(snippetId) {
 }
 
 function applyAllHighlights() {
-  applyHighlights(viewerContainer, state.snippets);
+  if (state.source.kind === "pdf") {
+    applyHighlights(viewerContainer, state.snippets);
+  } else if (state.source.kind === "markdown" || state.source.kind === "docx") {
+    FlowView.applyFlowHighlights(viewerContainer, state.snippets);
+  }
 }
 
 async function persist() {
@@ -1620,7 +1744,8 @@ function switchView(view) {
       }
       LineageView.resize();
       const data = await getLineageData();
-      LineageView.renderLineage(data.snippets, state.groupsMeta || [], loadClipUrl);
+      await LineageView.renderLineage(data.snippets, state.groupsMeta || [], loadClipUrl);
+      applyLineageFilter();
     });
   } else {
     renderSnippets();
@@ -1633,12 +1758,51 @@ async function refreshActiveView() {
     MapView.renderMap(data.snippets, data.edges, state.layout, loadClipUrl);
   } else if (state.view === "lineage" && lineageInitialized) {
     const data = await getLineageData();
-    LineageView.renderLineage(data.snippets, state.groupsMeta || [], loadClipUrl);
+    await LineageView.renderLineage(data.snippets, state.groupsMeta || [], loadClipUrl);
+    applyLineageFilter();
   } else {
     await renderSnippets();
   }
   renderGroups();
 }
+
+function applyLineageFilter() {
+  const input = document.getElementById("lineage-search-input");
+  const counter = document.getElementById("lineage-search-count");
+  if (!input || !lineageInitialized) return;
+  const { matchCount, error } = LineageView.applyFilter(input.value);
+  input.classList.toggle("invalid", !!error);
+  if (error) {
+    counter.textContent = "bad regex";
+  } else if (!input.value.trim()) {
+    counter.textContent = "";
+  } else {
+    counter.textContent = `${matchCount} match${matchCount === 1 ? "" : "es"}`;
+  }
+}
+
+(() => {
+  const input = document.getElementById("lineage-search-input");
+  const clearBtn = document.getElementById("lineage-search-clear");
+  if (!input) return;
+  let debounce = null;
+  input.addEventListener("input", () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(applyLineageFilter, 120);
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      input.value = "";
+      applyLineageFilter();
+      input.blur();
+    }
+  });
+  clearBtn?.addEventListener("click", () => {
+    input.value = "";
+    applyLineageFilter();
+    input.focus();
+  });
+})();
 
 async function getLineageData() {
   if (state.mapScope === "workspace") return await loadWorkspaceMapData();
@@ -1657,7 +1821,8 @@ async function getMapData() {
 async function loadWorkspaceMapData() {
   for (const folder of state.workspace.folders || []) {
     try {
-      folder.pdfs = await invoke("list_pdfs", { dir: folder.path });
+      const docs = await invoke("list_documents", { dir: folder.path });
+      folder.pdfs = docs.map((d) => d.path);
     } catch {}
   }
   const folderPdfs = (state.workspace.folders || []).flatMap((f) => f.pdfs || []);
@@ -1755,7 +1920,7 @@ function renderSearchResults(matches, query) {
     fileSpan.textContent = filename;
     const pageSpan = document.createElement("span");
     pageSpan.className = "search-result-page";
-    pageSpan.textContent = `p.${s.page}`;
+    pageSpan.textContent = s.anchor ? `§ ${s.anchor}` : `p.${s.page}`;
     meta.append(fileSpan, pageSpan);
 
     const text = document.createElement("div");

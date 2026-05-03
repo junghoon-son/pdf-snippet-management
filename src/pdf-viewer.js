@@ -135,7 +135,6 @@ export function applyHighlights(container, snippets) {
       const div = document.createElement("div");
       div.className = s.kind === "image" ? "hl hl-image" : "hl";
       div.dataset.snippetId = s.id;
-      div.draggable = true;
       div.style.left = `${r.left * 100}%`;
       div.style.top = `${r.top * 100}%`;
       div.style.width = `${r.width * 100}%`;

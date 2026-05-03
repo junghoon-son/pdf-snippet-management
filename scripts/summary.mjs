@@ -5,7 +5,9 @@ import path from "node:path";
 import os from "node:os";
 
 const HELP = `Usage:
-  bun run summary <pdf-or-dir> [options]
+  bun run summary <file-or-dir> [options]
+
+Supported formats: PDF, Markdown (.md, .markdown).
 
 Options:
   --plain        Plain HTML (matches modal "plain" mode)
@@ -16,7 +18,7 @@ Options:
   -o <file>      Write to file instead of stdout
   -h, --help     Show this help
 
-Reads .annot.json sidecars next to PDFs and ~/.pdf-annotator/groups.json.
+Reads .annot.json sidecars next to documents and ~/.pdf-annotator/groups.json.
 Output goes to stdout unless -o is given.
 `;
 
@@ -79,7 +81,7 @@ async function loadAnnot(pdfPath) {
 async function listPdfsInDir(dir) {
   const entries = await readdir(dir);
   return entries
-    .filter((f) => f.toLowerCase().endsWith(".pdf"))
+    .filter((f) => /\.(pdf|md|markdown)$/i.test(f))
     .sort()
     .map((f) => path.join(dir, f));
 }
@@ -126,12 +128,18 @@ function sortByDocAndPage(a, b) {
   const pa = a._pdfPath || "";
   const pb = b._pdfPath || "";
   if (pa !== pb) return pa < pb ? -1 : 1;
+  if (typeof a.flowPos === "number" && typeof b.flowPos === "number") return a.flowPos - b.flowPos;
   return a.page - b.page;
 }
 
-function fileHref(pdfPath, page) {
-  if (!pdfPath) return "";
-  return `file://${encodeURI(pdfPath)}#page=${page}`;
+function fileHref(filePath, page) {
+  if (!filePath) return "";
+  const isPdf = /\.pdf$/i.test(filePath);
+  return `file://${encodeURI(filePath)}${isPdf ? `#page=${page}` : ""}`;
+}
+
+function locLabel(s) {
+  return s.anchor ? `§ ${s.anchor}` : `p.${s.page}`;
 }
 
 function defaultGroupColor(id) {
@@ -152,9 +160,10 @@ function renderHtmlRich({ title, sources, snippetCount, sections, ungrouped, ima
     const path = s._pdfPath || "";
     const filename = path.split("/").pop() || "?";
     const href = fileHref(path, s.page);
+    const loc = locLabel(s);
     const cite = href
-      ? `<a href="${escHtml(href)}">${escHtml(filename)} · p.${s.page}</a>`
-      : `${escHtml(filename)} · p.${s.page}`;
+      ? `<a href="${escHtml(href)}">${escHtml(filename)} · ${escHtml(loc)}</a>`
+      : `${escHtml(filename)} · ${escHtml(loc)}`;
     let body;
     if (s.kind === "image" && imageMap.get(s.id)) {
       body = `<div class="snippet-image"><img src="${imageMap.get(s.id)}" alt="${escHtml(s.text || "")}"></div>`;
@@ -227,9 +236,10 @@ function renderHtmlPlain({ title, sources, snippetCount, sections, ungrouped, im
     const path = s._pdfPath || "";
     const filename = path.split("/").pop() || "?";
     const href = fileHref(path, s.page);
+    const loc = locLabel(s);
     const cite = href
-      ? `<a href="${escHtml(href)}">${escHtml(filename)} p.${s.page}</a>`
-      : `${escHtml(filename)} p.${s.page}`;
+      ? `<a href="${escHtml(href)}">${escHtml(filename)} ${escHtml(loc)}</a>`
+      : `${escHtml(filename)} ${escHtml(loc)}`;
     let body;
     if (s.kind === "image" && imageMap.get(s.id)) {
       body = `<p><img src="${imageMap.get(s.id)}" alt="${escHtml(s.text || "")}"></p>`;
@@ -283,7 +293,7 @@ function renderMarkdown({ title, sources, snippetCount, sections, ungrouped, isW
   }
   const renderSnippet = (s) => {
     const filename = (s._pdfPath || "").split("/").pop() || "?";
-    const cite = `${filename} · p.${s.page}`;
+    const cite = `${filename} · ${locLabel(s)}`;
     const out = [];
     out.push(`### ${cite}`);
     if (s.kind === "image") {
@@ -404,7 +414,7 @@ async function main() {
     title = `Workspace summary — ${path.basename(label)}`;
   } else {
     const af = await loadAnnot(pdfs[0]);
-    title = af?.source?.title || path.basename(pdfs[0]).replace(/\.pdf$/i, "");
+    title = af?.source?.title || path.basename(pdfs[0]).replace(/\.(pdf|md|markdown)$/i, "");
   }
 
   const ctx = {

@@ -19,6 +19,7 @@
     "cytoscape-edgehandles": "^4.0.1",
     "cytoscape-fcose": "^2.2.0",
     "d3-force": "^3.0.0",
+    "marked": "^18.0.3",
     "pdfjs-dist": "^4.7.76"
   },
   "devDependencies": {

@@ -8,21 +8,23 @@ import crypto from "node:crypto";
 const HELP = `Usage:
   bun run annotate <command> [options]
 
+Supported file types: PDF, Markdown (.md, .markdown).
+
 Read commands (JSON to stdout):
-  list-snippets <pdf>                          All snippets in this PDF
+  list-snippets <file>                         All snippets for this document
   list-groups                                  All known groups (global meta)
-  get-snippet <pdf> <snippet-id>               One snippet
-  find-text <pdf> --page N --query "text"      Locate text on a page; returns rects
-  highlight <pdf> --page N --query "text" [--group ID|NAME]... [--occurrence K] [--comment "..."]
-                  One-shot: locate text + create snippet (uses find-text rects)
+  get-snippet <file> <snippet-id>              One snippet
+  find-text <pdf> --page N --query "text"      [PDF only] Locate text on a page
+  find-text-flow <md> --query "text"           [MD] Locate text in source; returns context windows
+  highlight <pdf> --page N --query "text" ...  [PDF] one-shot find-text + add-text
+  highlight-flow <md> --query "text" [...]     [MD] one-shot find-text-flow + add-text-flow
 
 Write commands (JSON ack to stdout):
-  add-text <pdf> --page N --rect L,T,W,H... --text "..."
-                  [--comment "..."] [--group ID|NAME]... [--id UUID]
-  update-snippet <pdf> <snippet-id>
-                  [--comment "..."] [--add-group ID|NAME]... [--remove-group ID|NAME]...
-                  [--text "..."]
-  delete-snippet <pdf> <snippet-id>
+  add-text <pdf> --page N --rect L,T,W,H... --text "..." [...]
+  add-text-flow <md> --text "..." --context-before "..." --context-after "..."
+                  [--anchor "..."] [--comment "..."] [--group ID|NAME]...
+  update-snippet <file> <snippet-id> [...]
+  delete-snippet <file> <snippet-id>
 
   create-group --name "..." [--color "#hex"] [--id UUID]
   rename-group <id> --name "..."
@@ -32,10 +34,9 @@ Write commands (JSON ack to stdout):
   delete-group <id>
 
 Notes:
-  --rect L,T,W,H is fractional (each value 0..1 relative to the page).
-  Multiple --rect flags = multiple rect spans (e.g. multi-line text).
-  --group can be passed by id or by name (case-insensitive). Repeat for multi-membership.
-  Group references that don't exist are auto-created when used as a name.
+  PDF rects are fractional L,T,W,H 0..1 relative to a page. Repeat --rect for multi-line.
+  Markdown anchors via {text, contextBefore, contextAfter}; the GUI resolves them at render.
+  --group can be id or name (case-insensitive); names auto-create groups.
 `;
 
 function die(msg, code = 1) {
@@ -445,6 +446,7 @@ const COMMANDS = {
   "get-snippet": cmdGetSnippet,
   "list-groups": cmdListGroups,
   "add-text": cmdAddText,
+  "add-text-flow": cmdAddTextFlow,
   "update-snippet": cmdUpdateSnippet,
   "delete-snippet": cmdDeleteSnippet,
   "create-group": cmdCreateGroup,
@@ -454,8 +456,146 @@ const COMMANDS = {
   "unhide-group": (a) => cmdHideGroup(a, false),
   "delete-group": cmdDeleteGroup,
   "find-text": cmdFindText,
+  "find-text-flow": cmdFindTextFlow,
   "highlight": cmdHighlight,
+  "highlight-flow": cmdHighlightFlow,
 };
+
+const CONTEXT_LEN = 40;
+
+function detectKindFromPath(p) {
+  const m = (p || "").toLowerCase().match(/\.([a-z0-9]+)$/);
+  if (!m) return "pdf";
+  const ext = m[1];
+  if (ext === "pdf") return "pdf";
+  if (ext === "md" || ext === "markdown") return "markdown";
+  if (ext === "docx") return "docx";
+  return "pdf";
+}
+
+function normalizeFlowText(s) {
+  return String(s || "")
+    .replace(/[­]/g, "")
+    .replace(/[ ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function cmdFindTextFlow({ positional, flags }) {
+  const file = positional[0];
+  if (!file) die("missing <markdown-file>");
+  const kind = detectKindFromPath(file);
+  if (kind !== "markdown") die(`find-text-flow expects a .md file (got kind=${kind})`);
+  const query = flags.query;
+  if (!query) die('--query "text" required');
+  const max = parseInt(flags.max || "20", 10);
+  const text = await readFile(file, "utf8");
+  const matches = [];
+  let from = 0;
+  while (matches.length < max) {
+    const idx = text.indexOf(query, from);
+    if (idx < 0) break;
+    matches.push({
+      index: idx,
+      contextBefore: text.slice(Math.max(0, idx - CONTEXT_LEN), idx),
+      contextAfter: text.slice(idx + query.length, idx + query.length + CONTEXT_LEN),
+    });
+    from = idx + Math.max(1, query.length);
+  }
+  out({ filePath: file, query, matchCount: matches.length, matches });
+}
+
+async function cmdAddTextFlow({ positional, flags }) {
+  const file = positional[0];
+  if (!file) die("missing <file>");
+  const kind = detectKindFromPath(file);
+  if (kind !== "markdown") die(`add-text-flow expects a .md file (got kind=${kind})`);
+  const text = flags.text;
+  if (!text) die('--text "..." required');
+  const id = flags.id || newId();
+
+  const af = await readAnnot(file);
+  const groups = await readGlobalGroups();
+
+  let groupIds = [];
+  let newGroups = [];
+  if (flags.group && flags.group.length > 0) {
+    for (const g of flags.group) {
+      const r = await resolveOrCreateGroup(groups, g);
+      groupIds.push(r.id);
+      if (r.created) newGroups.push(g);
+    }
+  }
+
+  let flowPos;
+  try {
+    const sourceText = await readFile(file, "utf8");
+    flowPos = sourceText.indexOf(text);
+    if (flowPos < 0) flowPos = undefined;
+  } catch {}
+
+  const snippet = {
+    id,
+    page: 1,
+    kind: "text",
+    text,
+    rects: [],
+    comment: flags.comment || "",
+    created: new Date().toISOString(),
+    groups: groupIds,
+    contextBefore: flags["context-before"] || "",
+    contextAfter: flags["context-after"] || "",
+    anchor: flags.anchor || null,
+    textNormalized: normalizeFlowText(text),
+    ...(typeof flowPos === "number" ? { flowPos } : {}),
+  };
+  af.snippets.push(snippet);
+  af.source = af.source || { path: file, filename: path.basename(file) };
+  af.source.kind = af.source.kind || "markdown";
+
+  for (const gid of groupIds) {
+    if (!af.groups.find((g) => g.id === gid)) {
+      const meta = groups.find((g) => g.id === gid);
+      if (meta) af.groups.push({ id: meta.id, name: meta.name || "", color: meta.color || null });
+    }
+  }
+
+  await writeAnnot(file, af);
+  if (newGroups.length > 0) await writeGlobalGroups(groups);
+
+  out({ ok: true, snippet, createdGroups: newGroups });
+}
+
+async function cmdHighlightFlow({ positional, flags }) {
+  const file = positional[0];
+  if (!file) die("missing <file>");
+  if (detectKindFromPath(file) !== "markdown") die("highlight-flow expects a .md file");
+  const query = flags.query;
+  if (!query) die('--query "text" required');
+  const occurrence = parseInt(flags.occurrence || "1", 10);
+
+  const findResult = await runCapture(cmdFindTextFlow, {
+    positional: [file],
+    flags: { query, max: String(Math.max(1, occurrence)) },
+  });
+  if (!findResult.matches || findResult.matches.length === 0) {
+    die(`no match for "${query}" in ${file}`);
+  }
+  const match = findResult.matches[occurrence - 1] || findResult.matches[0];
+
+  await cmdAddTextFlow({
+    positional: [file],
+    flags: {
+      text: flags.text || query,
+      "context-before": match.contextBefore,
+      "context-after": match.contextAfter,
+      anchor: flags.anchor,
+      comment: flags.comment,
+      group: flags.group,
+      id: flags.id,
+    },
+  });
+}
 
 async function cmdHighlight({ positional, flags }) {
   const pdf = positional[0];

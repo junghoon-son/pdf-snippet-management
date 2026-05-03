@@ -26,8 +26,10 @@ export function openGroupOverlay({ snippet, allSnippets, allGroups, container, a
   return new Promise((resolve) => {
     const overlay = container;
     overlay.innerHTML = "";
+    overlay.classList.remove("active", "closing");
     overlay.hidden = false;
-    overlay.classList.add("active");
+    void overlay.offsetWidth;
+    requestAnimationFrame(() => overlay.classList.add("active"));
 
     // Build group inventory: union of groupsMeta and group ids referenced by snippets.
     const counts = new Map();

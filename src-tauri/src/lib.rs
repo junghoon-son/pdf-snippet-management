@@ -24,6 +24,16 @@ struct Snippet {
     kind: String,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "imagePath")]
     image_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "contextBefore")]
+    context_before: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "contextAfter")]
+    context_after: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    anchor: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "textNormalized")]
+    text_normalized: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "flowPos")]
+    flow_pos: Option<u32>,
 }
 
 fn default_kind() -> String {
@@ -64,6 +74,8 @@ struct Source {
     title: String,
     #[serde(default)]
     author: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    kind: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -85,25 +97,54 @@ fn sidecar_path(pdf_path: &str) -> PathBuf {
     PathBuf::from(s)
 }
 
+fn document_kind_from_ext(ext: &str) -> Option<&'static str> {
+    let lower = ext.to_ascii_lowercase();
+    match lower.as_str() {
+        "pdf" => Some("pdf"),
+        "md" | "markdown" => Some("markdown"),
+        "docx" => Some("docx"),
+        _ => None,
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct DocEntry {
+    path: String,
+    kind: String,
+}
+
 #[tauri::command]
-fn list_pdfs(dir: String) -> Result<Vec<String>, String> {
+fn list_documents(dir: String) -> Result<Vec<DocEntry>, String> {
     let entries = fs::read_dir(&dir).map_err(|e| e.to_string())?;
     let mut out = Vec::new();
     for e in entries.flatten() {
         let p = e.path();
-        if p.is_file()
-            && p.extension()
-                .and_then(|x| x.to_str())
-                .map(|x| x.eq_ignore_ascii_case("pdf"))
-                .unwrap_or(false)
-        {
-            if let Some(s) = p.to_str() {
-                out.push(s.to_string());
-            }
+        if !p.is_file() {
+            continue;
+        }
+        let kind = p
+            .extension()
+            .and_then(|x| x.to_str())
+            .and_then(document_kind_from_ext);
+        if let (Some(k), Some(s)) = (kind, p.to_str()) {
+            out.push(DocEntry {
+                path: s.to_string(),
+                kind: k.to_string(),
+            });
         }
     }
-    out.sort();
+    out.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(out)
+}
+
+#[tauri::command]
+fn list_pdfs(dir: String) -> Result<Vec<String>, String> {
+    let docs = list_documents(dir)?;
+    Ok(docs
+        .into_iter()
+        .filter(|d| d.kind == "pdf")
+        .map(|d| d.path)
+        .collect())
 }
 
 #[tauri::command]
@@ -264,6 +305,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
             list_pdfs,
+            list_documents,
             read_pdf,
             read_annot,
             write_annot,

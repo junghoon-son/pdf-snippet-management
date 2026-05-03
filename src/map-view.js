@@ -275,7 +275,10 @@ export async function renderMap(snippets, edges, layoutMode, getImageUrl) {
         snippetId: s.id,
         page: s.page,
         text: s.text,
-        displayText: isImage ? `p.${s.page}` : `[p.${s.page}]\n${text}`,
+        displayText: (() => {
+          const loc = s.anchor ? `§ ${s.anchor}` : `p.${s.page}`;
+          return isImage ? loc : `[${loc}]\n${text}`;
+        })(),
         isImage: isImage || undefined,
         imageUrl: imageUrls.get(s.id) || undefined,
         group: primary,

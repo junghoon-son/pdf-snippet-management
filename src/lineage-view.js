@@ -3,9 +3,10 @@ import cytoscape from "cytoscape";
 const COL_DOC_X = 140;
 const COL_SNIPPET_X = 560;
 const COL_GROUP_X = 980;
-const ROW_GAP = 60;
+const ROW_GAP = 100;
 const DOC_NODE_W = 220;
 const SNIPPET_NODE_W = 320;
+const SNIPPET_NODE_H = 70;
 const GROUP_NODE_W = 200;
 
 let cy = null;
@@ -13,6 +14,7 @@ let onSnippetClick = null;
 let onDocClick = null;
 let getGroupName = (id) => `Group ${id.slice(0, 4)}`;
 let getGroupColor = () => "#bbb";
+const searchTextCache = new Map();
 
 export function initLineage(container, callbacks) {
   onSnippetClick = callbacks.onSnippetClick;
@@ -64,8 +66,9 @@ export function initLineage(container, callbacks) {
           "background-color": "#fbf9f3",
           "border-color": "#d4cebc",
           "width": SNIPPET_NODE_W,
-          "height": "label",
+          "height": SNIPPET_NODE_H,
           "text-max-width": SNIPPET_NODE_W - 24,
+          "text-overflow-wrap": "ellipsis",
           "font-family": "ui-serif, 'Iowan Old Style', Charter, Georgia, serif",
           "font-size": "11px",
           "padding": 12,
@@ -144,13 +147,38 @@ export function initLineage(container, callbacks) {
       {
         selector: "node.dim",
         style: {
-          "opacity": 0.25,
+          "opacity": 0.18,
         },
       },
       {
         selector: "edge.dim",
         style: {
-          "opacity": 0.08,
+          "opacity": 0.06,
+        },
+      },
+      {
+        selector: "node.match",
+        style: {
+          "border-color": "#d97757",
+          "border-width": 3,
+          "shadow-blur": 18,
+          "shadow-color": "#d97757",
+          "shadow-opacity": 0.7,
+        },
+      },
+      {
+        selector: "node.connected",
+        style: {
+          "border-color": "#2ea58c",
+          "border-width": 2,
+        },
+      },
+      {
+        selector: "edge.connected",
+        style: {
+          "line-color": "#2ea58c",
+          "opacity": 0.85,
+          "width": 2.4,
         },
       },
     ],
@@ -193,11 +221,13 @@ function ellipsis(s, n = 32) {
 function snippetPreview(s) {
   if (s.kind === "image") return `[image · p.${s.page}]`;
   const text = (s.text || "").trim();
-  return ellipsis(text, 140);
+  const loc = s.anchor ? `§ ${ellipsis(s.anchor, 28)}` : `p.${s.page}`;
+  return `${loc}  ${ellipsis(text, 90)}`;
 }
 
 export async function renderLineage(snippets, groupsMeta, getImageUrl) {
   if (!cy) return;
+  searchTextCache.clear();
   const elements = [];
 
   // 1. Group docs
@@ -223,7 +253,10 @@ export async function renderLineage(snippets, groupsMeta, getImageUrl) {
   let snippetSlot = 0;
   for (const path of docPaths) {
     const docSnippets = docMap.get(path);
-    docSnippets.sort((a, b) => (a.page - b.page) || 0);
+    docSnippets.sort((a, b) => {
+      if (typeof a.flowPos === "number" && typeof b.flowPos === "number") return a.flowPos - b.flowPos;
+      return (a.page - b.page) || 0;
+    });
     for (const s of docSnippets) {
       snippetIndex.set(s.id, snippetSlot++);
     }
@@ -244,6 +277,7 @@ export async function renderLineage(snippets, groupsMeta, getImageUrl) {
         label: display,
         pdfPath: path,
         title: filename,
+        searchText: `${filename} ${path}`,
       },
       position: { x: COL_DOC_X, y: docY(i, docPaths.length) * docPaths.length / Math.max(1, docPaths.length) || 0 },
     });
@@ -279,6 +313,7 @@ export async function renderLineage(snippets, groupsMeta, getImageUrl) {
           isImage,
           imageUrl,
           label: snippetPreview(s),
+          searchText: `${s.text || ""} ${s.comment || ""} ${s.anchor || ""} p.${s.page}`,
         },
         position: { x: COL_SNIPPET_X, y: snippetY(snippetIndex.get(s.id)) },
       });
@@ -298,6 +333,7 @@ export async function renderLineage(snippets, groupsMeta, getImageUrl) {
   // 6. Group nodes + snippet→group edges
   visibleGroups.forEach((gid, i) => {
     const meta = (groupsMeta || []).find((g) => g.id === gid);
+    const fullName = getGroupName(gid) || `Group ${gid.slice(0, 4)}`;
     elements.push({
       group: "nodes",
       data: {
@@ -305,7 +341,8 @@ export async function renderLineage(snippets, groupsMeta, getImageUrl) {
         type: "group",
         groupId: gid,
         color: getGroupColor(gid),
-        label: ellipsis(getGroupName(gid) || `Group ${gid.slice(0, 4)}`, 22),
+        label: ellipsis(fullName, 22),
+        searchText: fullName,
       },
       position: { x: COL_GROUP_X, y: groupY(i, visibleGroups.length) },
     });
@@ -355,6 +392,41 @@ function spreadOverlaps(nodes, minGap) {
       nodes[i].position.y = prev + minGap;
     }
   }
+}
+
+export function applyFilter(query) {
+  if (!cy) return { matchCount: 0, error: null };
+  cy.elements().removeClass("dim match connected");
+  const trimmed = (query || "").trim();
+  if (!trimmed) return { matchCount: 0, error: null };
+  let regex;
+  try {
+    regex = new RegExp(trimmed, "i");
+  } catch (err) {
+    return { matchCount: 0, error: err.message };
+  }
+  const matched = cy.nodes().filter((n) => {
+    const text = n.data("searchText") || "";
+    return regex.test(text);
+  });
+  if (matched.length === 0) {
+    cy.elements().addClass("dim");
+    return { matchCount: 0, error: null };
+  }
+  const connectedEdges = matched.connectedEdges();
+  const connectedNodes = connectedEdges.connectedNodes().difference(matched);
+  const everything = cy.elements();
+  const focused = matched.union(connectedEdges).union(connectedNodes);
+  everything.difference(focused).addClass("dim");
+  matched.addClass("match");
+  connectedNodes.addClass("connected");
+  connectedEdges.addClass("connected");
+  return { matchCount: matched.length, error: null };
+}
+
+export function clearFilter() {
+  if (!cy) return;
+  cy.elements().removeClass("dim match connected");
 }
 
 export function resize() {
