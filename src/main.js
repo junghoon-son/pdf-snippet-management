@@ -1014,6 +1014,11 @@ async function loadAnyDocument(path) {
     state.scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, fit));
     await renderPages(state.pdfDoc, viewerContainer, state.scale);
     if (myToken !== docLoadToken) return;
+    requestAnimationFrame(() => {
+      const overflow = viewerScroll.scrollWidth - viewerScroll.clientWidth;
+      viewerScroll.scrollLeft = overflow > 0 ? overflow / 2 : 0;
+      viewerScroll.scrollTop = 0;
+    });
   } else if (kind === "markdown") {
     await FlowView.renderFlowDoc(viewerContainer, state.flowDoc.text, kind);
     if (myToken !== docLoadToken) return;
