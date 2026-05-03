@@ -1,6 +1,5 @@
 import "pdfjs-dist/web/pdf_viewer.css";
 import { open } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
 import {
   loadDocument as loadPdfDocument,
   renderPages,
@@ -13,6 +12,10 @@ import * as FlowView from "./flow-viewer.js";
 import * as MapView from "./map-view.js";
 import * as LineageView from "./lineage-view.js";
 import { openGroupOverlay } from "./group-overlay.js";
+import { setStore, getStore } from "./storage/store.js";
+import { TauriStore } from "./storage/tauri-store.js";
+
+setStore(new TauriStore());
 
 const FLOW_EXTS = ["md", "markdown"];
 function detectKindFromPath(path) {
@@ -253,7 +256,7 @@ document.getElementById("open-folder").addEventListener("click", async () => {
   const dir = await open({ multiple: false, directory: true });
   if (!dir) return;
   let folder = state.workspace.folders.find((f) => f.path === dir);
-  const docs = await invoke("list_documents", { dir });
+  const docs = await getStore().listDocuments(dir);
   const pdfs = docs.map((d) => d.path);
   if (!folder) {
     folder = { path: dir, pdfs };
@@ -548,7 +551,7 @@ async function refreshFileExistence() {
   if (!items.length) return;
   const paths = items.map((li) => li.dataset.path);
   let exists;
-  try { exists = await invoke("check_paths", { paths }); } catch { return; }
+  try { exists = await getStore().checkPaths(paths); } catch { return; }
   items.forEach((li, i) => {
     li.classList.toggle("missing", !exists[i]);
     if (!exists[i]) li.title = `${li.dataset.path} (missing)`;
@@ -656,7 +659,7 @@ async function importGroups() {
   });
   if (!path) return;
   try {
-    const bytes = await invoke("read_pdf", { path });
+    const bytes = await getStore().readDocumentBytes(path);
     const json = new TextDecoder().decode(new Uint8Array(bytes));
     const parsed = JSON.parse(json);
     const incoming = Array.isArray(parsed) ? parsed : (parsed.groups || []);
@@ -685,7 +688,7 @@ async function importGroups() {
       }
     }
     state.groupsMeta = [...map.values()];
-    await invoke("write_global_groups", { groups: state.groupsMeta });
+    await getStore().writeGlobalGroups(state.groupsMeta);
     refreshActiveView();
     applyAllHighlights();
     flashButton("groups-import", `+${added} ~${updated}`);
@@ -708,7 +711,7 @@ const DEFAULT_GROUP_SEEDED_KEY = "pdf-annotator-default-group-seeded";
 
 (async () => {
   try {
-    const g = await invoke("read_global_groups");
+    const g = await getStore().readGlobalGroups();
     state.groupsMeta = g || [];
     const alreadySeeded = (() => {
       try { return localStorage.getItem(DEFAULT_GROUP_SEEDED_KEY) === "1"; } catch { return false; }
@@ -716,7 +719,7 @@ const DEFAULT_GROUP_SEEDED_KEY = "pdf-annotator-default-group-seeded";
     if (state.groupsMeta.length === 0 && !alreadySeeded) {
       state.groupsMeta.push({ ...DEFAULT_GROUP });
       try { localStorage.setItem(DEFAULT_GROUP_SEEDED_KEY, "1"); } catch {}
-      try { await invoke("write_global_groups", { groups: state.groupsMeta }); } catch {}
+      try { await getStore().writeGlobalGroups(state.groupsMeta); } catch {}
     }
     renderGroups();
   } catch (err) {
@@ -749,9 +752,9 @@ async function loadAnyDocument(path) {
   state.pdfDoc = null;
   state.flowDoc = null;
 
-  const bytes = await invoke("read_pdf", { path });
+  const bytes = await getStore().readDocumentBytes(path);
   const filename = path.split("/").pop() || "";
-  const existing = await invoke("read_annot", { pdfPath: path });
+  const existing = await getStore().readAnnot(path);
 
   let title = filename.replace(/\.(pdf|md|markdown|docx)$/i, "");
   let author = "";
@@ -789,7 +792,7 @@ async function loadAnyDocument(path) {
       if (existingMeta && !existingMeta.name) existingMeta.name = g.name;
     }
   }
-  await invoke("write_global_groups", { groups: state.groupsMeta });
+  await getStore().writeGlobalGroups(state.groupsMeta);
 
   docTitleEl.textContent = state.source.title;
   docTitleEl.title = `${state.source.title}${state.source.author ? " — " + state.source.author : ""}\n${path}`;
@@ -901,11 +904,7 @@ async function createImageSnippet(page, fracRect) {
   }
   let imagePath;
   try {
-    imagePath = await invoke("write_clip", {
-      pdfPath: state.currentPdfPath,
-      clipId: id,
-      bytes: Array.from(pngBytes),
-    });
+    imagePath = await getStore().writeClip(state.currentPdfPath, id, pngBytes);
   } catch (err) {
     console.error("clip save failed", err);
     return;
@@ -1217,10 +1216,7 @@ async function renderSnippets() {
       e.stopPropagation();
       try {
         if (s.kind === "image" && s.imagePath) {
-          await invoke("copy_image_to_clipboard", {
-            pdfPath: ownerPath,
-            imagePath: s.imagePath,
-          });
+          await getStore().copyImageToClipboard(ownerPath, s.imagePath);
         } else {
           await navigator.clipboard.writeText(s.text);
         }
@@ -1241,10 +1237,7 @@ async function renderSnippets() {
       undoStack.push({ type: "delete", snippet: removed, index });
       if (removed.kind === "image" && removed.imagePath) {
         try {
-          await invoke("delete_clip", {
-            pdfPath: state.currentPdfPath,
-            imagePath: removed.imagePath,
-          });
+          await getStore().deleteClip(state.currentPdfPath, removed.imagePath);
         } catch {}
         const cacheKey = `${state.currentPdfPath}::${removed.imagePath}`;
         const cached = clipUrlCache.get(cacheKey);
@@ -1494,11 +1487,8 @@ async function loadClipUrl(path, pdfPath) {
   const cacheKey = `${owner}::${path}`;
   if (clipUrlCache.has(cacheKey)) return clipUrlCache.get(cacheKey);
   try {
-    const bytes = await invoke("read_clip", {
-      pdfPath: owner,
-      imagePath: path,
-    });
-    const blob = new Blob([new Uint8Array(bytes)], { type: "image/png" });
+    const bytes = await getStore().readClip(owner, path);
+    const blob = new Blob([bytes], { type: "image/png" });
     const url = URL.createObjectURL(blob);
     clipUrlCache.set(cacheKey, url);
     return url;
@@ -1643,7 +1633,7 @@ async function persist() {
   // No auto-prune here: a group unused in the current doc may still be in use elsewhere.
   // Write the global groups index (canonical).
   try {
-    await invoke("write_global_groups", { groups: state.groupsMeta || [] });
+    await getStore().writeGlobalGroups(state.groupsMeta || []);
   } catch (err) {
     console.warn("global groups write failed", err);
   }
@@ -1652,14 +1642,11 @@ async function persist() {
   const usedIds = new Set();
   for (const s of state.snippets) for (const g of s.groups || []) usedIds.add(g);
   const localGroups = (state.groupsMeta || []).filter((g) => usedIds.has(g.id));
-  await invoke("write_annot", {
-    pdfPath: state.currentPdfPath,
-    payload: {
-      source: state.source,
-      snippets: state.snippets,
-      edges: state.edges,
-      groups: localGroups,
-    },
+  await getStore().writeAnnot(state.currentPdfPath, {
+    source: state.source,
+    snippets: state.snippets,
+    edges: state.edges,
+    groups: localGroups,
   });
 }
 
@@ -1826,7 +1813,7 @@ async function getMapData() {
 async function loadWorkspaceMapData() {
   for (const folder of state.workspace.folders || []) {
     try {
-      const docs = await invoke("list_documents", { dir: folder.path });
+      const docs = await getStore().listDocuments(folder.path);
       folder.pdfs = docs.map((d) => d.path);
     } catch {}
   }
@@ -1838,7 +1825,7 @@ async function loadWorkspaceMapData() {
       : { snippets: [], edges: [] };
   }
   const results = await Promise.all(
-    allPaths.map((p) => invoke("read_annot", { pdfPath: p }).catch(() => null)),
+    allPaths.map((p) => getStore().readAnnot(p).catch(() => null)),
   );
   const snippets = [];
   const edges = [];
@@ -2020,12 +2007,12 @@ function renderSearchGroups() {
 async function addSnippetToGroupRemote(pdfPath, snippetId, groupId) {
   if (!pdfPath) return;
   try {
-    const af = await invoke("read_annot", { pdfPath });
+    const af = await getStore().readAnnot(pdfPath);
     const snippet = (af.snippets || []).find((s) => s.id === snippetId);
     if (!snippet) return;
     snippet.groups = snippet.groups || [];
     if (!snippet.groups.includes(groupId)) snippet.groups.push(groupId);
-    await invoke("write_annot", { pdfPath, payload: af });
+    await getStore().writeAnnot(pdfPath, af);
     if (pdfPath === state.currentPdfPath) {
       const local = state.snippets.find((s) => s.id === snippetId);
       if (local) {
@@ -2391,11 +2378,7 @@ async function exportSummaryHtml() {
     const imageSnippets = snippets.filter((s) => s.kind === "image" && s.imagePath);
     await Promise.all(imageSnippets.map(async (s) => {
       try {
-        const bytes = await invoke("read_clip", {
-          pdfPath: s._pdfPath || state.currentPdfPath,
-          imagePath: s.imagePath,
-        });
-        const u8 = new Uint8Array(bytes);
+        const u8 = await getStore().readClip(s._pdfPath || state.currentPdfPath, s.imagePath);
         let binary = "";
         for (let i = 0; i < u8.length; i++) binary += String.fromCharCode(u8[i]);
         imageMap.set(s.id, `data:image/png;base64,${btoa(binary)}`);
