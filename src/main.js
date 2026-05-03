@@ -809,10 +809,22 @@ async function loadPdf(path) {
   return loadAnyDocument(path);
 }
 
+let docLoadToken = 0;
+
 async function loadAnyDocument(path) {
+  const myToken = ++docLoadToken;
   const kind = detectKindFromPath(path);
+
+  // Clear stale doc state synchronously so an interleaved load can't
+  // see another doc's snippets/edges/highlights between awaits.
+  state.snippets = [];
+  state.edges = [];
+  state.pdfDoc = null;
+  state.flowDoc = null;
   state.currentPdfPath = path;
-  state.source.kind = kind;
+  state.source = { path, filename: path.split("/").pop() || "", title: "", author: "", kind };
+  applyAllHighlights();
+
   addRecent(path);
   saveAllWorkspaces();
   undoStack.length = 0;
@@ -821,12 +833,12 @@ async function loadAnyDocument(path) {
   viewerEmpty.style.display = "none";
   viewerContainer.innerHTML = "";
   document.body.dataset.sourceKind = kind;
-  state.pdfDoc = null;
-  state.flowDoc = null;
 
   const bytes = await getStore().readDocumentBytes(path);
+  if (myToken !== docLoadToken) return;
   const filename = path.split("/").pop() || "";
   const existing = await getStore().readAnnot(path);
+  if (myToken !== docLoadToken) return;
 
   let title = filename.replace(/\.(pdf|md|markdown|docx)$/i, "");
   let author = "";
@@ -834,7 +846,9 @@ async function loadAnyDocument(path) {
   if (kind === "pdf") {
     const data = new Uint8Array(bytes);
     state.pdfDoc = await loadPdfDocument(data);
+    if (myToken !== docLoadToken) return;
     const meta = await state.pdfDoc.getMetadata().catch(() => null);
+    if (myToken !== docLoadToken) return;
     const info = meta?.info || {};
     title = (info.Title || "").trim() || title;
     author = (info.Author || "").trim();
@@ -847,6 +861,7 @@ async function loadAnyDocument(path) {
     state.flowDoc = { kind, bytes: new Uint8Array(bytes) };
   }
 
+  if (myToken !== docLoadToken) return;
   state.source = {
     path,
     filename,
@@ -865,19 +880,24 @@ async function loadAnyDocument(path) {
     }
   }
   await getStore().writeGlobalGroups(state.groupsMeta);
+  if (myToken !== docLoadToken) return;
 
   docTitleEl.textContent = state.source.title;
   docTitleEl.title = `${state.source.title}${state.source.author ? " — " + state.source.author : ""}\n${path}`;
 
   if (kind === "pdf") {
     const fit = await fitWidthScale(state.pdfDoc, viewerScroll.clientWidth - FIT_PADDING);
+    if (myToken !== docLoadToken) return;
     state.scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, fit));
     await renderPages(state.pdfDoc, viewerContainer, state.scale);
+    if (myToken !== docLoadToken) return;
   } else if (kind === "markdown") {
     await FlowView.renderFlowDoc(viewerContainer, state.flowDoc.text, kind);
+    if (myToken !== docLoadToken) return;
     if (state.tool === "rect") setTool("select");
   } else if (kind === "docx") {
     await FlowView.renderFlowDoc(viewerContainer, state.flowDoc.bytes.buffer, kind);
+    if (myToken !== docLoadToken) return;
     if (state.tool === "rect") setTool("select");
   }
   updateZoomLabel();
