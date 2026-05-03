@@ -1,13 +1,15 @@
 import cytoscape from "cytoscape";
 
-const COL_DOC_X = 140;
-const COL_SNIPPET_X = 560;
-const COL_GROUP_X = 980;
-const ROW_GAP = 100;
-const DOC_NODE_W = 220;
-const SNIPPET_NODE_W = 320;
-const SNIPPET_NODE_H = 70;
-const GROUP_NODE_W = 200;
+const COL_DOC_X = 110;
+const COL_SNIPPET_X = 400;
+const COL_GROUP_X = 680;
+const ROW_GAP = 78;
+const DOC_NODE_W = 170;
+const DOC_NODE_H = 42;
+const SNIPPET_NODE_W = 260;
+const SNIPPET_NODE_H = 56;
+const GROUP_NODE_W = 150;
+const GROUP_NODE_H = 30;
 
 let cy = null;
 let onSnippetClick = null;
@@ -37,12 +39,12 @@ export function initLineage(container, callbacks) {
           "shape": "round-rectangle",
           "label": "data(label)",
           "color": "#1f1f1f",
-          "font-family": "ui-sans-serif, -apple-system, system-ui",
-          "font-size": "11px",
+          "font-family": "ui-serif, 'Iowan Old Style', Charter, Georgia, serif",
+          "font-size": "10.5px",
           "text-wrap": "wrap",
           "text-valign": "center",
           "text-halign": "center",
-          "padding": 10,
+          "padding": 6,
           "min-zoomed-font-size": 6,
         },
       },
@@ -51,13 +53,14 @@ export function initLineage(container, callbacks) {
         style: {
           "background-color": "#ece8dc",
           "border-color": "#a89e83",
-          "border-width": 2,
+          "border-width": 1,
           "width": DOC_NODE_W,
-          "height": 56,
-          "text-max-width": DOC_NODE_W - 24,
-          "font-weight": 600,
-          "font-size": "12px",
+          "height": DOC_NODE_H,
+          "text-max-width": DOC_NODE_W - 16,
+          "font-style": "italic",
+          "font-size": "11px",
           "shape": "round-rectangle",
+          "padding": 6,
         },
       },
       {
@@ -67,11 +70,11 @@ export function initLineage(container, callbacks) {
           "border-color": "#d4cebc",
           "width": SNIPPET_NODE_W,
           "height": SNIPPET_NODE_H,
-          "text-max-width": SNIPPET_NODE_W - 24,
+          "text-max-width": SNIPPET_NODE_W - 16,
           "text-overflow-wrap": "ellipsis",
           "font-family": "ui-serif, 'Iowan Old Style', Charter, Georgia, serif",
-          "font-size": "11px",
-          "padding": 12,
+          "font-size": "10.5px",
+          "padding": 7,
         },
       },
       {
@@ -79,11 +82,11 @@ export function initLineage(container, callbacks) {
         style: {
           "background-image": "data(imageUrl)",
           "background-fit": "cover",
-          "width": 140,
-          "height": 90,
+          "width": 110,
+          "height": 72,
           "label": "",
           "border-color": "#2ea58c",
-          "border-width": 2,
+          "border-width": 1.5,
         },
       },
       {
@@ -92,14 +95,15 @@ export function initLineage(container, callbacks) {
           "background-color": "data(color)",
           "background-opacity": 0.9,
           "border-color": "data(color)",
-          "border-width": 2,
+          "border-width": 1.5,
           "color": "#1a1a1a",
           "shape": "round-rectangle",
           "width": GROUP_NODE_W,
-          "height": 40,
-          "text-max-width": GROUP_NODE_W - 20,
-          "font-weight": 600,
-          "font-size": "12px",
+          "height": GROUP_NODE_H,
+          "text-max-width": GROUP_NODE_W - 14,
+          "font-style": "italic",
+          "font-size": "11px",
+          "padding": 5,
         },
       },
       {

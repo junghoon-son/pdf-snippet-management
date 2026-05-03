@@ -449,6 +449,18 @@ document.getElementById("zoom-out").addEventListener("click", () => setScale(sta
 document.getElementById("zoom-fit").addEventListener("click", () => fitWidth());
 document.getElementById("summary-btn").addEventListener("click", openSummary);
 
+function toggleMaximizePane() {
+  document.body.classList.toggle("pane-max");
+  setTimeout(() => {
+    if (state.view === "map" && mapInitialized) MapView.resize();
+    if (state.view === "lineage" && lineageInitialized) {
+      LineageView.resize();
+      LineageView.fit();
+    }
+  }, 80);
+}
+document.getElementById("maximize-btn").addEventListener("click", toggleMaximizePane);
+
 document.getElementById("help-btn").addEventListener("click", (e) => {
   e.stopPropagation();
   const pop = document.getElementById("help-popover");
@@ -508,6 +520,10 @@ document.addEventListener("keydown", (e) => {
     else if ((e.key === "f" || e.key === "F") && e.shiftKey) {
       e.preventDefault();
       openGlobalSearch();
+    }
+    else if ((e.key === "m" || e.key === "M") && e.shiftKey) {
+      e.preventDefault();
+      toggleMaximizePane();
     }
     else if (e.key === "f" || e.key === "F") {
       e.preventDefault();

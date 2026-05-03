@@ -199,6 +199,26 @@ body.resizing * { cursor: col-resize !important; }
   overflow-y: auto;
 }
 #snippets-pane #map-view { flex: 1; min-height: 0; }
+
+#maximize-btn {
+  background: transparent;
+  border: 1px solid var(--pane-border);
+  color: var(--pane-fg-dim);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 7px;
+  border-radius: 4px;
+  cursor: pointer;
+  line-height: 1;
+}
+#maximize-btn:hover { color: var(--accent); border-color: var(--accent); }
+body.pane-max #maximize-btn { color: var(--accent); border-color: var(--accent); }
+body.pane-max #sidebar,
+body.pane-max #viewer-pane,
+body.pane-max .resize-handle { display: none; }
+body.pane-max #app { grid-template-columns: 1fr; }
+body.pane-max #snippets-pane { border-left: none; }
+
 #snippets-pane #lineage-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 #snippets-pane #lineage-view[hidden] { display: none; }
 #lineage-search {
