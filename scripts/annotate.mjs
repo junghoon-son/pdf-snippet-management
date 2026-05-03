@@ -33,13 +33,35 @@ Write commands (JSON ack to stdout):
   unhide-group <id>
   delete-group <id>
 
+HTTP API:
+  serve [--port 1421] [--host 127.0.0.1] [--key SECRET] [--cors ORIGIN]
+                  Starts a JSON HTTP server. Each subcommand is exposed at
+                  POST /annotate/<command> with body matching CLI flags
+                  (positional args become named keys: file, id).
+                  Defaults: binds to loopback only, no CORS, no auth required.
+                  Non-loopback hosts (0.0.0.0) require --key for safety.
+                  --cors '*' or --cors http://app.example.com to allow browser
+                  callers (sends matching Allow-Origin headers).
+                  GET /health and GET /routes for introspection.
+
 Notes:
   PDF rects are fractional L,T,W,H 0..1 relative to a page. Repeat --rect for multi-line.
+  In HTTP, send rects as [[L,T,W,H], ...] or [{left, top, width, height}, ...].
   Markdown anchors via {text, contextBefore, contextAfter}; the GUI resolves them at render.
   --group can be id or name (case-insensitive); names auto-create groups.
 `;
 
+class CliError extends Error {
+  constructor(message, code = 1) {
+    super(message);
+    this.code = code;
+  }
+}
+
+let throwOnDie = false;
+
 function die(msg, code = 1) {
+  if (throwOnDie) throw new CliError(msg, code);
   process.stderr.write(`error: ${msg}\n`);
   process.exit(code);
 }
@@ -459,7 +481,156 @@ const COMMANDS = {
   "find-text-flow": cmdFindTextFlow,
   "highlight": cmdHighlight,
   "highlight-flow": cmdHighlightFlow,
+  "serve": cmdServe,
 };
+
+const ROUTES = {
+  "list-snippets": { fn: cmdListSnippets, positional: ["file"] },
+  "get-snippet": { fn: cmdGetSnippet, positional: ["file", "id"] },
+  "list-groups": { fn: cmdListGroups, positional: [] },
+  "add-text": { fn: cmdAddText, positional: ["file"] },
+  "add-text-flow": { fn: cmdAddTextFlow, positional: ["file"] },
+  "update-snippet": { fn: cmdUpdateSnippet, positional: ["file", "id"] },
+  "delete-snippet": { fn: cmdDeleteSnippet, positional: ["file", "id"] },
+  "create-group": { fn: cmdCreateGroup, positional: [] },
+  "rename-group": { fn: cmdRenameGroup, positional: ["id"] },
+  "set-group-color": { fn: cmdSetGroupColor, positional: ["id"] },
+  "hide-group": { fn: (a) => cmdHideGroup(a, true), positional: ["id"] },
+  "unhide-group": { fn: (a) => cmdHideGroup(a, false), positional: ["id"] },
+  "delete-group": { fn: cmdDeleteGroup, positional: ["id"] },
+  "find-text": { fn: cmdFindText, positional: ["file"] },
+  "find-text-flow": { fn: cmdFindTextFlow, positional: ["file"] },
+  "highlight": { fn: cmdHighlight, positional: ["file"] },
+  "highlight-flow": { fn: cmdHighlightFlow, positional: ["file"] },
+};
+
+function bodyToArgs(body, route) {
+  body = body || {};
+  const positional = [];
+  for (const key of route.positional || []) {
+    if (body[key] != null) positional.push(String(body[key]));
+  }
+  const flags = {};
+  for (const [k, v] of Object.entries(body)) {
+    if ((route.positional || []).includes(k)) continue;
+    if (k === "rects" && Array.isArray(v)) {
+      flags.rect = v.map((r) => {
+        if (Array.isArray(r)) return r.join(",");
+        if (r && typeof r === "object") {
+          return [r.left, r.top, r.width, r.height].join(",");
+        }
+        return String(r);
+      });
+      continue;
+    }
+    flags[k] = v;
+  }
+  return { positional, flags };
+}
+
+async function callRouteCaptured(routeName, body) {
+  const route = ROUTES[routeName];
+  if (!route) throw new CliError(`unknown command: ${routeName}`, 404);
+  const args = bodyToArgs(body, route);
+  let buf = "";
+  const origWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (chunk) => { buf += String(chunk); return true; };
+  const prevThrow = throwOnDie;
+  throwOnDie = true;
+  try {
+    await route.fn(args);
+  } finally {
+    process.stdout.write = origWrite;
+    throwOnDie = prevThrow;
+  }
+  if (!buf) return null;
+  try { return JSON.parse(buf); } catch { return { raw: buf }; }
+}
+
+async function cmdServe({ flags }) {
+  const port = parseInt(flags.port || "1421", 10);
+  const host = flags.host || "127.0.0.1";
+  const apiKey = flags.key || process.env.ANNOTATE_API_KEY || "";
+  const corsOrigin = flags.cors || "";
+  if (typeof Bun === "undefined") {
+    throw new CliError("`serve` requires Bun runtime");
+  }
+  if ((host === "0.0.0.0" || host === "::") && !apiKey) {
+    throw new CliError("refusing to bind a non-loopback host without --key (would expose write API)");
+  }
+
+  const corsFor = (req) => {
+    if (!corsOrigin) return {};
+    const reqOrigin = req.headers.get("origin") || "";
+    const allow = corsOrigin === "*" ? "*" : (reqOrigin === corsOrigin ? reqOrigin : "");
+    if (!allow) return {};
+    return {
+      "Access-Control-Allow-Origin": allow,
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, X-API-Key",
+      "Vary": "Origin",
+    };
+  };
+
+  Bun.serve({
+    port,
+    hostname: host,
+    async fetch(req) {
+      const url = new URL(req.url);
+
+      if (req.method === "OPTIONS") {
+        return new Response(null, { status: 204, headers: corsFor(req) });
+      }
+      if (apiKey && req.headers.get("x-api-key") !== apiKey) {
+        return jsonResponse({ ok: false, error: { code: "unauthorized", message: "missing or wrong x-api-key" } }, 401, corsFor(req));
+      }
+
+      if (url.pathname === "/health") return jsonResponse({ ok: true }, 200, corsFor(req));
+      if (url.pathname === "/routes") return jsonResponse({ routes: Object.keys(ROUTES) }, 200, corsFor(req));
+
+      const m = url.pathname.match(/^\/annotate\/([a-z][a-z0-9-]*)\/?$/);
+      if (!m) return jsonResponse({ ok: false, error: { code: "not_found", message: "unknown path" } }, 404, corsFor(req));
+      const routeName = m[1];
+      if (!ROUTES[routeName]) {
+        return jsonResponse({ ok: false, error: { code: "not_found", message: `unknown command: ${routeName}` } }, 404, corsFor(req));
+      }
+
+      let body = {};
+      if (req.method !== "GET") {
+        try {
+          body = await req.json();
+        } catch {
+          return jsonResponse({ ok: false, error: { code: "bad_request", message: "expected JSON body" } }, 400, corsFor(req));
+        }
+      } else {
+        body = Object.fromEntries(url.searchParams.entries());
+      }
+
+      try {
+        const result = await callRouteCaptured(routeName, body);
+        return jsonResponse(result ?? { ok: true }, 200, corsFor(req));
+      } catch (err) {
+        if (err instanceof CliError) {
+          return jsonResponse({ ok: false, error: { code: "cli_error", message: err.message } }, 400, corsFor(req));
+        }
+        console.error("server error:", err);
+        return jsonResponse({ ok: false, error: { code: "internal", message: String(err?.message || err) } }, 500, corsFor(req));
+      }
+    },
+  });
+  process.stderr.write(`annotate API listening on http://${host}:${port}\n`);
+  process.stderr.write(`  routes: ${Object.keys(ROUTES).join(", ")}\n`);
+  process.stderr.write(`  auth: ${apiKey ? "x-api-key required" : "none (loopback only)"}\n`);
+  process.stderr.write(`  cors: ${corsOrigin || "off (same-process clients only)"}\n`);
+  await new Promise(() => {});
+}
+
+function jsonResponse(obj, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(obj, null, 2), {
+    status,
+    headers: { "Content-Type": "application/json", ...extraHeaders },
+  });
+}
 
 const CONTEXT_LEN = 40;
 
