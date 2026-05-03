@@ -204,11 +204,18 @@ export function initLineage(container, callbacks) {
 
 function focusNode(node) {
   if (!cy) return;
-  const connected = node.connectedEdges();
-  const neighbors = connected.connectedNodes().union(node);
-  cy.elements().not(neighbors).addClass("dim");
-  cy.elements().not(connected).filter("edge").addClass("dim");
-  connected.removeClass("dim").addClass("hot");
+  // 2-hop neighborhood: in a doc → snippet → group flow, hovering a doc
+  // should also light up its groups, and hovering a group should also
+  // light up the docs its snippets came from.
+  const oneHop = node.connectedEdges().connectedNodes().union(node);
+  const twoHopEdges = oneHop.connectedEdges();
+  const twoHop = twoHopEdges.connectedNodes().union(oneHop);
+  const focusedEdges = twoHopEdges;
+
+  cy.elements().addClass("dim");
+  twoHop.removeClass("dim");
+  focusedEdges.removeClass("dim");
+  focusedEdges.addClass("hot");
 }
 
 function clearFocus() {
