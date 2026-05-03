@@ -7,15 +7,25 @@ marked.setOptions({
   gfm: true,
 });
 
-export async function renderFlowDoc(container, sourceText, kind) {
+export async function renderFlowDoc(container, source, kind) {
   container.innerHTML = "";
   container.dataset.flow = "1";
   container.dataset.kind = kind;
   let html;
   if (kind === "markdown") {
-    html = marked.parse(sourceText || "");
+    const text = typeof source === "string"
+      ? source
+      : new TextDecoder("utf-8").decode(new Uint8Array(source));
+    html = marked.parse(text || "");
+  } else if (kind === "docx") {
+    const buffer = source instanceof ArrayBuffer
+      ? source
+      : (source?.buffer || new Uint8Array(source).buffer);
+    const mammoth = await import("mammoth/mammoth.browser.js");
+    const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
+    html = result.value || "";
   } else {
-    html = `<pre>${escapeHtml(sourceText || "")}</pre>`;
+    html = `<pre>${escapeHtml(String(source || ""))}</pre>`;
   }
   const article = document.createElement("article");
   article.className = "flow-doc";

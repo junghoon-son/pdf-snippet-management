@@ -8,7 +8,7 @@ import crypto from "node:crypto";
 const HELP = `Usage:
   bun run annotate <command> [options]
 
-Supported file types: PDF, Markdown (.md, .markdown).
+Supported file types: PDF, Markdown (.md, .markdown), Word (.docx — GUI-only for capture).
 
 Read commands (JSON to stdout):
   list-snippets <file>                         All snippets for this document
@@ -485,6 +485,7 @@ async function cmdFindTextFlow({ positional, flags }) {
   const file = positional[0];
   if (!file) die("missing <markdown-file>");
   const kind = detectKindFromPath(file);
+  if (kind === "docx") die("find-text-flow on .docx not supported via CLI (binary source). Use the GUI to capture, or extract text first.");
   if (kind !== "markdown") die(`find-text-flow expects a .md file (got kind=${kind})`);
   const query = flags.query;
   if (!query) die('--query "text" required');
@@ -509,7 +510,7 @@ async function cmdAddTextFlow({ positional, flags }) {
   const file = positional[0];
   if (!file) die("missing <file>");
   const kind = detectKindFromPath(file);
-  if (kind !== "markdown") die(`add-text-flow expects a .md file (got kind=${kind})`);
+  if (kind !== "markdown" && kind !== "docx") die(`add-text-flow expects .md or .docx (got kind=${kind})`);
   const text = flags.text;
   if (!text) die('--text "..." required');
   const id = flags.id || newId();
@@ -528,11 +529,13 @@ async function cmdAddTextFlow({ positional, flags }) {
   }
 
   let flowPos;
-  try {
-    const sourceText = await readFile(file, "utf8");
-    flowPos = sourceText.indexOf(text);
-    if (flowPos < 0) flowPos = undefined;
-  } catch {}
+  if (kind === "markdown") {
+    try {
+      const sourceText = await readFile(file, "utf8");
+      flowPos = sourceText.indexOf(text);
+      if (flowPos < 0) flowPos = undefined;
+    } catch {}
+  }
 
   const snippet = {
     id,
@@ -551,7 +554,7 @@ async function cmdAddTextFlow({ positional, flags }) {
   };
   af.snippets.push(snippet);
   af.source = af.source || { path: file, filename: path.basename(file) };
-  af.source.kind = af.source.kind || "markdown";
+  af.source.kind = af.source.kind || kind;
 
   for (const gid of groupIds) {
     if (!af.groups.find((g) => g.id === gid)) {

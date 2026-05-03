@@ -7,7 +7,7 @@ import os from "node:os";
 const HELP = `Usage:
   bun run summary <file-or-dir> [options]
 
-Supported formats: PDF, Markdown (.md, .markdown).
+Supported formats: PDF, Markdown (.md, .markdown), Word (.docx).
 
 Options:
   --plain        Plain HTML (matches modal "plain" mode)
@@ -81,7 +81,7 @@ async function loadAnnot(pdfPath) {
 async function listPdfsInDir(dir) {
   const entries = await readdir(dir);
   return entries
-    .filter((f) => /\.(pdf|md|markdown)$/i.test(f))
+    .filter((f) => /\.(pdf|md|markdown|docx)$/i.test(f))
     .sort()
     .map((f) => path.join(dir, f));
 }
@@ -414,7 +414,7 @@ async function main() {
     title = `Workspace summary — ${path.basename(label)}`;
   } else {
     const af = await loadAnnot(pdfs[0]);
-    title = af?.source?.title || path.basename(pdfs[0]).replace(/\.(pdf|md|markdown)$/i, "");
+    title = af?.source?.title || path.basename(pdfs[0]).replace(/\.(pdf|md|markdown|docx)$/i, "");
   }
 
   const ctx = {

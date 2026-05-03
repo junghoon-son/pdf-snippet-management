@@ -13,4 +13,7 @@ export default defineConfig({
       : undefined,
     watch: { ignored: ["**/src-tauri/**"] },
   },
+  optimizeDeps: {
+    include: ["mammoth"],
+  },
 });

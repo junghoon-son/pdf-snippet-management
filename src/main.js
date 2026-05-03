@@ -237,7 +237,7 @@ document.getElementById("open-file").addEventListener("click", async () => {
   const path = await open({
     multiple: true,
     directory: false,
-    filters: [{ name: "Documents", extensions: ["pdf", "md", "markdown"] }],
+    filters: [{ name: "Documents", extensions: ["pdf", "md", "markdown", "docx"] }],
   });
   if (!path) return;
   const paths = Array.isArray(path) ? path : [path];
@@ -768,6 +768,8 @@ async function loadAnyDocument(path) {
     state.flowDoc = { kind, text };
     const firstHeading = text.match(/^#{1,6}\s+(.+)$/m);
     if (firstHeading) title = firstHeading[1].trim();
+  } else if (kind === "docx") {
+    state.flowDoc = { kind, bytes: new Uint8Array(bytes) };
   }
 
   state.source = {
@@ -798,6 +800,9 @@ async function loadAnyDocument(path) {
     await renderPages(state.pdfDoc, viewerContainer, state.scale);
   } else if (kind === "markdown") {
     await FlowView.renderFlowDoc(viewerContainer, state.flowDoc.text, kind);
+    if (state.tool === "rect") setTool("select");
+  } else if (kind === "docx") {
+    await FlowView.renderFlowDoc(viewerContainer, state.flowDoc.bytes.buffer, kind);
     if (state.tool === "rect") setTool("select");
   }
   updateZoomLabel();
