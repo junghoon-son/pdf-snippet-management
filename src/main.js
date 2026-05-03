@@ -972,6 +972,8 @@ async function loadAnyDocument(path) {
   viewerContainer.innerHTML = "";
   delete viewerContainer.dataset.flow;
   delete viewerContainer.dataset.kind;
+  viewerScroll.scrollLeft = 0;
+  viewerScroll.scrollTop = 0;
   document.body.dataset.sourceKind = kind;
 
   const bytes = await getStore().readDocumentBytes(path);
@@ -1029,13 +1031,16 @@ async function loadAnyDocument(path) {
     const fit = await fitWidthScale(state.pdfDoc, viewerScroll.clientWidth - FIT_PADDING);
     if (myToken !== docLoadToken) return;
     state.scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, fit));
-    await renderPages(state.pdfDoc, viewerContainer, state.scale);
-    if (myToken !== docLoadToken) return;
-    requestAnimationFrame(() => {
+    viewerScroll.style.visibility = "hidden";
+    try {
+      await renderPages(state.pdfDoc, viewerContainer, state.scale);
+      if (myToken !== docLoadToken) return;
       const overflow = viewerScroll.scrollWidth - viewerScroll.clientWidth;
       viewerScroll.scrollLeft = overflow > 0 ? overflow / 2 : 0;
       viewerScroll.scrollTop = 0;
-    });
+    } finally {
+      viewerScroll.style.visibility = "";
+    }
   } else if (kind === "markdown") {
     await FlowView.renderFlowDoc(viewerContainer, state.flowDoc.text, kind);
     if (myToken !== docLoadToken) return;
