@@ -14,8 +14,36 @@ import * as LineageView from "./lineage-view.js";
 import { openGroupOverlay } from "./group-overlay.js";
 import { setStore, getStore } from "./storage/store.js";
 import { TauriStore } from "./storage/tauri-store.js";
+import { FsaStore } from "./storage/fsa-store.js";
 
-setStore(new TauriStore());
+const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
+const fsaStore = IS_TAURI ? null : new FsaStore();
+setStore(IS_TAURI ? new TauriStore() : fsaStore);
+document.body.dataset.runtime = IS_TAURI ? "tauri" : "web";
+
+async function pickBrowserFile(types) {
+  if ("showOpenFilePicker" in window) {
+    try {
+      const [handle] = await window.showOpenFilePicker({ types, multiple: false });
+      return await handle.getFile();
+    } catch (err) {
+      if (err && err.name === "AbortError") return null;
+      throw err;
+    }
+  }
+  return await new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    const accept = types?.[0]?.accept;
+    if (accept) {
+      const exts = Object.values(accept).flat();
+      input.accept = exts.join(",");
+    }
+    input.onchange = () => resolve(input.files?.[0] || null);
+    input.oncancel = () => resolve(null);
+    input.click();
+  });
+}
 
 const FLOW_EXTS = ["md", "markdown"];
 function detectKindFromPath(path) {
@@ -71,6 +99,11 @@ const WORKSPACE_KEY = "pdf-annotator-workspace";
 const WORKSPACES_KEY = "pdf-annotator-workspaces";
 state.workspaces = loadAllWorkspaces();
 state.workspace = activeWorkspaceData();
+if (!IS_TAURI) {
+  state.workspace.folders = [];
+  state.workspace.files = [];
+  state.workspace.currentPdfPath = null;
+}
 const collapsedFolders = new Set();
 
 function makeWorkspaceId() {
@@ -237,6 +270,10 @@ function closeWorkspace(id) {
 document.getElementById("ws-tab-add").addEventListener("click", newWorkspace);
 
 document.getElementById("open-file").addEventListener("click", async () => {
+  if (!IS_TAURI) {
+    alert("In the browser build, click “+ folder” to pick a directory — individual file picking is not yet supported.");
+    return;
+  }
   const path = await open({
     multiple: true,
     directory: false,
@@ -253,8 +290,20 @@ document.getElementById("open-file").addEventListener("click", async () => {
 });
 
 document.getElementById("open-folder").addEventListener("click", async () => {
-  const dir = await open({ multiple: false, directory: true });
-  if (!dir) return;
+  let dir;
+  if (IS_TAURI) {
+    dir = await open({ multiple: false, directory: true });
+    if (!dir) return;
+  } else {
+    try {
+      const picked = await fsaStore.pickRoot();
+      dir = picked.name;
+    } catch (err) {
+      if (err && err.name !== "AbortError") alert(`Folder access failed: ${err.message || err}`);
+      return;
+    }
+    state.workspace.folders = [];
+  }
   let folder = state.workspace.folders.find((f) => f.path === dir);
   const docs = await getStore().listDocuments(dir);
   const pdfs = docs.map((d) => d.path);
@@ -652,14 +701,21 @@ function exportGroups() {
 }
 
 async function importGroups() {
-  const path = await open({
-    multiple: false,
-    directory: false,
-    filters: [{ name: "JSON", extensions: ["json"] }],
-  });
-  if (!path) return;
+  let bytes;
+  if (IS_TAURI) {
+    const path = await open({
+      multiple: false,
+      directory: false,
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (!path) return;
+    bytes = await getStore().readDocumentBytes(path);
+  } else {
+    const file = await pickBrowserFile([{ description: "JSON", accept: { "application/json": [".json"] } }]);
+    if (!file) return;
+    bytes = new Uint8Array(await file.arrayBuffer());
+  }
   try {
-    const bytes = await getStore().readDocumentBytes(path);
     const json = new TextDecoder().decode(new Uint8Array(bytes));
     const parsed = JSON.parse(json);
     const incoming = Array.isArray(parsed) ? parsed : (parsed.groups || []);

@@ -1605,6 +1605,15 @@ body.dragging-snippet .group-row:hover {
 
 body[data-source-kind="markdown"] [data-pdf-only],
 body[data-source-kind="docx"] [data-pdf-only] { display: none !important; }
+
+body[data-runtime="web"] #open-file { display: none; }
+body[data-runtime="web"] #viewer-empty::after {
+  content: "Click “+ folder” in the sidebar to pick a folder.";
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
 body[data-source-kind="markdown"] #zoom-out,
 body[data-source-kind="markdown"] #zoom-in,
 body[data-source-kind="markdown"] #zoom-fit,
