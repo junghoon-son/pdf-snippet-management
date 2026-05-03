@@ -479,7 +479,7 @@ body.pane-max #snippets-pane { border-left: none; }
 .ws-folder-remove:hover, .ws-file-remove:hover { color: #f48771; }
 .ws-folder.collapsed .ws-folder-pdfs { display: none; }
 .ws-folder-pdfs li {
-  padding: 5px 14px 5px 24px;
+  padding: 5px 14px 5px 18px;
   cursor: pointer;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
@@ -487,7 +487,39 @@ body.pane-max #snippets-pane { border-left: none; }
   text-overflow: ellipsis;
   font-size: 11.5px;
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
+.ws-folder-pdfs li .ws-file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-kind {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 14px;
+  padding: 0 4px;
+  font-family: ui-monospace, "SF Mono", monospace;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  background: var(--bg);
+  text-transform: uppercase;
+}
+.file-kind[data-kind="pdf"] { color: #c44a3b; border-color: rgba(196, 74, 59, 0.4); background: rgba(196, 74, 59, 0.08); }
+.file-kind[data-kind="md"] { color: #2ea58c; border-color: rgba(46, 165, 140, 0.4); background: rgba(46, 165, 140, 0.08); }
+.file-kind[data-kind="docx"] { color: #3068b8; border-color: rgba(48, 104, 184, 0.4); background: rgba(48, 104, 184, 0.08); }
+.recent-name { display: flex; align-items: center; gap: 6px; }
+.recent-name .recent-name-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ws-folder-pdfs li:hover { background: var(--panel-2); }
 .ws-folder-pdfs li.active { background: var(--border); color: var(--accent); }
 .ws-folder-pdfs li.missing {

@@ -62,6 +62,27 @@ async function saveFile({ suggestedName, mimeType, content }) {
   return suggestedName;
 }
 
+function fileKindBadge(path) {
+  const ext = (path || "").toLowerCase().match(/\.([a-z0-9]+)$/);
+  const kind = ext ? ext[1] : "";
+  const span = document.createElement("span");
+  span.className = "file-kind";
+  if (kind === "pdf") {
+    span.textContent = "PDF";
+    span.dataset.kind = "pdf";
+  } else if (kind === "md" || kind === "markdown") {
+    span.textContent = "MD";
+    span.dataset.kind = "md";
+  } else if (kind === "docx") {
+    span.textContent = "DOC";
+    span.dataset.kind = "docx";
+  } else {
+    span.textContent = (kind || "·").toUpperCase().slice(0, 4);
+    span.dataset.kind = "other";
+  }
+  return span;
+}
+
 async function pickBrowserFile(types) {
   if ("showOpenFilePicker" in window) {
     try {
@@ -430,7 +451,10 @@ async function renderWorkspace() {
     for (const p of folder.pdfs || []) {
       const li = document.createElement("li");
       li.dataset.path = p;
-      li.textContent = p.split("/").pop();
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "ws-file-name";
+      nameSpan.textContent = p.split("/").pop();
+      li.append(fileKindBadge(p), nameSpan);
       li.title = p;
       li.addEventListener("click", () => {
         if (li.classList.contains("missing")) return;
@@ -459,7 +483,10 @@ async function renderWorkspace() {
     for (const p of state.workspace.files) {
       const li = document.createElement("li");
       li.dataset.path = p;
-      li.textContent = p.split("/").pop();
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "ws-file-name";
+      nameSpan.textContent = p.split("/").pop();
+      li.append(fileKindBadge(p), nameSpan);
       li.title = p;
       li.addEventListener("click", () => {
         if (li.classList.contains("missing")) return;
@@ -748,7 +775,10 @@ function renderRecents() {
     const parent = parts.pop() || "/";
     const name = document.createElement("div");
     name.className = "recent-name";
-    name.textContent = filename;
+    const nameInner = document.createElement("span");
+    nameInner.className = "recent-name-text";
+    nameInner.textContent = filename;
+    name.append(fileKindBadge(path), nameInner);
     const folder = document.createElement("div");
     folder.className = "recent-folder";
     folder.textContent = parent;
