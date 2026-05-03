@@ -953,6 +953,8 @@ async function loadAnyDocument(path) {
   setActiveFile(path);
   viewerEmpty.style.display = "none";
   viewerContainer.innerHTML = "";
+  delete viewerContainer.dataset.flow;
+  delete viewerContainer.dataset.kind;
   document.body.dataset.sourceKind = kind;
 
   const bytes = await getStore().readDocumentBytes(path);

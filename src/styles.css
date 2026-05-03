@@ -1763,6 +1763,7 @@ body.dragging-snippet .group-row:hover {
   align-items: center;
   padding: 24px 48px;
   gap: 16px;
+  min-width: min-content;
 }
 
 .page-wrap {
