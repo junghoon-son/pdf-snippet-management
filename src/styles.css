@@ -1065,7 +1065,7 @@ body.dragging-snippet .group-row:hover {
 }
 #group-overlay .bubble {
   opacity: 0;
-  transition: transform 80ms linear, opacity 180ms ease-out;
+  transition: opacity 180ms ease-out;
 }
 #group-overlay.active .bubble { opacity: 1; }
 #group-overlay .bubble circle,
@@ -1109,8 +1109,9 @@ body.dragging-snippet .group-row:hover {
   box-shadow: 0 12px 30px rgba(60, 50, 30, 0.35), 0 0 0 1px rgba(46, 165, 140, 0.4);
   font-family: inherit;
   opacity: 0;
-  transition: transform 60ms linear, opacity 160ms ease-out;
+  transition: opacity 160ms ease-out, box-shadow 180ms ease-out;
   will-change: transform;
+  transform: translate3d(0, 0, 0);
 }
 #group-overlay.active .lifted-card { opacity: 1; }
 .lifted-card.over-target {

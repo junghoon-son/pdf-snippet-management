@@ -152,10 +152,20 @@ export function openGroupOverlay({ snippet, allSnippets, allGroups, container, a
 
     // Position card initially under the cursor anchor (relative to overlay)
     let cursor = { x: anchor.x - paneRect.left, y: anchor.y - paneRect.top };
+    let cardW = 0, cardH = 0;
+    let pendingFrame = false;
     const placeCard = () => {
-      card.style.transform = `translate(${cursor.x - card.offsetWidth / 2}px, ${cursor.y - card.offsetHeight / 2}px)`;
+      if (pendingFrame) return;
+      pendingFrame = true;
+      requestAnimationFrame(() => {
+        pendingFrame = false;
+        if (!cardW) { cardW = card.offsetWidth; cardH = card.offsetHeight; }
+        const x = cursor.x - cardW / 2;
+        const y = cursor.y - cardH / 2;
+        card.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+      });
     };
-    requestAnimationFrame(placeCard);
+    requestAnimationFrame(() => { cardW = card.offsetWidth; cardH = card.offsetHeight; placeCard(); });
 
     // Force simulation
     const sim = forceSimulation(bubbles)
