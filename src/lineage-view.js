@@ -74,6 +74,7 @@ export function initLineage(container, callbacks) {
           "text-overflow-wrap": "ellipsis",
           "font-family": "ui-serif, 'Iowan Old Style', Charter, Georgia, serif",
           "font-size": "10.5px",
+          "line-height": 1.35,
           "padding": 7,
         },
       },
@@ -241,11 +242,35 @@ function ellipsis(s, n = 32) {
   return t.slice(0, n - 1) + "…";
 }
 
+function bold(s) {
+  return Array.from(String(s)).map((c) => {
+    const code = c.codePointAt(0);
+    if (code >= 65 && code <= 90) return String.fromCodePoint(0x1D400 + code - 65);
+    if (code >= 97 && code <= 122) return String.fromCodePoint(0x1D41A + code - 97);
+    if (code >= 48 && code <= 57) return String.fromCodePoint(0x1D7CE + code - 48);
+    return c;
+  }).join("");
+}
+
+function kindIcon(kind) {
+  if (kind === "markdown") return "📝";
+  if (kind === "docx") return "📘";
+  return "📄";
+}
+
+function kindFromPath(p) {
+  const m = (p || "").toLowerCase().match(/\.([a-z0-9]+)$/);
+  if (!m) return "pdf";
+  if (m[1] === "md" || m[1] === "markdown") return "markdown";
+  if (m[1] === "docx") return "docx";
+  return "pdf";
+}
+
 function snippetPreview(s) {
-  if (s.kind === "image") return `[image · p.${s.page}]`;
+  if (s.kind === "image") return `[image · ${bold(`p.${s.page}`)}]`;
   const text = (s.text || "").trim();
-  const loc = s.anchor ? `§ ${ellipsis(s.anchor, 28)}` : `p.${s.page}`;
-  return `${loc}  ${ellipsis(text, 90)}`;
+  const loc = s.anchor ? bold(`§ ${ellipsis(s.anchor, 24)}`) : bold(`p.${s.page}`);
+  return `${loc}\n${ellipsis(text, 90)}`;
 }
 
 export async function renderLineage(snippets, groupsMeta, getImageUrl) {
@@ -291,12 +316,14 @@ export async function renderLineage(snippets, groupsMeta, getImageUrl) {
   // 4. Doc nodes
   docPaths.forEach((path, i) => {
     const filename = path.split("/").pop() || path;
-    const display = ellipsis(filename, 28);
+    const kind = kindFromPath(path);
+    const display = `${kindIcon(kind)}  ${ellipsis(filename, 24)}`;
     elements.push({
       group: "nodes",
       data: {
         id: `doc::${path}`,
         type: "doc",
+        kind,
         label: display,
         pdfPath: path,
         title: filename,
