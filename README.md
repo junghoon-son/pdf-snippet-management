@@ -35,7 +35,40 @@ The first run compiles Tauri (~1 min) and opens a native window. Subsequent runs
 bun tauri build
 ```
 
-Output lands in `src-tauri/target/release/bundle/`.
+Output lands in `src-tauri/target/release/bundle/`. Per-platform artifacts:
+
+- **macOS** — `*.app` bundle in `bundle/macos/` and a `.dmg` installer in `bundle/dmg/`. Code-signing requires a Developer ID; without it the app needs `xattr -dr com.apple.quarantine PDF\ Annotator.app` to launch on another machine. To build a universal binary set `tauri.bundle.macOS.minimumSystemVersion` and add `--target universal-apple-darwin`.
+- **Windows** — `.msi` installer (default) and/or NSIS `.exe`. Cross-build from macOS requires the Windows toolchain; usually easier to build on Windows directly or via CI.
+- **Linux** — `.deb`, `.rpm`, `.AppImage` per host distro. Cross-build between distros uses Docker images (`tauri/build-linux`).
+
+First release build takes ~5–10 min (compiles all Rust deps from scratch). Subsequent builds are ~1 min thanks to Cargo incremental.
+
+## Run in a regular browser (FSA storage path)
+
+The same frontend runs in a Chromium-family browser (Chrome / Edge / Brave / Arc) without Tauri:
+
+```bash
+bun run dev          # starts Vite at http://localhost:1420
+```
+
+Open `http://localhost:1420` directly in Chrome (not via the Tauri window). The app detects the missing Tauri runtime and switches to the **File System Access API** storage backend. Click `+ folder` in the sidebar to grant the browser access to a folder; sidecars and image clips are written next to source files just like the desktop build. Safari and Firefox fall back to the OPFS stub (currently a placeholder).
+
+For a built static site:
+
+```bash
+bun run build        # outputs dist/
+npx serve dist       # or any static server
+```
+
+## CLI tools
+
+```bash
+bun run summary <file-or-dir> [--md|--plain|--json]
+bun run annotate <command> [...]
+bun run annotate serve --port 1421 --key SECRET
+```
+
+`serve` exposes every CLI command at `POST /annotate/<command>` with JSON in/out. See `bun run annotate --help`.
 
 ## Project layout
 
