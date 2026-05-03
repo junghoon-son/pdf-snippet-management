@@ -1538,15 +1538,15 @@ async function applyGroupOverlayResult(s, result) {
 }
 
 function promptGroupName(groupId) {
-  const li = document.querySelector(`#snippets-list [data-snippet-id]`);
-  const chip = document.querySelector(`#snippets-list .group-chip[data-group-id="${groupId}"]`)
-    || document.querySelector(`#groups-list [data-group-id="${groupId}"] input`);
-  // Defer to Groups tab: switch view, focus the input.
-  switchView("groups");
+  // The Groups panel is always visible at the bottom of #snippets-pane,
+  // so we don't switch view — just focus the new group's name input.
   setTimeout(() => {
     const input = document.querySelector(`#groups-list [data-group-id="${groupId}"] input`);
-    if (input) { input.focus(); input.select(); }
-  }, 50);
+    if (!input) return;
+    input.focus();
+    input.select();
+    input.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, 60);
 }
 
 async function linkSnippets(srcId, dstId) {
@@ -1782,6 +1782,7 @@ async function deleteGroup(id) {
 }
 
 function switchView(view) {
+  if (view !== "list" && view !== "map" && view !== "lineage") view = "list";
   state.view = view;
   document.querySelectorAll(".tab-btn").forEach((b) => {
     b.classList.toggle("active", b.dataset.view === view);
