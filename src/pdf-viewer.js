@@ -15,6 +15,10 @@ export async function renderPages(pdf, container, scale) {
   currentScale = scale;
   if (pageObserver) { pageObserver.disconnect(); pageObserver = null; }
   pageStates.clear();
+  _pageHashes.clear();
+  _pageBuckets.clear();
+  _lastSnippets = [];
+  _hoverSnippetId = null;
   container.innerHTML = "";
 
   const pageHandles = await Promise.all(
@@ -211,10 +215,44 @@ const HL_IMAGE_HOVER_STROKE = "#6ee0c5";
 
 let _lastSnippets = [];
 let _hoverSnippetId = null;
+const _pageBuckets = new Map();
+const _pageHashes = new Map();
+
+function bucketByPage(snippets) {
+  _pageBuckets.clear();
+  for (const s of snippets) {
+    if (!_pageBuckets.has(s.page)) _pageBuckets.set(s.page, []);
+    const arr = _pageBuckets.get(s.page);
+    for (const r of s.rects || []) arr.push({ rect: r, snippet: s });
+  }
+}
+
+function hashItems(items, hoverId) {
+  if (!items || items.length === 0) return "";
+  const parts = [];
+  for (const it of items) {
+    const r = it.rect;
+    const hot = it.snippet.id === hoverId ? "h" : "n";
+    parts.push(
+      `${it.snippet.id}:${it.snippet.kind || "t"}:${hot}:` +
+      `${r.left.toFixed(4)},${r.top.toFixed(4)},${r.width.toFixed(4)},${r.height.toFixed(4)}`,
+    );
+  }
+  parts.sort();
+  return parts.join("|");
+}
 
 export function applyHighlights(container, snippets) {
   _lastSnippets = snippets || [];
-  for (const ps of pageStates.values()) repaintPage(ps);
+  bucketByPage(_lastSnippets);
+  for (const ps of pageStates.values()) {
+    const pageNum = parseInt(ps.wrap.dataset.page, 10);
+    const items = _pageBuckets.get(pageNum) || [];
+    const hash = hashItems(items, _hoverSnippetId);
+    if (_pageHashes.get(pageNum) === hash) continue;
+    paintHighlightCanvas(ps.highlightLayer, items);
+    _pageHashes.set(pageNum, hash);
+  }
 }
 
 export function setHoverSnippetId(id) {
@@ -255,12 +293,9 @@ export function pulseSnippet(snippetId) {
 
 function repaintPage(ps) {
   const pageNum = parseInt(ps.wrap.dataset.page, 10);
-  const items = [];
-  for (const s of _lastSnippets) {
-    if (s.page !== pageNum) continue;
-    for (const r of s.rects || []) items.push({ rect: r, snippet: s });
-  }
+  const items = _pageBuckets.get(pageNum) || [];
   paintHighlightCanvas(ps.highlightLayer, items);
+  _pageHashes.set(pageNum, hashItems(items, _hoverSnippetId));
 }
 
 function paintHighlightCanvas(canvas, items) {
