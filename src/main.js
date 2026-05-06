@@ -1152,6 +1152,15 @@ function handlePdfPinch(e) {
     viewerContainer.style.transform = "";
     viewerContainer.style.transformOrigin = "";
     viewerContainer.style.willChange = "";
+    // Skip the expensive re-rasterize if the change is too small to
+    // matter visually — the user can pinch again to commit. Threshold
+    // is 5% relative to current scale.
+    const ratio = finalScale / state.scale;
+    if (Math.abs(ratio - 1) < 0.05) {
+      pinchAnchor = null;
+      updateZoomLabel();
+      return;
+    }
     await setScale(finalScale);
     adjustScrollAfterZoom(anchor, realFactor);
     pinchAnchor = null;

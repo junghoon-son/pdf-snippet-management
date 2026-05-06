@@ -36,10 +36,11 @@ export async function renderPages(pdf, container, scale) {
     wrap.style.width = `${viewport.width}px`;
     wrap.style.height = `${viewport.height}px`;
 
+    const dpr = window.devicePixelRatio || 1;
     const highlightLayer = document.createElement("canvas");
     highlightLayer.className = "highlight-layer";
-    highlightLayer.width = Math.floor(viewport.width);
-    highlightLayer.height = Math.floor(viewport.height);
+    highlightLayer.width = Math.floor(viewport.width * dpr);
+    highlightLayer.height = Math.floor(viewport.height * dpr);
     highlightLayer.style.width = `${viewport.width}px`;
     highlightLayer.style.height = `${viewport.height}px`;
     wrap.appendChild(highlightLayer);
@@ -321,16 +322,19 @@ function paintHighlightCanvas(canvas, items) {
     ctx.fillRect(rect.left * W, rect.top * H, rect.width * W, rect.height * H);
   }
 
+  const dpr = window.devicePixelRatio || 1;
   for (const { rect, snippet } of placed) {
     if (snippet.kind !== "image") continue;
     const hot = snippet.id === _hoverSnippetId;
     ctx.strokeStyle = hot ? HL_IMAGE_HOVER_STROKE : HL_IMAGE_STROKE;
-    ctx.lineWidth = hot ? 2.5 : 1.5;
+    ctx.lineWidth = (hot ? 2.5 : 1.5) * dpr;
+    ctx.setLineDash([6 * dpr, 4 * dpr]);
     ctx.strokeRect(
-      rect.left * W + 0.75,
-      rect.top * H + 0.75,
-      Math.max(0, rect.width * W - 1.5),
-      Math.max(0, rect.height * H - 1.5),
+      rect.left * W + ctx.lineWidth / 2,
+      rect.top * H + ctx.lineWidth / 2,
+      Math.max(0, rect.width * W - ctx.lineWidth),
+      Math.max(0, rect.height * H - ctx.lineWidth),
     );
+    ctx.setLineDash([]);
   }
 }
