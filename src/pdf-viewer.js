@@ -7,32 +7,30 @@ export async function loadDocument(data) {
   return pdfjsLib.getDocument({ data }).promise;
 }
 
+let currentScale = 1;
+const pageStates = new Map();
+let pageObserver = null;
+
 export async function renderPages(pdf, container, scale) {
+  currentScale = scale;
+  if (pageObserver) { pageObserver.disconnect(); pageObserver = null; }
+  pageStates.clear();
   container.innerHTML = "";
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-    const page = await pdf.getPage(pageNum);
+
+  const pageHandles = await Promise.all(
+    Array.from({ length: pdf.numPages }, (_, i) => pdf.getPage(i + 1)),
+  );
+
+  for (let i = 0; i < pageHandles.length; i++) {
+    const pageNum = i + 1;
+    const page = pageHandles[i];
     const viewport = page.getViewport({ scale });
-    const dpr = window.devicePixelRatio || 1;
 
     const wrap = document.createElement("div");
-    wrap.className = "page-wrap";
+    wrap.className = "page-wrap pending";
     wrap.dataset.page = String(pageNum);
     wrap.style.width = `${viewport.width}px`;
     wrap.style.height = `${viewport.height}px`;
-
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.floor(viewport.width * dpr);
-    canvas.height = Math.floor(viewport.height * dpr);
-    canvas.style.width = `${viewport.width}px`;
-    canvas.style.height = `${viewport.height}px`;
-    wrap.appendChild(canvas);
-
-    const textLayer = document.createElement("div");
-    textLayer.className = "textLayer";
-    textLayer.style.width = `${viewport.width}px`;
-    textLayer.style.height = `${viewport.height}px`;
-    textLayer.style.setProperty("--scale-factor", String(scale));
-    wrap.appendChild(textLayer);
 
     const highlightLayer = document.createElement("div");
     highlightLayer.className = "highlight-layer";
@@ -40,18 +38,84 @@ export async function renderPages(pdf, container, scale) {
 
     container.appendChild(wrap);
 
-    const ctx = canvas.getContext("2d");
-    const transform = dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null;
-    await page.render({ canvasContext: ctx, viewport, transform }).promise;
-
-    const textContent = await page.getTextContent();
-    const tl = new pdfjsLib.TextLayer({
-      textContentSource: textContent,
-      container: textLayer,
-      viewport,
+    pageStates.set(pageNum, {
+      wrap, page, viewport, highlightLayer,
+      canvas: null, textLayer: null,
+      rendered: false, renderPromise: null,
     });
-    await tl.render();
   }
+
+  const root = container.closest("#viewer-scroll") || null;
+  pageObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (entry.isIntersecting) {
+        const pageNum = parseInt(entry.target.dataset.page, 10);
+        renderPage(pageNum);
+      }
+    }
+  }, {
+    root,
+    rootMargin: "200% 0px",
+    threshold: 0,
+  });
+
+  for (const ps of pageStates.values()) {
+    pageObserver.observe(ps.wrap);
+  }
+}
+
+async function renderPage(pageNum) {
+  const ps = pageStates.get(pageNum);
+  if (!ps || ps.rendered) return;
+  if (ps.renderPromise) return ps.renderPromise;
+
+  ps.renderPromise = (async () => {
+    const { wrap, page, viewport, highlightLayer } = ps;
+    const dpr = window.devicePixelRatio || 1;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.floor(viewport.width * dpr);
+    canvas.height = Math.floor(viewport.height * dpr);
+    canvas.style.width = `${viewport.width}px`;
+    canvas.style.height = `${viewport.height}px`;
+    wrap.insertBefore(canvas, highlightLayer);
+
+    const textLayer = document.createElement("div");
+    textLayer.className = "textLayer";
+    textLayer.style.width = `${viewport.width}px`;
+    textLayer.style.height = `${viewport.height}px`;
+    textLayer.style.setProperty("--scale-factor", String(currentScale));
+    wrap.insertBefore(textLayer, highlightLayer);
+
+    try {
+      const ctx = canvas.getContext("2d");
+      const transform = dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null;
+      await page.render({ canvasContext: ctx, viewport, transform }).promise;
+
+      const textContent = await page.getTextContent();
+      const tl = new pdfjsLib.TextLayer({
+        textContentSource: textContent,
+        container: textLayer,
+        viewport,
+      });
+      await tl.render();
+
+      ps.canvas = canvas;
+      ps.textLayer = textLayer;
+      ps.rendered = true;
+      wrap.classList.remove("pending");
+    } catch (err) {
+      console.warn(`pdf page ${pageNum} render failed`, err);
+      canvas.remove();
+      textLayer.remove();
+      ps.renderPromise = null;
+    }
+  })();
+  return ps.renderPromise;
+}
+
+export async function ensurePageRendered(pageNum) {
+  return renderPage(pageNum);
 }
 
 export async function fitWidthScale(pdf, availableWidth) {

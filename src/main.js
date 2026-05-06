@@ -7,6 +7,7 @@ import {
   getSelectionSnippet,
   applyHighlights,
   renderRegionPng,
+  ensurePageRendered,
 } from "./pdf-viewer.js";
 import * as FlowView from "./flow-viewer.js";
 import * as MapView from "./map-view.js";
@@ -1953,6 +1954,7 @@ function previewSnippetInPdf(s) {
   }
   const wrap = viewerContainer.querySelector(`.page-wrap[data-page="${s.page}"]`);
   if (!wrap) return;
+  ensurePageRendered?.(s.page);
   const hl = wrap.querySelector(`.hl[data-snippet-id="${s.id}"]`);
   const target = hl || wrap;
   target.scrollIntoView({ behavior: "smooth", block: "center" });

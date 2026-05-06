@@ -1771,6 +1771,22 @@ body.dragging-snippet .group-row:hover {
   background: white;
   box-shadow: 0 2px 8px rgba(80, 70, 40, 0.18);
 }
+.page-wrap.pending {
+  background: linear-gradient(180deg, #ffffff 0%, #f6f4ee 100%);
+}
+.page-wrap.pending::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent 0,
+    transparent 14px,
+    rgba(0, 0, 0, 0.012) 14px,
+    rgba(0, 0, 0, 0.012) 28px
+  );
+  pointer-events: none;
+}
 
 body[data-source-kind="markdown"] [data-pdf-only],
 body[data-source-kind="docx"] [data-pdf-only] { display: none !important; }
