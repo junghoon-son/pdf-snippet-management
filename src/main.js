@@ -8,6 +8,8 @@ import {
   applyHighlights,
   renderRegionPng,
   ensurePageRendered,
+  setHoverSnippetId,
+  pulseSnippet,
 } from "./pdf-viewer.js";
 import * as FlowView from "./flow-viewer.js";
 import * as MapView from "./map-view.js";
@@ -1336,14 +1338,24 @@ viewerContainer.addEventListener("click", (e) => {
 
 viewerContainer.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
-  const hl = e.target.closest?.(".hl");
-  if (!hl) return;
-  const id = hl.dataset.snippetId;
-  if (!id) return;
-  const snippet = state.snippets.find((x) => x.id === id);
-  if (!snippet) return;
+  // Flow doc: <mark.hl> elements still carry data-snippet-id
+  const flowMark = e.target.closest?.("mark.hl");
+  if (flowMark) {
+    const id = flowMark.dataset.snippetId;
+    if (!id) return;
+    const snippet = state.snippets.find((x) => x.id === id);
+    if (!snippet) return;
+    e.stopPropagation();
+    beginPressGesture(snippet, e, flowMark);
+    return;
+  }
+  // PDF: highlight-layer is now a canvas; hit-test against snippet rects
+  const layer = e.target.classList?.contains("highlight-layer") ? e.target : null;
+  if (!layer) return;
+  const hit = hitTestHighlight(e);
+  if (!hit) return;
   e.stopPropagation();
-  beginPressGesture(snippet, e, hl);
+  beginPressGesture(hit, e, layer);
 });
 
 function beginPressGesture(snippet, downEvent, sourceEl) {
@@ -1406,7 +1418,10 @@ function hitTestHighlight(e) {
 }
 
 function updateHoverClasses() {
-  viewerContainer.querySelectorAll(".hl").forEach((el) => {
+  // PDF mode: redraw highlight canvases for the affected pages
+  setHoverSnippetId(hoverSnippetId);
+  // Flow mode: <mark.hl> elements still get a hover class
+  viewerContainer.querySelectorAll("mark.hl").forEach((el) => {
     el.classList.toggle("hover", el.dataset.snippetId === hoverSnippetId);
   });
   snippetsListEl.querySelectorAll(".snippet").forEach((li) => {
@@ -1955,19 +1970,8 @@ function previewSnippetInPdf(s) {
   const wrap = viewerContainer.querySelector(`.page-wrap[data-page="${s.page}"]`);
   if (!wrap) return;
   ensurePageRendered?.(s.page);
-  const hl = wrap.querySelector(`.hl[data-snippet-id="${s.id}"]`);
-  const target = hl || wrap;
-  target.scrollIntoView({ behavior: "smooth", block: "center" });
-  pulseHighlights(s.id);
-}
-
-function pulseHighlights(snippetId) {
-  const els = viewerContainer.querySelectorAll(`.hl[data-snippet-id="${snippetId}"]`);
-  els.forEach((el) => {
-    el.classList.remove("pulse");
-    void el.offsetWidth;
-    el.classList.add("pulse");
-  });
+  wrap.scrollIntoView({ behavior: "smooth", block: "center" });
+  pulseSnippet(s.id);
 }
 
 function applyAllHighlights() {

@@ -1133,10 +1133,22 @@ body.dragging-snippet .group-row:hover {
   color: var(--group-color, #888);
 }
 
-.page-wrap .highlight-layer .hl.pulse {
-  animation: pulse-hl 700ms ease-out;
+.page-wrap .hl-pulse {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(78, 201, 176, 0.85);
+  mix-blend-mode: multiply;
+  border-radius: 1px;
+  animation: pulse-hl 700ms ease-out forwards;
 }
 @keyframes pulse-hl {
+  0% { background: rgba(78, 201, 176, 0.85); }
+  100% { background: rgba(255, 215, 90, 0.42); }
+}
+.flow-doc mark.hl.pulse {
+  animation: pulse-flow 700ms ease-out;
+}
+@keyframes pulse-flow {
   0% { background: rgba(78, 201, 176, 0.85); }
   100% { background: var(--highlight); }
 }
@@ -1871,9 +1883,6 @@ body[data-runtime="web"] #viewer-empty::after {
   border-radius: 1px;
   cursor: grab;
 }
-.flow-doc mark.hl.pulse {
-  animation: pulse-hl 700ms ease-out;
-}
 .flow-doc mark.hl.hover {
   background: rgba(255, 170, 40, 0.65);
 }
@@ -1885,8 +1894,12 @@ body[data-runtime="web"] #viewer-empty::after {
 .page-wrap .highlight-layer {
   position: absolute;
   inset: 0;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: grab;
+  opacity: 0.42;
+  mix-blend-mode: multiply;
 }
+.page-wrap .highlight-layer:active { cursor: grabbing; }
 .page-wrap .highlight-layer .hl {
   position: absolute;
   background: var(--highlight);

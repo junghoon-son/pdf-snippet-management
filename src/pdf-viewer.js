@@ -32,8 +32,12 @@ export async function renderPages(pdf, container, scale) {
     wrap.style.width = `${viewport.width}px`;
     wrap.style.height = `${viewport.height}px`;
 
-    const highlightLayer = document.createElement("div");
+    const highlightLayer = document.createElement("canvas");
     highlightLayer.className = "highlight-layer";
+    highlightLayer.width = Math.floor(viewport.width);
+    highlightLayer.height = Math.floor(viewport.height);
+    highlightLayer.style.width = `${viewport.width}px`;
+    highlightLayer.style.height = `${viewport.height}px`;
     wrap.appendChild(highlightLayer);
 
     container.appendChild(wrap);
@@ -200,35 +204,98 @@ function rectContains(big, small) {
          small.top + small.height <= big.top + big.height + eps;
 }
 
+const HL_FILL = "#ffd75a";
+const HL_HOVER_FILL = "#ffaa28";
+const HL_IMAGE_STROKE = "#2ea58c";
+const HL_IMAGE_HOVER_STROKE = "#6ee0c5";
+
+let _lastSnippets = [];
+let _hoverSnippetId = null;
+
 export function applyHighlights(container, snippets) {
-  container.querySelectorAll(".highlight-layer").forEach((l) => (l.innerHTML = ""));
-  const byPage = new Map();
-  for (const s of snippets) {
-    if (!byPage.has(s.page)) byPage.set(s.page, []);
-    for (const r of s.rects || []) {
-      byPage.get(s.page).push({ rect: r, snippet: s });
-    }
+  _lastSnippets = snippets || [];
+  for (const ps of pageStates.values()) repaintPage(ps);
+}
+
+export function setHoverSnippetId(id) {
+  const prev = _hoverSnippetId;
+  if (id === prev) return;
+  _hoverSnippetId = id;
+  const pagesToRepaint = new Set();
+  if (prev) {
+    const s = _lastSnippets.find((x) => x.id === prev);
+    if (s) pagesToRepaint.add(s.page);
   }
-  for (const [page, items] of byPage) {
-    const wrap = container.querySelector(`.page-wrap[data-page="${page}"]`);
-    if (!wrap) continue;
-    const layer = wrap.querySelector(".highlight-layer");
-    items.sort((a, b) => rectArea(b.rect) - rectArea(a.rect));
-    const placed = [];
-    for (const { rect, snippet } of items) {
-      const covered = placed.some((p) =>
-        p.snippet.id !== snippet.id && rectContains(p.rect, rect),
-      );
-      if (covered) continue;
-      placed.push({ rect, snippet });
-      const div = document.createElement("div");
-      div.className = snippet.kind === "image" ? "hl hl-image" : "hl";
-      div.dataset.snippetId = snippet.id;
-      div.style.left = `${rect.left * 100}%`;
-      div.style.top = `${rect.top * 100}%`;
-      div.style.width = `${rect.width * 100}%`;
-      div.style.height = `${rect.height * 100}%`;
-      layer.appendChild(div);
-    }
+  if (id) {
+    const s = _lastSnippets.find((x) => x.id === id);
+    if (s) pagesToRepaint.add(s.page);
+  }
+  for (const page of pagesToRepaint) {
+    const ps = pageStates.get(page);
+    if (ps) repaintPage(ps);
+  }
+}
+
+export function pulseSnippet(snippetId) {
+  const s = _lastSnippets.find((x) => x.id === snippetId);
+  if (!s) return;
+  const ps = pageStates.get(s.page);
+  if (!ps) return;
+  for (const r of s.rects || []) {
+    const div = document.createElement("div");
+    div.className = "hl-pulse";
+    div.style.left = `${r.left * 100}%`;
+    div.style.top = `${r.top * 100}%`;
+    div.style.width = `${r.width * 100}%`;
+    div.style.height = `${r.height * 100}%`;
+    ps.wrap.appendChild(div);
+    setTimeout(() => div.remove(), 720);
+  }
+}
+
+function repaintPage(ps) {
+  const pageNum = parseInt(ps.wrap.dataset.page, 10);
+  const items = [];
+  for (const s of _lastSnippets) {
+    if (s.page !== pageNum) continue;
+    for (const r of s.rects || []) items.push({ rect: r, snippet: s });
+  }
+  paintHighlightCanvas(ps.highlightLayer, items);
+}
+
+function paintHighlightCanvas(canvas, items) {
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width;
+  const H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  if (items.length === 0) return;
+
+  items.sort((a, b) => rectArea(b.rect) - rectArea(a.rect));
+  const placed = [];
+  for (const item of items) {
+    const covered = placed.some((p) =>
+      p.snippet.id !== item.snippet.id && rectContains(p.rect, item.rect),
+    );
+    if (covered) continue;
+    placed.push(item);
+  }
+
+  for (const { rect, snippet } of placed) {
+    if (snippet.kind === "image") continue;
+    ctx.fillStyle = snippet.id === _hoverSnippetId ? HL_HOVER_FILL : HL_FILL;
+    ctx.fillRect(rect.left * W, rect.top * H, rect.width * W, rect.height * H);
+  }
+
+  for (const { rect, snippet } of placed) {
+    if (snippet.kind !== "image") continue;
+    const hot = snippet.id === _hoverSnippetId;
+    ctx.strokeStyle = hot ? HL_IMAGE_HOVER_STROKE : HL_IMAGE_STROKE;
+    ctx.lineWidth = hot ? 2.5 : 1.5;
+    ctx.strokeRect(
+      rect.left * W + 0.75,
+      rect.top * H + 0.75,
+      Math.max(0, rect.width * W - 1.5),
+      Math.max(0, rect.height * H - 1.5),
+    );
   }
 }
