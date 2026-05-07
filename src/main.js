@@ -246,7 +246,6 @@ const state = {
   scale: 1.5,
   snippets: [],
   edges: [],
-  groupsMeta: [],
   source: { path: "", filename: "", title: "", author: "", kind: "pdf" },
   view: "list",
   layout: "group",
@@ -254,6 +253,18 @@ const state = {
   summaryScope: "doc",
   summaryFormat: "rich",
 };
+Object.defineProperty(state, "groupsMeta", {
+  configurable: true,
+  enumerable: true,
+  get() {
+    if (!state.workspace) return [];
+    if (!Array.isArray(state.workspace.groupsMeta)) state.workspace.groupsMeta = [];
+    return state.workspace.groupsMeta;
+  },
+  set(v) {
+    if (state.workspace) state.workspace.groupsMeta = Array.isArray(v) ? v : [];
+  },
+});
 let selectedEdge = null;
 let mapInitialized = false;
 let lineageInitialized = false;
@@ -307,6 +318,7 @@ function loadAllWorkspaces() {
         name: "Workspace 1",
         files: seed.files,
         folders: seed.folders,
+        groupsMeta: [],
         currentPdfPath: null,
       },
     },
@@ -317,8 +329,13 @@ function loadAllWorkspaces() {
 
 function activeWorkspaceData() {
   const ws = state.workspaces.byId[state.workspaces.active];
-  if (!ws) return { folders: [], files: [] };
-  return { folders: ws.folders || [], files: ws.files || [] };
+  if (!ws) return { folders: [], files: [], groupsMeta: [] };
+  if (!Array.isArray(ws.groupsMeta)) ws.groupsMeta = [];
+  return {
+    folders: ws.folders || [],
+    files: ws.files || [],
+    groupsMeta: ws.groupsMeta,
+  };
 }
 
 function saveAllWorkspaces() {
@@ -327,6 +344,7 @@ function saveAllWorkspaces() {
   if (cur) {
     cur.files = state.workspace.files;
     cur.folders = state.workspace.folders;
+    cur.groupsMeta = state.workspace.groupsMeta;
     cur.currentPdfPath = state.currentPdfPath;
   }
   try { localStorage.setItem(WORKSPACES_KEY, JSON.stringify(state.workspaces)); } catch {}
@@ -393,6 +411,8 @@ function switchWorkspace(id) {
   saveAllWorkspaces();
   renderWorkspaceTabs();
   renderWorkspace();
+  renderGroups();
+  refreshActiveView();
   const next = state.workspaces.byId[id];
   if (next.currentPdfPath) {
     const exists = next.files.includes(next.currentPdfPath) ||
@@ -409,6 +429,7 @@ function newWorkspace() {
     name: `Workspace ${n}`,
     files: [],
     folders: [],
+    groupsMeta: [],
     currentPdfPath: null,
   };
   state.workspaces.order.push(id);
@@ -947,6 +968,49 @@ document.getElementById("groups-collapse").addEventListener("click", () => {
 
 document.getElementById("groups-export").addEventListener("click", exportGroups);
 document.getElementById("groups-import").addEventListener("click", importGroups);
+document.getElementById("groups-import-ws").addEventListener("click", importGroupsFromWorkspace);
+
+async function importGroupsFromWorkspace() {
+  const others = state.workspaces.order
+    .map((id) => state.workspaces.byId[id])
+    .filter((ws) => ws && ws.id !== state.workspaces.active)
+    .map((ws) => ({
+      id: ws.id,
+      name: ws.name || "Workspace",
+      groups: Array.isArray(ws.groupsMeta) ? ws.groupsMeta : [],
+    }))
+    .filter((ws) => ws.groups.length > 0);
+
+  if (others.length === 0) {
+    alert("No other workspaces have groups defined yet.");
+    return;
+  }
+  const lines = others.map((ws, i) => `  ${i + 1}. ${ws.name} (${ws.groups.length} group${ws.groups.length === 1 ? "" : "s"})`);
+  const choice = prompt(
+    `Copy groups from another workspace into "${state.workspaces.byId[state.workspaces.active]?.name || "this workspace"}":\n\n${lines.join("\n")}\n\nEnter the number:`,
+  );
+  const idx = parseInt(choice, 10) - 1;
+  if (Number.isNaN(idx) || idx < 0 || idx >= others.length) return;
+  const src = others[idx];
+  const existing = new Map((state.groupsMeta || []).map((g) => [g.id, g]));
+  let added = 0;
+  let updated = 0;
+  for (const g of src.groups) {
+    if (existing.has(g.id)) {
+      const cur = existing.get(g.id);
+      if (g.name && !cur.name) { cur.name = g.name; updated++; }
+      if (g.color && !cur.color) { cur.color = g.color; updated++; }
+    } else {
+      existing.set(g.id, { ...g });
+      added++;
+    }
+  }
+  state.groupsMeta = [...existing.values()];
+  saveAllWorkspaces();
+  renderGroups();
+  refreshActiveView();
+  flashButton("groups-import-ws", `+${added}~${updated}`);
+}
 
 async function exportGroups() {
   const payload = {
@@ -1009,7 +1073,7 @@ async function importGroups() {
       }
     }
     state.groupsMeta = [...map.values()];
-    await getStore().writeGlobalGroups(state.groupsMeta);
+    saveAllWorkspaces();
     refreshActiveView();
     applyAllHighlights();
     flashButton("groups-import", `+${added} ~${updated}`);
@@ -1030,21 +1094,34 @@ function flashButton(id, text) {
 const DEFAULT_GROUP = { id: "__notes__", name: "Notes" };
 const DEFAULT_GROUP_SEEDED_KEY = "pdf-annotator-default-group-seeded";
 
+const LEGACY_MIGRATED_KEY = "pdf-annotator-groups-migrated-to-ws";
+
 (async () => {
   try {
-    const g = await getStore().readGlobalGroups();
-    state.groupsMeta = g || [];
+    // One-time migration: pull legacy global groups into the active
+    // workspace if it doesn't have any of its own yet.
+    const alreadyMigrated = (() => {
+      try { return localStorage.getItem(LEGACY_MIGRATED_KEY) === "1"; } catch { return false; }
+    })();
+    if (!alreadyMigrated && state.groupsMeta.length === 0) {
+      let legacy = [];
+      try { legacy = (await getStore().readGlobalGroups()) || []; } catch {}
+      if (legacy.length > 0) {
+        state.groupsMeta = legacy.map((g) => ({ ...g }));
+      }
+      try { localStorage.setItem(LEGACY_MIGRATED_KEY, "1"); } catch {}
+    }
     const alreadySeeded = (() => {
       try { return localStorage.getItem(DEFAULT_GROUP_SEEDED_KEY) === "1"; } catch { return false; }
     })();
     if (state.groupsMeta.length === 0 && !alreadySeeded) {
       state.groupsMeta.push({ ...DEFAULT_GROUP });
       try { localStorage.setItem(DEFAULT_GROUP_SEEDED_KEY, "1"); } catch {}
-      try { await getStore().writeGlobalGroups(state.groupsMeta); } catch {}
     }
+    saveAllWorkspaces();
     renderGroups();
   } catch (err) {
-    console.warn("global groups load failed", err);
+    console.warn("groups bootstrap failed", err);
   }
 })();
 
@@ -1142,7 +1219,7 @@ async function loadAnyDocument(path) {
       if (existingMeta && !existingMeta.name) existingMeta.name = g.name;
     }
   }
-  await getStore().writeGlobalGroups(state.groupsMeta);
+  saveAllWorkspaces();
   if (myToken !== docLoadToken) return;
 
   docTitleEl.textContent = state.source.title;
@@ -2123,12 +2200,8 @@ async function persist() {
     });
   }
   // No auto-prune here: a group unused in the current doc may still be in use elsewhere.
-  // Write the global groups index (canonical).
-  try {
-    await getStore().writeGlobalGroups(state.groupsMeta || []);
-  } catch (err) {
-    console.warn("global groups write failed", err);
-  }
+  // Persist workspace state (groupsMeta lives there now, not in a global file).
+  saveAllWorkspaces();
   // Per-doc sidecar carries only the groups referenced by this doc's snippets,
   // so a sidecar shared standalone still has enough context.
   const usedIds = new Set();
