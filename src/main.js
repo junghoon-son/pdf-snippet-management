@@ -65,6 +65,101 @@ async function saveFile({ suggestedName, mimeType, content }) {
   return suggestedName;
 }
 
+function makeLocateButton(oldPath, mode, folder) {
+  const btn = document.createElement("button");
+  btn.className = "ws-file-locate";
+  btn.textContent = "↻";
+  btn.title = "File missing — locate it on disk";
+  btn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    await locateMissingFile(oldPath, mode, folder);
+  });
+  return btn;
+}
+
+async function locateMissingFile(oldPath, mode, folder) {
+  let newPath = null;
+  try {
+    if (IS_TAURI) {
+      newPath = await open({
+        multiple: false,
+        directory: false,
+        filters: [{ name: "Documents", extensions: ["pdf", "md", "markdown", "docx"] }],
+      });
+    } else {
+      const file = await pickBrowserFile([{ description: "Document", accept: { "application/octet-stream": [".pdf", ".md", ".markdown", ".docx"] } }]);
+      newPath = file ? file.name : null;
+    }
+  } catch (err) {
+    alert(`Locate failed: ${err.message || err}`);
+    return;
+  }
+  if (!newPath) return;
+  if (newPath === oldPath) {
+    alert("That's the same path. The file is still missing at that location.");
+    return;
+  }
+  let oldAnnot = null;
+  try { oldAnnot = await getStore().readAnnot(oldPath); } catch {}
+  let newAnnot = null;
+  try { newAnnot = await getStore().readAnnot(newPath); } catch {}
+
+  let migrated = false;
+  let hashMatch = null;
+  try {
+    const newBytes = await getStore().readDocumentBytes(newPath);
+    const newHash = await hashBytes(newBytes);
+    if (oldAnnot?.source?.contentHash && oldAnnot.source.contentHash === newHash) {
+      hashMatch = true;
+    } else if (oldAnnot?.source?.contentHash) {
+      hashMatch = false;
+    }
+  } catch {}
+
+  const hasOldAnnotations = !!(oldAnnot && (oldAnnot.snippets?.length || oldAnnot.edges?.length));
+  const newSidecarHasContent = !!(newAnnot && (newAnnot.snippets?.length || newAnnot.edges?.length));
+
+  if (hasOldAnnotations && !newSidecarHasContent) {
+    let proceed = true;
+    if (hashMatch === false) {
+      proceed = confirm(
+        "The picked file's content hash doesn't match the original. Copy the old annotations to the new file anyway?",
+      );
+    }
+    if (proceed) {
+      const merged = {
+        ...oldAnnot,
+        source: {
+          ...(oldAnnot.source || {}),
+          path: newPath,
+          filename: newPath.split("/").pop() || newPath,
+        },
+      };
+      try {
+        await getStore().writeAnnot(newPath, merged);
+        migrated = true;
+      } catch (err) {
+        console.warn("annotation migration failed", err);
+      }
+    }
+  }
+
+  if (mode === "folder" && folder) {
+    folder.pdfs = (folder.pdfs || []).map((p) => (p === oldPath ? newPath : p));
+  } else if (mode === "loose") {
+    state.workspace.files = state.workspace.files.map((p) => (p === oldPath ? newPath : p));
+  }
+  if (state.workspace.currentPdfPath === oldPath) state.workspace.currentPdfPath = newPath;
+  saveWorkspace();
+  removeRecent(oldPath);
+  await renderWorkspace();
+  await loadPdf(newPath);
+  if (migrated) flashButton(null, ""); // no-op; alert below instead
+  if (hasOldAnnotations && migrated) {
+    console.log(`Annotations migrated from ${oldPath} → ${newPath}`);
+  }
+}
+
 function fileKindBadge(path) {
   const ext = (path || "").toLowerCase().match(/\.([a-z0-9]+)$/);
   const kind = ext ? ext[1] : "";
@@ -84,6 +179,17 @@ function fileKindBadge(path) {
     span.dataset.kind = "other";
   }
   return span;
+}
+
+async function hashBytes(bytes) {
+  const buf = await crypto.subtle.digest(
+    "SHA-256",
+    bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes),
+  );
+  const arr = new Uint8Array(buf);
+  let hex = "";
+  for (let i = 0; i < arr.length; i++) hex += arr[i].toString(16).padStart(2, "0");
+  return hex;
 }
 
 async function pickBrowserFile(types) {
@@ -464,6 +570,7 @@ async function renderWorkspace() {
       nameSpan.className = "ws-file-name";
       nameSpan.textContent = p.split("/").pop();
       li.append(fileKindBadge(p), nameSpan);
+      li.appendChild(makeLocateButton(p, "folder", folder));
       li.title = p;
       li.addEventListener("click", () => {
         if (li.classList.contains("missing")) return;
@@ -496,6 +603,7 @@ async function renderWorkspace() {
       nameSpan.className = "ws-file-name";
       nameSpan.textContent = p.split("/").pop();
       li.append(fileKindBadge(p), nameSpan);
+      li.appendChild(makeLocateButton(p, "loose"));
       li.title = p;
       li.addEventListener("click", () => {
         if (li.classList.contains("missing")) return;
@@ -1007,12 +1115,22 @@ async function loadAnyDocument(path) {
   }
 
   if (myToken !== docLoadToken) return;
+  let contentHash = existing.source?.contentHash || null;
+  if (!contentHash) {
+    try {
+      contentHash = await hashBytes(bytes);
+    } catch (err) {
+      console.warn("hashBytes failed", err);
+    }
+    if (myToken !== docLoadToken) return;
+  }
   state.source = {
     path,
     filename,
     title: existing.source?.title || title,
     author: existing.source?.author || author,
     kind,
+    contentHash,
   };
   state.snippets = existing.snippets || [];
   state.edges = existing.edges || [];

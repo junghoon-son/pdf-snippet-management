@@ -534,6 +534,22 @@ body.pane-max #snippets-pane { border-left: none; }
   top: 50%;
   transform: translateY(-50%);
 }
+.ws-file-locate {
+  display: none;
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 3px;
+  font-size: 10px;
+  padding: 0 5px;
+  margin-left: auto;
+  cursor: pointer;
+  flex-shrink: 0;
+  height: 18px;
+  line-height: 16px;
+}
+.ws-file-locate:hover { background: var(--accent); color: #fbf9f3; }
+.ws-folder-pdfs li.missing .ws-file-locate { display: inline-flex; align-items: center; }
 .groups-empty {
   padding: 24px 18px;
   color: var(--text-dim);

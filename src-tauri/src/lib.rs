@@ -76,6 +76,8 @@ struct Source {
     author: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "contentHash")]
+    content_hash: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
