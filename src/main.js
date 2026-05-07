@@ -1316,7 +1316,7 @@ viewerContainer.addEventListener("mousemove", (e) => {
     hoverSnippetId = id;
     updateHoverClasses();
   }
-  viewerContainer.style.cursor = id ? "pointer" : "";
+  viewerContainer.style.cursor = id ? "grab" : "";
 });
 
 viewerContainer.addEventListener("mouseleave", () => {
@@ -1358,13 +1358,16 @@ viewerContainer.addEventListener("mousedown", (e) => {
     beginPressGesture(snippet, e, flowMark);
     return;
   }
-  // PDF: highlight-layer is now a canvas; hit-test against snippet rects
-  const layer = e.target.classList?.contains("highlight-layer") ? e.target : null;
-  if (!layer) return;
+  // PDF: hit-test JS-side against snippet rects. If we hit one, block
+  // the default text-selection behavior and start the press gesture.
+  // Otherwise let the textLayer receive mousedown for normal selection.
+  if (state.source.kind !== "pdf") return;
+  if (state.tool === "rect") return;
   const hit = hitTestHighlight(e);
   if (!hit) return;
+  e.preventDefault();
   e.stopPropagation();
-  beginPressGesture(hit, e, layer);
+  beginPressGesture(hit, e, e.target);
 });
 
 function beginPressGesture(snippet, downEvent, sourceEl) {
