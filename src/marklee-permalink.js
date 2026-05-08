@@ -25,6 +25,8 @@ function base64urlDecode(s) {
 // Build a Marklee Permalink for one snippet.
 // `opts.includeText` defaults to true (resilient anchoring). Set false for
 // the privacy-minimal form — see SPEC.md §6.3.
+// Image snippets follow §6.1.1 and emit `kind=image&page=N&rect=L,T,W,H`
+// (plus optional clipUrl / clipHash) instead of text/context fields.
 export function buildPermalink(snippet, source, opts = {}) {
   const includeText = opts.includeText !== false;
   const base = opts.base || PERMALINK_BASE;
@@ -36,17 +38,27 @@ export function buildPermalink(snippet, source, opts = {}) {
   if (opts.src) params.set("src", opts.src);
   else if (source?.path && /^https?:/.test(source.path)) params.set("src", source.path);
 
-  if (snippet.kind === "image") params.set("kind", "image");
-
-  if (snippet.anchor) params.set("anchor", snippet.anchor);
-  if (typeof snippet.flowPos === "number") params.set("flowPos", String(snippet.flowPos));
   if (typeof snippet.page === "number" && snippet.page >= 1) params.set("page", String(snippet.page));
 
-  if (includeText) {
-    const norm = snippet.textNormalized || snippet.text || "";
-    if (norm) params.set("text", base64url(norm));
-    if (snippet.contextBefore) params.set("cb", base64url(snippet.contextBefore));
-    if (snippet.contextAfter) params.set("ca", base64url(snippet.contextAfter));
+  if (snippet.kind === "image") {
+    params.set("kind", "image");
+    const rect = (snippet.rects && snippet.rects[0]) || null;
+    if (rect) {
+      const fmt = (n) => Number(n).toFixed(5).replace(/\.?0+$/, "");
+      params.set("rect", `${fmt(rect.left)},${fmt(rect.top)},${fmt(rect.width)},${fmt(rect.height)}`);
+    }
+    if (snippet.clipUrl) params.set("clipUrl", snippet.clipUrl);
+    if (snippet.clipHash) params.set("clipHash", snippet.clipHash.replace(/^sha256:/, ""));
+    if (includeText && snippet.text) params.set("text", base64url(snippet.text));
+  } else {
+    if (snippet.anchor) params.set("anchor", snippet.anchor);
+    if (typeof snippet.flowPos === "number") params.set("flowPos", String(snippet.flowPos));
+    if (includeText) {
+      const norm = snippet.textNormalized || snippet.text || "";
+      if (norm) params.set("text", base64url(norm));
+      if (snippet.contextBefore) params.set("cb", base64url(snippet.contextBefore));
+      if (snippet.contextAfter) params.set("ca", base64url(snippet.contextAfter));
+    }
   }
 
   if (snippet.id) params.set("id", snippet.id);
@@ -69,19 +81,33 @@ export function parsePermalink(input) {
   const params = new URLSearchParams(qs);
   if (!params.has("hash") && !params.has("text") && !params.has("id")) return null;
 
-  const out = {
+  const kind = params.get("kind") === "image" ? "image" : "text";
+  const snippet = {
+    id: params.get("id") || null,
+    kind,
+    page: params.has("page") ? parseInt(params.get("page"), 10) : null,
+  };
+  if (kind === "image") {
+    const rectStr = params.get("rect");
+    if (rectStr) {
+      const [left, top, width, height] = rectStr.split(",").map(Number);
+      if ([left, top, width, height].every((n) => Number.isFinite(n))) {
+        snippet.rects = [{ left, top, width, height }];
+      }
+    }
+    snippet.clipUrl = params.get("clipUrl") || null;
+    snippet.clipHash = params.get("clipHash") || null;
+    snippet.text = params.has("text") ? base64urlDecode(params.get("text")) : "";
+  } else {
+    snippet.anchor = params.get("anchor") || null;
+    snippet.flowPos = params.has("flowPos") ? parseInt(params.get("flowPos"), 10) : null;
+    snippet.text = params.has("text") ? base64urlDecode(params.get("text")) : "";
+    snippet.contextBefore = params.has("cb") ? base64urlDecode(params.get("cb")) : "";
+    snippet.contextAfter = params.has("ca") ? base64urlDecode(params.get("ca")) : "";
+  }
+  return {
     src: params.get("src") || null,
     hash: params.get("hash") || null,
-    snippet: {
-      id: params.get("id") || null,
-      kind: params.get("kind") === "image" ? "image" : "text",
-      page: params.has("page") ? parseInt(params.get("page"), 10) : null,
-      anchor: params.get("anchor") || null,
-      flowPos: params.has("flowPos") ? parseInt(params.get("flowPos"), 10) : null,
-      text: params.has("text") ? base64urlDecode(params.get("text")) : "",
-      contextBefore: params.has("cb") ? base64urlDecode(params.get("cb")) : "",
-      contextAfter: params.has("ca") ? base64urlDecode(params.get("ca")) : "",
-    },
+    snippet,
   };
-  return out;
 }

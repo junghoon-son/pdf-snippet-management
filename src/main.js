@@ -3001,11 +3001,32 @@ function setupPermalinkBootstrap() {
 function resolvePendingPermalink() {
   if (!pendingPermalink) return false;
   const want = pendingPermalink.snippet;
+  // Match by id first — works for any kind.
   if (want.id) {
     const found = state.snippets.find((s) => s.id === want.id);
     if (found) { pendingPermalink = null; previewSnippetInPdf(found); return true; }
   }
-  if (want.text) {
+  // Image snippets: match by page + rect proximity (within 0.5%).
+  if (want.kind === "image" && want.page != null && want.rects?.[0]) {
+    const wr = want.rects[0];
+    const close = (a, b) => Math.abs(a - b) < 0.005;
+    const found = state.snippets.find((s) =>
+      s.kind === "image" && s.page === want.page && s.rects?.[0] &&
+      close(s.rects[0].left, wr.left) && close(s.rects[0].top, wr.top) &&
+      close(s.rects[0].width, wr.width) && close(s.rects[0].height, wr.height)
+    );
+    if (found) { pendingPermalink = null; previewSnippetInPdf(found); return true; }
+    // No matching saved snippet — at least scroll the page into view.
+    const wraps = viewerContainer.querySelectorAll(`.page-wrap[data-page="${want.page}"]`);
+    if (wraps[0]) {
+      pendingPermalink = null;
+      wraps[0].scrollIntoView({ behavior: "smooth", block: "start" });
+      flashRectOverlay(wraps[0], wr);
+      return true;
+    }
+  }
+  // Text snippets: match by normalized text + page.
+  if (want.kind !== "image" && want.text) {
     const found = state.snippets.find((s) =>
       (s.textNormalized || s.text) === want.text &&
       (want.page == null || s.page === want.page)
@@ -3013,6 +3034,25 @@ function resolvePendingPermalink() {
     if (found) { pendingPermalink = null; previewSnippetInPdf(found); return true; }
   }
   return false;
+}
+
+function flashRectOverlay(wrap, rect) {
+  const el = document.createElement("div");
+  el.className = "permalink-flash-rect";
+  el.style.position = "absolute";
+  el.style.left = `${rect.left * 100}%`;
+  el.style.top = `${rect.top * 100}%`;
+  el.style.width = `${rect.width * 100}%`;
+  el.style.height = `${rect.height * 100}%`;
+  el.style.pointerEvents = "none";
+  el.style.border = "2px solid var(--accent)";
+  el.style.background = "color-mix(in srgb, var(--accent) 14%, transparent)";
+  el.style.borderRadius = "3px";
+  el.style.transition = "opacity 1500ms ease-out";
+  el.style.zIndex = "20";
+  wrap.appendChild(el);
+  requestAnimationFrame(() => { el.style.opacity = "0"; });
+  setTimeout(() => el.remove(), 1700);
 }
 
 function setupAppMenu() {

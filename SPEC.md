@@ -126,6 +126,8 @@ All fields OPTIONAL. `kind` MUST be one of `"pdf"`, `"markdown"`, `"docx"` if pr
   "textNormalized":  "load-bearing quote",
   "rects":           [{ "left": 0.1, "top": 0.2, "width": 0.3, "height": 0.04 }],
   "imagePath":       ".file.pdf.clips/abc.png",
+  "clipUrl":         "https://cdn.example.com/clip.png",
+  "clipHash":        "sha256:ab12...",
   "contextBefore":   "preceding 40 chars",
   "contextAfter":    "following 40 chars",
   "anchor":          "Methods > Statistical analysis",
@@ -147,6 +149,8 @@ All fields OPTIONAL. `kind` MUST be one of `"pdf"`, `"markdown"`, `"docx"` if pr
 | `textNormalized` | string | no | normalized form (Section 4.1); RECOMMENDED for resilience |
 | `rects` | array | yes for PDF text | fractional page coords [0..1]; MUST be `[]` for flow docs |
 | `imagePath` | string | yes for image | relative to sidecar dir; PNG only in v0.1 |
+| `clipUrl` | string | no | hosted URL of the clip PNG; lets a permalink display the clip without the source PDF |
+| `clipHash` | string | no | SHA-256 of the original clip PNG; receiver MAY use for verification |
 | `contextBefore` | string | no | normalized text immediately preceding `text`; SHOULD be present for resilience |
 | `contextAfter` | string | no | normalized text immediately following `text` |
 | `anchor` | string | no | nearest preceding heading chain, e.g. `"Methods > Findings"` |
@@ -202,6 +206,10 @@ If `textNormalized` occurs exactly once in the document, return it. (Multiple oc
 
 No match. The snippet is preserved in the sidecar; clients SHOULD render an "orphaned" indicator and offer manual re-linking.
 
+### 4.0 Applicability
+
+This algorithm applies only to snippets with `kind: "text"`. Image snippets (`kind: "image"`) are inherently positional — they identify a rectangle of source pixels, not a quoted phrase, and have no edit-tolerant fallback. Implementations MUST locate image snippets by `page` + `rects` directly, optionally verifying against `clipHash` (Section 3.3) when present.
+
 ### 4.1 Normalization
 
 The following transforms apply when computing `textNormalized` and when matching:
@@ -229,7 +237,7 @@ Clients SHOULD compute and store the hash when a sidecar is first written. Clien
 
 A **Marklee Permalink** encodes a single snippet anchor as a URL. It is the wire form of an anchor — what an anchor looks like when serialized for sharing across the web.
 
-### 6.1 Form
+### 6.1 Form (text snippets)
 
 ```
 <base>/v?
@@ -245,6 +253,27 @@ A **Marklee Permalink** encodes a single snippet anchor as a URL. It is the wire
 ```
 
 `base64url` is RFC 4648 §5 unpadded.
+
+### 6.1.1 Form (image snippets)
+
+For image (region clip) snippets the permalink instead encodes the rectangle to be re-rendered from the source:
+
+```
+<base>/v?
+   kind     = "image"               (REQUIRED to disambiguate)
+   hash     = <contentHash>         (REQUIRED — source PDF hash)
+   src      = <url-encoded source URL>   (RECOMMENDED)
+   page     = <integer>             (REQUIRED — 1-indexed)
+   rect     = <L,T,W,H>             (REQUIRED — four floats in [0..1], comma-separated, fractional page coords)
+   id       = <snippet-id>          (OPTIONAL)
+   clipUrl  = <url>                 (OPTIONAL — pre-rendered PNG of the clip, hosted)
+   clipHash = <sha256>              (OPTIONAL — content hash of the original clip PNG, lowercase hex)
+   text     = <base64url(...)>      (OPTIONAL — descriptive label, NOT used for matching)
+```
+
+A receiver MUST be able to display the snippet by re-rendering `rect` from the source PDF at `page`. If `clipUrl` is present the receiver MAY display the hosted PNG directly without re-rendering. If `clipHash` is present the receiver MAY verify the re-rendered PNG against it (perceptual hash comparison RECOMMENDED, since render scale will differ).
+
+Image snippets do NOT use the anchor resolution algorithm (Section 4.0). They are positional and frozen at capture time; if the source has been re-paginated the receiver simply gets a different image at the same coordinates.
 
 ### 6.2 Resolution
 

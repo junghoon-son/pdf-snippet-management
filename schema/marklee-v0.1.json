@@ -54,6 +54,8 @@
           "items": { "$ref": "#/$defs/rect" }
         },
         "imagePath":     { "type": "string" },
+        "clipUrl":       { "type": "string", "format": "uri" },
+        "clipHash":      { "type": "string", "pattern": "^(sha256:)?[0-9a-f]{64}$" },
         "contextBefore": { "type": "string" },
         "contextAfter":  { "type": "string" },
         "anchor":        { "type": "string" },
