@@ -848,11 +848,13 @@ body.pane-max #snippets-pane { border-left: none; }
   font-weight: 700;
 }
 .seg-toggle {
-  display: flex;
+  display: inline-flex;
+  align-items: stretch;
   border: 1.5px solid var(--accent);
-  border-radius: 14px;
-  overflow: hidden;
+  border-radius: 999px;
   background: var(--bg);
+  padding: 0;
+  line-height: 1;
 }
 .seg-btn {
   background: transparent;
@@ -866,7 +868,14 @@ body.pane-max #snippets-pane { border-left: none; }
   cursor: pointer;
   font-weight: 600;
   transition: background 100ms ease, color 100ms ease;
+  border-radius: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
+.seg-toggle .seg-btn:first-child { border-radius: 999px 0 0 999px; }
+.seg-toggle .seg-btn:last-child  { border-radius: 0 999px 999px 0; }
+.seg-toggle .seg-btn:only-child  { border-radius: 999px; }
 .seg-btn:hover { color: var(--accent); background: rgba(46, 165, 140, 0.08); }
 .seg-btn.active { background: var(--accent); color: #fbf9f3; }
 .seg-btn.active:hover { background: var(--accent); color: #fbf9f3; }
