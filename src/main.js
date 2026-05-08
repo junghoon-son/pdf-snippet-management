@@ -3212,10 +3212,8 @@ function setupAppMenu() {
 function handleAppMenu(id) {
   const click = (sel) => document.querySelector(sel)?.click();
   switch (id) {
-    case "file_new_workspace":     newWorkspace(); break;
     case "file_open":              click("#open-file"); break;
     case "file_open_folder":       click("#open-folder"); break;
-    case "file_clear_workspace":   click("#clear-workspace"); break;
     case "file_summary":           openSummary(); break;
     case "file_export_summary":    openSummary(); setTimeout(exportSummaryHtml, 80); break;
     case "edit_undo":              undo(); break;
@@ -3226,9 +3224,39 @@ function handleAppMenu(id) {
     case "view_zoom_fit":          zoomFit(); break;
     case "view_toggle_sidebar":    toggleSidebar(); break;
     case "view_maximize":          toggleMaximizePane(); break;
-    case "view_cycle_theme":       click("#theme-btn"); break;
     case "view_help":              click("#help-btn"); break;
+    // Workspace menu
+    case "ws_new":                 newWorkspace(); break;
+    case "ws_rename":              renameActiveWorkspace(); break;
+    case "ws_close":               closeWorkspace(state.workspaces.active); break;
+    case "ws_next":                cycleWorkspace(+1); break;
+    case "ws_prev":                cycleWorkspace(-1); break;
+    case "ws_clear":               click("#clear-workspace"); break;
+    case "ws_cycle_theme":         click("#theme-btn"); break;
+    // Groups menu
+    case "groups_template":        openTemplatesModal(); break;
+    case "groups_from_workspace":  click("#groups-import-ws"); break;
+    case "groups_import_file":     click("#groups-import"); break;
+    case "groups_export":          click("#groups-export"); break;
+    case "groups_toggle_panel":    click("#groups-collapse"); break;
   }
+}
+
+function renameActiveWorkspace() {
+  const tab = document.querySelector(`.ws-tab[data-ws-id="${state.workspaces.active}"]`);
+  const input = tab?.querySelector(".ws-tab-name");
+  if (!input) return;
+  input.readOnly = false;
+  input.focus();
+  input.select();
+}
+
+function cycleWorkspace(dir) {
+  const order = state.workspaces.order;
+  if (!order.length) return;
+  const i = order.indexOf(state.workspaces.active);
+  const next = order[(i + dir + order.length) % order.length];
+  if (next && next !== state.workspaces.active) switchWorkspace(next);
 }
 
 function setupPanelResize() {

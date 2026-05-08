@@ -350,17 +350,35 @@ fn build_app_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result
         .build()?;
 
     let file_menu = SubmenuBuilder::new(app, "File")
-        .item(&mi("file_new_workspace", "New Workspace", Some("CmdOrCtrl+N"))?)
-        .separator()
         .item(&mi("file_open", "Open File…", Some("CmdOrCtrl+O"))?)
         .item(&mi("file_open_folder", "Open Folder…", Some("CmdOrCtrl+Shift+O"))?)
-        .separator()
-        .item(&mi("file_clear_workspace", "Clear Workspace", None)?)
         .separator()
         .item(&mi("file_summary", "Summary…", None)?)
         .item(&mi("file_export_summary", "Export Summary as HTML…", None)?)
         .separator()
         .item(&PredefinedMenuItem::close_window(app, None)?)
+        .build()?;
+
+    let workspace_menu = SubmenuBuilder::new(app, "Workspace")
+        .item(&mi("ws_new", "New Workspace", Some("CmdOrCtrl+N"))?)
+        .item(&mi("ws_rename", "Rename Active Workspace…", None)?)
+        .item(&mi("ws_close", "Close Active Workspace", Some("CmdOrCtrl+W"))?)
+        .separator()
+        .item(&mi("ws_next", "Next Workspace", Some("CmdOrCtrl+]"))?)
+        .item(&mi("ws_prev", "Previous Workspace", Some("CmdOrCtrl+["))?)
+        .separator()
+        .item(&mi("ws_clear", "Clear Files in Workspace", None)?)
+        .separator()
+        .item(&mi("ws_cycle_theme", "Cycle Theme", Some("CmdOrCtrl+T"))?)
+        .build()?;
+
+    let groups_menu = SubmenuBuilder::new(app, "Groups")
+        .item(&mi("groups_template", "Apply Template…", None)?)
+        .item(&mi("groups_from_workspace", "Import from Another Workspace…", None)?)
+        .item(&mi("groups_import_file", "Import from JSON File…", None)?)
+        .item(&mi("groups_export", "Export Groups as JSON…", None)?)
+        .separator()
+        .item(&mi("groups_toggle_panel", "Toggle Groups Panel", None)?)
         .build()?;
 
     let edit_menu = SubmenuBuilder::new(app, "Edit")
@@ -390,7 +408,7 @@ fn build_app_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result
         .build()?;
 
     MenuBuilder::new(app)
-        .items(&[&app_submenu, &file_menu, &edit_menu, &view_menu])
+        .items(&[&app_submenu, &file_menu, &edit_menu, &view_menu, &workspace_menu, &groups_menu])
         .build()
 }
 
