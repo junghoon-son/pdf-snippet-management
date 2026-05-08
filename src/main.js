@@ -270,6 +270,7 @@ let mapInitialized = false;
 let lineageInitialized = false;
 let rectDraw = null;
 let docLoadToken = 0;
+const GROUP_PALETTE_SLOTS = 8;
 const clipUrlCache = new Map();
 state.tool = "select";
 
@@ -2204,7 +2205,6 @@ async function loadClipUrl(path, pdfPath) {
   }
 }
 
-const GROUP_PALETTE_SLOTS = 8;
 function readPaletteColor(slot) {
   const styles = getComputedStyle(document.body);
   const v = styles.getPropertyValue(`--group-palette-${slot + 1}`).trim();
