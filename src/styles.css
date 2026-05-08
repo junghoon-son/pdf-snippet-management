@@ -1401,6 +1401,24 @@ body.dragging-sticker * { cursor: grabbing !important; }
 #snippets-pane .snippet .add-comment-btn:hover { color: var(--accent); }
 
 .snippet { position: relative; }
+.hover-connector {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 40;
+  opacity: 0;
+  transition: opacity 180ms ease-out;
+}
+.hover-connector.active { opacity: 1; }
+.hover-connector-path {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  fill: none;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 65%, transparent));
+}
 .snippet-page-footer {
   position: absolute;
   right: 10px;

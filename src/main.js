@@ -1922,7 +1922,79 @@ function updateHoverClasses() {
   snippetsListEl.querySelectorAll(".snippet").forEach((li) => {
     li.classList.toggle("hover", li.dataset.snippetId === hoverSnippetId);
   });
+  updateHoverConnector();
 }
+
+// Hover-connector — single Bézier curve from the hovered snippet card to
+// its highlight in the document (and vice versa). Single fixed SVG layered
+// above both panes; recomputes on scroll/resize while hover is active.
+function ensureConnectorSvg() {
+  let svg = document.getElementById("hover-connector");
+  if (svg) return svg;
+  const NS = "http://www.w3.org/2000/svg";
+  svg = document.createElementNS(NS, "svg");
+  svg.id = "hover-connector";
+  svg.classList.add("hover-connector");
+  const path = document.createElementNS(NS, "path");
+  path.classList.add("hover-connector-path");
+  path.setAttribute("fill", "none");
+  svg.appendChild(path);
+  document.body.appendChild(svg);
+  return svg;
+}
+function hideHoverConnector() {
+  const svg = document.getElementById("hover-connector");
+  if (svg) svg.classList.remove("active");
+}
+function highlightRectForSnippet(snippetId) {
+  const fmark = viewerContainer.querySelector(`mark.hl[data-snippet-id="${snippetId}"]`);
+  if (fmark) return fmark.getBoundingClientRect();
+  const snippet = state.snippets.find((s) => s.id === snippetId);
+  if (!snippet || !snippet.rects?.[0]) return null;
+  const wrap = viewerContainer.querySelector(`.page-wrap[data-page="${snippet.page}"]`);
+  if (!wrap) return null;
+  const pageRect = wrap.getBoundingClientRect();
+  const r = snippet.rects[0];
+  return {
+    left: pageRect.left + r.left * pageRect.width,
+    top: pageRect.top + r.top * pageRect.height,
+    right: pageRect.left + (r.left + r.width) * pageRect.width,
+    bottom: pageRect.top + (r.top + r.height) * pageRect.height,
+    width: r.width * pageRect.width,
+    height: r.height * pageRect.height,
+  };
+}
+function updateHoverConnector() {
+  if (!hoverSnippetId) { hideHoverConnector(); return; }
+  const card = snippetsListEl.querySelector(`.snippet[data-snippet-id="${hoverSnippetId}"]`);
+  const hRect = highlightRectForSnippet(hoverSnippetId);
+  if (!card || !hRect) { hideHoverConnector(); return; }
+  const cardRect = card.getBoundingClientRect();
+  // Highlight on the left → card on the right (snippets pane is right side).
+  // Connect highlight.right-middle → card.left-middle.
+  const x1 = hRect.right;
+  const y1 = hRect.top + hRect.height / 2;
+  const x2 = cardRect.left;
+  const y2 = cardRect.top + cardRect.height / 2;
+  const dx = Math.max(40, (x2 - x1) * 0.45);
+  const path = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+  const svg = ensureConnectorSvg();
+  svg.querySelector("path").setAttribute("d", path);
+  svg.classList.add("active");
+}
+// Recompute on scroll of either pane while hovering. Throttled via rAF.
+let _connectorRafPending = false;
+function scheduleConnectorUpdate() {
+  if (!hoverSnippetId || _connectorRafPending) return;
+  _connectorRafPending = true;
+  requestAnimationFrame(() => {
+    _connectorRafPending = false;
+    updateHoverConnector();
+  });
+}
+viewerScroll.addEventListener("scroll", scheduleConnectorUpdate, { passive: true });
+snippetsListEl.addEventListener("scroll", scheduleConnectorUpdate, { passive: true });
+window.addEventListener("resize", scheduleConnectorUpdate);
 
 viewerContainer.addEventListener("mouseup", async () => {
   if (state.source.kind === "pdf") {
