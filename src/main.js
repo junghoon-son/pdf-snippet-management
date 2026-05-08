@@ -1973,9 +1973,12 @@ function updateHoverConnector() {
   // Highlight on the left → card on the right (snippets pane is right side).
   // Orthogonal elbow: out-right from the highlight, vertical leg to the card's
   // y-level, then in-left to the card. Looks like a wire schematic.
-  const x1 = hRect.right;
+  // GAP keeps the line floating ~8px off both the highlight and the card so
+  // the wire reads as a connection, not a poke at the text.
+  const GAP = 8;
+  const x1 = hRect.right + GAP;
   const y1 = hRect.top + hRect.height / 2;
-  const x2 = cardRect.left;
+  const x2 = cardRect.left - GAP;
   const y2 = cardRect.top + cardRect.height / 2;
   const midX = x1 + (x2 - x1) * 0.5;
   const path = `M ${x1} ${y1} H ${midX} V ${y2} H ${x2}`;
