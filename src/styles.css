@@ -1989,6 +1989,33 @@ body.dragging-snippet .group-row:hover {
   max-width: 60%;
 }
 .toolbar-spacer { flex: 1; }
+#save-indicator {
+  font-size: 11px;
+  color: var(--muted, #888);
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: transparent;
+  transition: opacity 200ms ease, background 150ms ease, color 150ms ease;
+  opacity: 0;
+  pointer-events: none;
+}
+#save-indicator[data-state="saving"] {
+  opacity: 1;
+  color: var(--muted, #888);
+}
+#save-indicator[data-state="saving"]::before { content: "saving…"; }
+#save-indicator[data-state="saved"] {
+  opacity: 1;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+#save-indicator[data-state="saved"]::before { content: "✓ saved"; }
+#save-indicator[data-state="error"] {
+  opacity: 1;
+  color: #c0392b;
+  background: rgba(192, 57, 43, 0.12);
+}
+#save-indicator[data-state="error"]::before { content: "save failed"; }
 #viewer-toolbar button:not(.seg-btn) {
   background: var(--panel-2);
   color: var(--text);

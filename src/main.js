@@ -354,7 +354,26 @@ function saveAllWorkspaces() {
     cur.theme = state.workspace.theme || cur.theme || "cream";
     cur.currentPdfPath = state.currentPdfPath;
   }
-  try { localStorage.setItem(WORKSPACES_KEY, JSON.stringify(state.workspaces)); } catch {}
+  let ok = true;
+  try { localStorage.setItem(WORKSPACES_KEY, JSON.stringify(state.workspaces)); }
+  catch { ok = false; }
+  flashSaveIndicator(ok ? "saved" : "error");
+}
+
+let _saveIndicatorTimer = null;
+let _saveIndicatorSeq = 0;
+function flashSaveIndicator(state) {
+  const el = document.getElementById("save-indicator");
+  if (!el) return;
+  const seq = ++_saveIndicatorSeq;
+  if (_saveIndicatorTimer) clearTimeout(_saveIndicatorTimer);
+  el.dataset.state = state;
+  if (state === "saved" || state === "error") {
+    _saveIndicatorTimer = setTimeout(() => {
+      if (seq !== _saveIndicatorSeq) return;
+      el.dataset.state = "idle";
+    }, state === "error" ? 4000 : 1400);
+  }
 }
 
 const VALID_THEMES = ["cream", "slate", "dark", "sepia"];
@@ -2355,6 +2374,7 @@ async function persist() {
       if (p) s.pos = { x: p.x, y: p.y };
     });
   }
+  flashSaveIndicator("saving");
   // No auto-prune here: a group unused in the current doc may still be in use elsewhere.
   // Persist workspace state (groupsMeta lives there now, not in a global file).
   saveAllWorkspaces();
@@ -2363,12 +2383,19 @@ async function persist() {
   const usedIds = new Set();
   for (const s of state.snippets) for (const g of s.groups || []) usedIds.add(g);
   const localGroups = (state.groupsMeta || []).filter((g) => usedIds.has(g.id));
-  await getStore().writeAnnot(state.currentPdfPath, {
-    source: state.source,
-    snippets: state.snippets,
-    edges: state.edges,
-    groups: localGroups,
-  });
+  try {
+    await getStore().writeAnnot(state.currentPdfPath, {
+      source: state.source,
+      snippets: state.snippets,
+      edges: state.edges,
+      groups: localGroups,
+    });
+    flashSaveIndicator("saved");
+  } catch (err) {
+    console.error("[persist] writeAnnot failed", err);
+    flashSaveIndicator("error");
+    throw err;
+  }
 }
 
 function pruneOrphanGroups() {
