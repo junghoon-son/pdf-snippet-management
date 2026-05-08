@@ -319,8 +319,8 @@ fn build_app_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result
         b.build(app)
     };
 
-    let app_submenu = SubmenuBuilder::new(app, "PDF Annotator")
-        .item(&PredefinedMenuItem::about(app, Some("About PDF Annotator"), None)?)
+    let app_submenu = SubmenuBuilder::new(app, "Marklee")
+        .item(&PredefinedMenuItem::about(app, Some("About Marklee"), None)?)
         .separator()
         .item(&PredefinedMenuItem::services(app, None)?)
         .separator()

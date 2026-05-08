@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "PDF Annotator",
+  "productName": "Marklee",
   "version": "0.1.0",
-  "identifier": "com.jung.pdfannotator",
+  "identifier": "dev.marklee.app",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "PDF Annotator",
+        "title": "Marklee",
         "width": 1280,
         "height": 800,
         "minWidth": 800,
@@ -27,8 +27,8 @@
     "active": true,
     "targets": "all",
     "category": "Productivity",
-    "shortDescription": "PDF / Markdown / DOCX snippet annotator with grouping and lineage view",
-    "longDescription": "Annotate PDFs, Markdown, and Word documents. Capture text and image snippets, group them visually, and trace document lineage. Sidecars next to source files; no upload required.",
+    "shortDescription": "Marklee — portable annotations for PDF, Markdown, and DOCX with edit-tolerant anchors and a lineage graph",
+    "longDescription": "Marklee captures text and image snippets from PDF, Markdown, and Word documents. Annotations live in plain-JSON sidecars next to the source — no server, no account. Includes a directed lineage graph between snippets, a per-workspace group system, and the MarkRank centrality algorithm for surfacing the most-referenced ideas in a corpus.",
     "copyright": "© 2026 Jung Hoon Son",
     "icon": [
       "icons/32x32.png",

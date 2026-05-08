@@ -1,6 +1,10 @@
-# pdf-snippet-management
+# Marklee
 
-Desktop PDF reader for capturing and organizing snippets across many documents. Built with Tauri 2 (Rust) + vanilla JS + PDF.js + cytoscape.
+Portable, format-agnostic document annotation. Captures snippets from PDF, Markdown, and DOCX into JSON sidecars next to the source — no server, no account. Includes edit-tolerant text anchors, a directed lineage graph between snippets, and the **MarkRank** centrality algorithm for surfacing the most-referenced ideas in a corpus.
+
+See [`SPEC.md`](SPEC.md) for the format specification.
+
+Built with Tauri 2 (Rust) + vanilla JS + PDF.js + cytoscape.
 
 ## What it does
 
