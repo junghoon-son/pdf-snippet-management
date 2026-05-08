@@ -1041,58 +1041,56 @@ document.getElementById("groups-collapse").addEventListener("click", () => {
 document.getElementById("groups-export").addEventListener("click", exportGroups);
 document.getElementById("groups-import").addEventListener("click", importGroups);
 document.getElementById("groups-import-ws").addEventListener("click", importGroupsFromWorkspace);
-document.getElementById("groups-template").addEventListener("click", toggleTemplatesPopover);
-document.addEventListener("click", (e) => {
-  const pop = document.getElementById("group-templates-popover");
-  if (!pop || pop.hidden) return;
-  if (pop.contains(e.target)) return;
-  if (e.target.id === "groups-template") return;
-  pop.hidden = true;
+document.getElementById("groups-template").addEventListener("click", openTemplatesModal);
+document.getElementById("templates-close").addEventListener("click", closeTemplatesModal);
+document.querySelector("#templates-modal .modal-backdrop").addEventListener("click", closeTemplatesModal);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !document.getElementById("templates-modal").hidden) {
+    closeTemplatesModal();
+  }
 });
 
-function toggleTemplatesPopover() {
-  const pop = document.getElementById("group-templates-popover");
-  if (!pop) return;
-  if (!pop.hidden) { pop.hidden = true; return; }
-  renderTemplatesPopover(pop);
-  pop.hidden = false;
-}
-
-function renderTemplatesPopover(pop) {
-  pop.innerHTML = "";
-  const header = document.createElement("div");
-  header.className = "tpl-pop-header";
-  header.textContent = "Apply a group template";
-  pop.appendChild(header);
+function openTemplatesModal() {
+  const modal = document.getElementById("templates-modal");
+  const body = document.getElementById("templates-body");
+  body.innerHTML = "";
   for (const tpl of GROUP_TEMPLATES) {
     const item = document.createElement("div");
-    item.className = "tpl-pop-item";
+    item.className = "tpl-item";
     const title = document.createElement("div");
-    title.className = "tpl-pop-title";
+    title.className = "tpl-title";
     title.textContent = tpl.name;
     const desc = document.createElement("div");
-    desc.className = "tpl-pop-desc";
+    desc.className = "tpl-desc";
     desc.textContent = tpl.description;
     const preview = document.createElement("div");
-    preview.className = "tpl-pop-preview";
+    preview.className = "tpl-preview";
     for (const g of tpl.groups) {
+      const pill = document.createElement("span");
+      pill.className = "tpl-pill";
       const dot = document.createElement("span");
-      dot.className = "tpl-pop-dot";
+      dot.className = "tpl-pill-dot";
       dot.style.background = readPaletteColor(g.slot);
-      dot.title = g.name;
-      preview.appendChild(dot);
+      const name = document.createElement("span");
+      name.textContent = g.name;
+      pill.append(dot, name);
+      preview.appendChild(pill);
     }
     const apply = document.createElement("button");
-    apply.className = "tpl-pop-apply";
-    apply.textContent = "apply";
-    apply.addEventListener("click", (e) => {
-      e.stopPropagation();
+    apply.className = "tpl-apply";
+    apply.textContent = "Apply";
+    apply.addEventListener("click", () => {
       applyGroupTemplate(tpl.id);
-      pop.hidden = true;
+      closeTemplatesModal();
     });
     item.append(title, desc, preview, apply);
-    pop.appendChild(item);
+    body.appendChild(item);
   }
+  modal.hidden = false;
+}
+
+function closeTemplatesModal() {
+  document.getElementById("templates-modal").hidden = true;
 }
 
 function applyGroupTemplate(id) {

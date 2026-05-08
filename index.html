@@ -117,7 +117,6 @@
               <button id="groups-export" title="Export groups to JSON" data-short="exp">export</button>
               <button id="groups-collapse" title="Collapse / expand">▾</button>
             </div>
-            <div id="group-templates-popover" hidden></div>
           </div>
           <ul id="groups-list"></ul>
         </div>
@@ -196,6 +195,19 @@
       </div>
     </div>
     <div id="group-overlay" hidden></div>
+    <div id="templates-modal" hidden>
+      <div class="modal-backdrop"></div>
+      <div class="modal-card templates-card">
+        <header class="modal-header">
+          <div class="modal-title">
+            <h2>Group templates</h2>
+            <span class="ws-import-meta">Pre-defined group sets for common reading domains. Existing groups by name are skipped.</span>
+          </div>
+          <button id="templates-close" title="Close (Esc)">×</button>
+        </header>
+        <div id="templates-body"></div>
+      </div>
+    </div>
     <div id="ws-import-modal" hidden>
       <div class="modal-backdrop"></div>
       <div class="modal-card ws-import-card">

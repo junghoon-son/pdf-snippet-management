@@ -174,20 +174,38 @@ fn clip_dir_for(pdf_path: &str) -> Result<(PathBuf, String), String> {
     Ok((parent.join(&rel), rel))
 }
 
-fn resolve_clip(pdf_path: &str, image_path: &str) -> PathBuf {
+fn resolve_clip(pdf_path: &str, image_path: &str) -> Result<PathBuf, String> {
     let p = Path::new(image_path);
     if p.is_absolute() {
-        p.to_path_buf()
-    } else {
-        Path::new(pdf_path)
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join(p)
+        return Err("image_path must be relative to the source document".into());
     }
+    for c in p.components() {
+        match c {
+            std::path::Component::ParentDir => {
+                return Err("image_path must not contain '..' segments".into());
+            }
+            std::path::Component::Prefix(_) | std::path::Component::RootDir => {
+                return Err("image_path must be relative".into());
+            }
+            _ => {}
+        }
+    }
+    let parent = Path::new(pdf_path)
+        .parent()
+        .ok_or_else(|| "source has no parent directory".to_string())?;
+    Ok(parent.join(p))
 }
 
 #[tauri::command]
 fn write_clip(pdf_path: String, clip_id: String, bytes: Vec<u8>) -> Result<String, String> {
+    if !clip_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        || clip_id.is_empty()
+        || clip_id.len() > 64
+    {
+        return Err("invalid clip_id".into());
+    }
     let (dir, rel_dir) = clip_dir_for(&pdf_path)?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let p = dir.join(format!("{}.png", clip_id));
@@ -197,13 +215,13 @@ fn write_clip(pdf_path: String, clip_id: String, bytes: Vec<u8>) -> Result<Strin
 
 #[tauri::command]
 fn read_clip(pdf_path: String, image_path: String) -> Result<Vec<u8>, String> {
-    let p = resolve_clip(&pdf_path, &image_path);
+    let p = resolve_clip(&pdf_path, &image_path)?;
     fs::read(&p).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn delete_clip(pdf_path: String, image_path: String) -> Result<(), String> {
-    let p = resolve_clip(&pdf_path, &image_path);
+    let p = resolve_clip(&pdf_path, &image_path)?;
     if p.exists() {
         fs::remove_file(p).map_err(|e| e.to_string())?;
     }
@@ -217,7 +235,7 @@ fn check_paths(paths: Vec<String>) -> Vec<bool> {
 
 #[tauri::command]
 fn copy_image_to_clipboard(pdf_path: String, image_path: String) -> Result<(), String> {
-    let p = resolve_clip(&pdf_path, &image_path);
+    let p = resolve_clip(&pdf_path, &image_path)?;
     let bytes = fs::read(&p).map_err(|e| e.to_string())?;
     let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
     let rgba = img.to_rgba8();

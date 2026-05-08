@@ -12,19 +12,19 @@
     "annotate": "bun run scripts/annotate.mjs"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-dialog": "^2",
-    "@tauri-apps/plugin-fs": "^2",
-    "cytoscape": "^3.33.2",
-    "cytoscape-edgehandles": "^4.0.1",
-    "cytoscape-fcose": "^2.2.0",
-    "d3-force": "^3.0.0",
-    "mammoth": "^1.12.0",
-    "marked": "^18.0.3",
-    "pdfjs-dist": "^4.7.76"
+    "@tauri-apps/api": "2.10.1",
+    "@tauri-apps/plugin-dialog": "2.7.0",
+    "@tauri-apps/plugin-fs": "2.5.0",
+    "cytoscape": "3.33.2",
+    "cytoscape-edgehandles": "4.0.1",
+    "cytoscape-fcose": "2.2.0",
+    "d3-force": "3.0.0",
+    "mammoth": "1.12.0",
+    "marked": "18.0.3",
+    "pdfjs-dist": "4.10.38"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
-    "vite": "^5.4.10"
+    "@tauri-apps/cli": "2.10.1",
+    "vite": "5.4.21"
   }
 }
