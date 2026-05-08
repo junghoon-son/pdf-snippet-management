@@ -2316,52 +2316,48 @@ body.tool-select #viewer-pane:hover::after { opacity: 1; }
 
 #floating-tool-dock {
   position: absolute;
-  left: 16px;
-  bottom: 18px;
+  left: 14px;
+  bottom: 14px;
   z-index: 30;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px;
-  border-radius: 14px;
+  gap: 3px;
+  padding: 4px;
+  border-radius: 11px;
   background: color-mix(in srgb, var(--panel) 85%, transparent);
   backdrop-filter: blur(12px) saturate(140%);
   -webkit-backdrop-filter: blur(12px) saturate(140%);
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18), 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.16), 0 1px 2px rgba(0, 0, 0, 0.08);
   pointer-events: auto;
-  transition: opacity 200ms ease, transform 200ms ease;
 }
-#floating-tool-dock:hover { transform: translateY(-1px); }
 
 .tool-dock-btn {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-  padding: 8px 14px 8px 10px;
+  gap: 6px;
+  padding: 5px 8px 5px 7px;
   background: transparent;
-  border: 1.5px solid transparent;
-  border-radius: 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
   color: var(--text-dim);
   font-family: inherit;
-  font-size: 11px;
+  font-size: 9.5px;
   font-weight: 600;
   letter-spacing: 0.4px;
   text-transform: uppercase;
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
-  min-width: 78px;
+  transition: background 120ms ease, color 120ms ease;
+  min-width: 0;
 }
 .tool-dock-btn:hover {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
   color: var(--accent);
 }
 .tool-dock-btn.active {
   background: var(--accent);
   color: #fbf9f3;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 .tool-dock-btn.active:hover {
   background: var(--accent);
@@ -2373,4 +2369,22 @@ body.tool-select #viewer-pane:hover::after { opacity: 1; }
 }
 .tool-dock-label {
   line-height: 1;
+  flex: 1;
+  text-align: left;
+}
+.tool-dock-key {
+  font-family: ui-monospace, "SF Mono", monospace;
+  font-size: 8.5px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  color: inherit;
+  opacity: 0.7;
+  letter-spacing: 0;
+  line-height: 1;
+}
+.tool-dock-btn.active .tool-dock-key {
+  background: rgba(255, 255, 255, 0.22);
+  opacity: 0.9;
 }
