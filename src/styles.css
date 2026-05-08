@@ -836,35 +836,27 @@ body.pane-max #snippets-pane { border-left: none; }
 .group-row.empty .group-row-dot { opacity: 0.4; box-shadow: none; }
 .group-row.empty .group-row-count { color: #8a8a8a; font-style: italic; }
 .group-row.empty input { color: var(--text-dim); }
-.group-row-dot {
-  flex: 0 0 12px;
-  inline-size: 12px;
-  block-size: 12px;
-  width: 12px;
-  height: 12px;
-  min-width: 12px;
-  min-height: 12px;
-  max-width: 12px;
-  max-height: 12px;
-  border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.12);
+/* Color picker is hidden — the sticker is the visible affordance and
+   programmatically triggers the picker on a non-drag click. */
+.group-row-dot-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  border: 0;
   padding: 0;
   margin: 0;
-  cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  background-color: transparent;
-  overflow: hidden;
 }
 
-/* Sticker dispenser — each group row has a small draggable tab the user
-   can pull onto a snippet to tag it. The tab uses the same flag/page-tab
-   visual as the group pills on snippet cards so the metaphor is
-   continuous: peel off a sticker, slap it on a card. */
+/* Sticker — combined affordance: click to recolor, drag to tag a snippet.
+   Uses the same flag/page-tab visual as the group pills on snippet cards
+   so the metaphor is continuous: peel off a sticker, slap it on a card. */
 .group-row-sticker {
   flex: 0 0 18px;
   width: 18px;
   height: 14px;
+  padding: 0;
   border: 1px solid var(--g, var(--accent));
   border-left-width: 4px;
   border-radius: 1px;
@@ -874,13 +866,17 @@ body.pane-max #snippets-pane { border-left: none; }
   cursor: grab;
   transition: transform 80ms ease, box-shadow 80ms ease;
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.06);
-  margin-left: -2px;
+  font-size: 0;
 }
 .group-row-sticker:hover {
   transform: translateY(-1px);
   box-shadow: 1px 2px 3px rgba(0, 0, 0, 0.10);
 }
 .group-row-sticker:active { cursor: grabbing; }
+.group-row-sticker:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 
 /* The ghost that follows the cursor during drag */
 .sticker-ghost {

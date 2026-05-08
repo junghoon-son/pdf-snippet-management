@@ -3067,18 +3067,23 @@ function renderGroups() {
       applyAllHighlights();
     });
 
+    // Hidden color picker — driven programmatically by clicks on the sticker
     const dot = document.createElement("input");
     dot.type = "color";
-    dot.className = "group-row-dot";
+    dot.className = "group-row-dot-hidden";
     dot.value = groupColorHex(id);
-    dot.title = "Click to change group color";
-    dot.addEventListener("input", () => setGroupColor(id, dot.value));
+    dot.tabIndex = -1;
+    dot.addEventListener("input", () => {
+      setGroupColor(id, dot.value);
+      sticker.style.setProperty("--g", dot.value);
+    });
 
-    const sticker = document.createElement("span");
+    const sticker = document.createElement("button");
+    sticker.type = "button";
     sticker.className = "group-row-sticker";
-    sticker.title = "Drag onto a snippet to tag it";
+    sticker.title = "Click to recolor · drag onto a snippet to tag it";
     sticker.style.setProperty("--g", groupColorHex(id));
-    sticker.addEventListener("pointerdown", (e) => beginStickerDrag(e, id, meta));
+    sticker.addEventListener("pointerdown", (e) => maybeBeginStickerDrag(e, id, meta, dot));
 
     const input = document.createElement("input");
     input.type = "text";
@@ -3123,6 +3128,31 @@ function renderGroups() {
     li.append(dot, sticker, input, count, eye, del);
     list.appendChild(li);
   }
+}
+
+function maybeBeginStickerDrag(downEvent, groupId, meta, colorInput) {
+  if (downEvent.button !== 0) return;
+  const startX = downEvent.clientX;
+  const startY = downEvent.clientY;
+  let dragStarted = false;
+  const onMove = (ev) => {
+    if (dragStarted) return;
+    const dx = ev.clientX - startX;
+    const dy = ev.clientY - startY;
+    if (Math.hypot(dx, dy) > 4) {
+      dragStarted = true;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      beginStickerDrag(ev, groupId, meta);
+    }
+  };
+  const onUp = () => {
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    if (!dragStarted) colorInput?.click();
+  };
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
 }
 
 function beginStickerDrag(downEvent, groupId, meta) {
