@@ -641,7 +641,7 @@ body.pane-max #snippets-pane { border-left: none; }
 #snippets-pane #groups-list .group-row {
   border-bottom: 1px solid color-mix(in srgb, var(--pane-border) 60%, transparent);
 }
-#snippets-pane #groups-list .group-row input {
+#snippets-pane #groups-list .group-row input[type="text"] {
   color: var(--pane-fg, var(--text));
   background: transparent;
   border: none;
@@ -649,14 +649,14 @@ body.pane-max #snippets-pane { border-left: none; }
   font-size: 12px;
   padding: 2px 0;
 }
-#snippets-pane #groups-list .group-row input:hover {
+#snippets-pane #groups-list .group-row input[type="text"]:hover {
   border-bottom-color: color-mix(in srgb, var(--pane-fg-dim) 25%, transparent);
 }
-#snippets-pane #groups-list .group-row input:focus {
+#snippets-pane #groups-list .group-row input[type="text"]:focus {
   border-bottom: 1px dashed var(--accent);
   outline: none;
 }
-#snippets-pane #groups-list .group-row input::placeholder { color: var(--pane-fg-faint); }
+#snippets-pane #groups-list .group-row input[type="text"]::placeholder { color: var(--pane-fg-faint); }
 #snippets-pane #groups-list .group-row-count {
   color: var(--pane-fg-dim);
   font-size: 9.5px;
@@ -927,7 +927,7 @@ body.dragging-sticker * { cursor: grabbing !important; }
 .group-row-dot::-webkit-color-swatch-wrapper { padding: 0; border-radius: 50%; }
 .group-row-dot::-webkit-color-swatch { border: none; border-radius: 50%; }
 .group-row-dot::-moz-color-swatch { border: none; border-radius: 50%; }
-.group-row input {
+.group-row input[type="text"] {
   flex: 1;
   background: transparent;
   border: none;
@@ -937,8 +937,8 @@ body.dragging-sticker * { cursor: grabbing !important; }
   padding: 2px 0;
   border-bottom: 1px dashed var(--border);
 }
-.group-row input::placeholder { color: #a8a292; font-style: italic; }
-.group-row input:focus { outline: none; border-bottom-color: var(--accent); }
+.group-row input[type="text"]::placeholder { color: #a8a292; font-style: italic; }
+.group-row input[type="text"]:focus { outline: none; border-bottom-color: var(--accent); }
 .group-row-count {
   font-family: ui-monospace, "SF Mono", monospace;
   font-size: 10px;
