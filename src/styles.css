@@ -996,6 +996,29 @@ body.pane-max #snippets-pane { border-left: none; }
   display: flex;
   gap: 12px;
 }
+.rank-badge {
+  font-family: ui-monospace, "SF Mono", monospace;
+  font-size: 9px;
+  letter-spacing: 0.2px;
+  padding: 1px 6px;
+  margin-left: 6px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--text-dim);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  white-space: nowrap;
+}
+.rank-badge[data-tier="mid"] {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: color-mix(in srgb, var(--accent) 80%, var(--text));
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.rank-badge[data-tier="high"] {
+  background: var(--accent);
+  color: #fbf9f3;
+  border-color: var(--accent);
+  font-weight: 600;
+}
 .snippet .meta button {
   background: none;
   border: none;

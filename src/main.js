@@ -18,6 +18,7 @@ import { openGroupOverlay } from "./group-overlay.js";
 import { setStore, getStore } from "./storage/store.js";
 import { TauriStore } from "./storage/tauri-store.js";
 import { FsaStore } from "./storage/fsa-store.js";
+import { computeMarkRank, rankPercentiles } from "./markrank.js";
 
 const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
 const fsaStore = IS_TAURI ? null : new FsaStore();
@@ -252,6 +253,10 @@ const state = {
   mapScope: "doc",
   summaryScope: "doc",
   summaryFormat: "rich",
+  snippetSort: (() => {
+    try { return localStorage.getItem("pdf-annotator-snippet-sort") || "order"; }
+    catch { return "order"; }
+  })(),
 };
 Object.defineProperty(state, "groupsMeta", {
   configurable: true,
@@ -790,6 +795,21 @@ document.querySelectorAll(".tab-btn").forEach((b) => {
 document.querySelectorAll("#map-scope .seg-btn").forEach((b) => {
   b.addEventListener("click", () => setMapScope(b.dataset.scope));
 });
+
+document.querySelectorAll("#snippet-sort .seg-btn").forEach((b) => {
+  b.addEventListener("click", () => setSnippetSort(b.dataset.sort));
+  b.classList.toggle("active", b.dataset.sort === state.snippetSort);
+});
+
+function setSnippetSort(sort) {
+  if (sort !== "order" && sort !== "rank") return;
+  state.snippetSort = sort;
+  document.querySelectorAll("#snippet-sort .seg-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.sort === sort);
+  });
+  try { localStorage.setItem("pdf-annotator-snippet-sort", sort); } catch {}
+  renderSnippets();
+}
 
 document.getElementById("edge-save").addEventListener("click", saveEdgeLabel);
 document.getElementById("edge-delete").addEventListener("click", () => {
@@ -1869,13 +1889,23 @@ async function renderSnippets() {
   snippetsListEl.innerHTML = "";
   const isWorkspace = state.mapScope === "workspace";
   let source;
+  let edgeSource;
   if (isWorkspace) {
     const data = await loadWorkspaceMapData();
     source = data.snippets;
+    edgeSource = data.edges || [];
   } else {
     source = state.snippets;
+    edgeSource = state.edges || [];
   }
-  const ordered = orderedSnippets(source).filter(snippetMatchesLocal);
+  const rankScores = computeMarkRank(source, edgeSource);
+  const rankPct = rankPercentiles(rankScores);
+  const linkedIds = new Set();
+  for (const e of edgeSource) { linkedIds.add(e.source); linkedIds.add(e.target); }
+  let ordered = orderedSnippets(source).filter(snippetMatchesLocal);
+  if (state.snippetSort === "rank") {
+    ordered = [...ordered].sort((a, b) => (rankScores.get(b.id) || 0) - (rankScores.get(a.id) || 0));
+  }
   const canonical = canonicalGroupIds();
   updateLocalSearchCount(ordered.length);
   ordered.forEach((s) => {
@@ -1938,6 +1968,17 @@ async function renderSnippets() {
     pageSpan.textContent = s.anchor ? `§ ${s.anchor}` : `p.${s.page}`;
     if (s.anchor) pageSpan.title = s.anchor;
     label.appendChild(pageSpan);
+    if (linkedIds.has(s.id)) {
+      const score = rankScores.get(s.id) || 0;
+      const pct = rankPct.get(s.id) || 0;
+      const rankBadge = document.createElement("span");
+      rankBadge.className = "rank-badge";
+      const tier = pct >= 0.85 ? "high" : pct >= 0.6 ? "mid" : "low";
+      rankBadge.dataset.tier = tier;
+      rankBadge.textContent = "★ " + (score * 100).toFixed(1);
+      rankBadge.title = `MarkRank: ${(score * 100).toFixed(2)} · ${Math.round(pct * 100)}th percentile`;
+      label.appendChild(rankBadge);
+    }
     const copy = document.createElement("button");
     copy.textContent = "copy";
     copy.addEventListener("click", async (e) => {
