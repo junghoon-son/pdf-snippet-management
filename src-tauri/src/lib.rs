@@ -84,6 +84,8 @@ struct Source {
 
 #[derive(Serialize, Deserialize, Default)]
 struct AnnotFile {
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "markleeVersion")]
+    marklee_version: Option<String>,
     #[serde(default)]
     source: Source,
     #[serde(default)]
@@ -268,6 +270,7 @@ fn read_annot(pdf_path: String) -> Result<AnnotFile, String> {
     } else {
         let snippets: Vec<Snippet> = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
         AnnotFile {
+            marklee_version: None,
             source: Source::default(),
             snippets,
             edges: Vec::new(),

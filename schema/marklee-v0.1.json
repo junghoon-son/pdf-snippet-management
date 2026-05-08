@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://marklee.dev/schema/marklee-v0.1.json",
+  "title": "Marklee Annotation Sidecar",
+  "description": "Marklee Annotation Format v0.1 — see SPEC.md",
+  "type": "object",
+  "required": ["snippets"],
+  "properties": {
+    "markleeVersion": {
+      "type": "string",
+      "description": "Semver of the Marklee spec this file conforms to.",
+      "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?(-.+)?$"
+    },
+    "source": { "$ref": "#/$defs/source" },
+    "snippets": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/snippet" }
+    },
+    "edges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/edge" }
+    },
+    "groups": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/group" }
+    }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "properties": {
+        "path":        { "type": "string" },
+        "filename":    { "type": "string" },
+        "title":       { "type": "string" },
+        "author":      { "type": "string" },
+        "kind":        { "enum": ["pdf", "markdown", "docx"] },
+        "contentHash": {
+          "type": "string",
+          "pattern": "^(sha256:)?[0-9a-f]{64}$"
+        }
+      }
+    },
+    "snippet": {
+      "type": "object",
+      "required": ["id", "kind", "page", "text"],
+      "properties": {
+        "id":             { "type": "string", "minLength": 1 },
+        "kind":           { "enum": ["text", "image"] },
+        "page":           { "type": "integer", "minimum": 1 },
+        "text":           { "type": "string" },
+        "textNormalized": { "type": "string" },
+        "rects": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/rect" }
+        },
+        "imagePath":     { "type": "string" },
+        "contextBefore": { "type": "string" },
+        "contextAfter":  { "type": "string" },
+        "anchor":        { "type": "string" },
+        "flowPos":       { "type": "integer", "minimum": 0 },
+        "comment":       { "type": "string" },
+        "groups":        { "type": "array", "items": { "type": "string" } },
+        "tags":          { "type": "array", "items": { "type": "string" } },
+        "pos": {
+          "type": "object",
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" }
+          }
+        },
+        "created": { "type": "string", "format": "date-time" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "image" } }, "required": ["kind"] },
+          "then": { "required": ["imagePath"] }
+        }
+      ]
+    },
+    "rect": {
+      "type": "object",
+      "required": ["left", "top", "width", "height"],
+      "properties": {
+        "left":   { "type": "number", "minimum": 0, "maximum": 1 },
+        "top":    { "type": "number", "minimum": 0, "maximum": 1 },
+        "width":  { "type": "number", "minimum": 0, "maximum": 1 },
+        "height": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "required": ["id", "source", "target"],
+      "properties": {
+        "id":     { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "target": { "type": "string", "minLength": 1 },
+        "label":  { "type": "string" }
+      }
+    },
+    "group": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id":    { "type": "string", "minLength": 1 },
+        "name":  { "type": "string" },
+        "color": { "type": "string" }
+      }
+    }
+  }
+}

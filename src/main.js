@@ -19,6 +19,7 @@ import { setStore, getStore } from "./storage/store.js";
 import { TauriStore } from "./storage/tauri-store.js";
 import { FsaStore } from "./storage/fsa-store.js";
 import { computeMarkRank, rankPercentiles } from "./markrank.js";
+import { buildPermalink, parsePermalink } from "./marklee-permalink.js";
 
 const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
 const fsaStore = IS_TAURI ? null : new FsaStore();
@@ -1424,6 +1425,8 @@ async function loadAnyDocument(path) {
   refreshActiveView();
   applyAllHighlights();
   await persist();
+  // After a doc opens, see if a pending Marklee Permalink can resolve.
+  if (pendingPermalink) setTimeout(() => resolvePendingPermalink(), 200);
 }
 
 async function setScale(next) {
@@ -2016,10 +2019,26 @@ async function renderSnippets() {
       refreshActiveView();
       applyAllHighlights();
     });
+    const share = document.createElement("button");
+    share.textContent = "share";
+    share.title = "Copy Marklee Permalink to clipboard (⇧ for privacy-min form)";
+    share.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      try {
+        const includeText = !e.shiftKey;
+        const url = buildPermalink(s, state.source, { includeText });
+        await navigator.clipboard.writeText(url);
+        const prev = share.textContent;
+        share.textContent = "copied";
+        setTimeout(() => { share.textContent = prev; }, 1100);
+      } catch (err) {
+        console.error("permalink copy failed", err);
+      }
+    });
     const actions = document.createElement("span");
     actions.className = "actions";
-    if (isCrossDoc) actions.append(copy);
-    else actions.append(copy, del);
+    if (isCrossDoc) actions.append(share, copy);
+    else actions.append(share, copy, del);
     meta.append(label, actions);
 
     let text;
@@ -2428,6 +2447,7 @@ async function persist() {
   const localGroups = (state.groupsMeta || []).filter((g) => usedIds.has(g.id));
   try {
     await getStore().writeAnnot(state.currentPdfPath, {
+      markleeVersion: "0.1",
       source: state.source,
       snippets: state.snippets,
       edges: state.edges,
@@ -2949,6 +2969,51 @@ function saveEdgeLabel() {
 updateZoomLabel();
 setupPanelResize();
 setupAppMenu();
+setupPermalinkBootstrap();
+
+// Marklee Permalink bootstrap — see SPEC.md §6.
+// V0.1: parse the query string on load. If the permalink references a snippet
+// already in the current workspace (matched by id, or by hash + text within
+// any open doc), scroll to it. Cross-origin PDF fetch + storage hookup is
+// stubbed — see resolveOrFetchPermalink() — and lands in a follow-up that
+// teaches the storage layer to accept synthetic blob paths.
+let pendingPermalink = null;
+
+function setupPermalinkBootstrap() {
+  const qs = window.location.search;
+  if (!qs || qs.length < 2) return;
+  const parsed = parsePermalink(qs);
+  if (!parsed) return;
+  pendingPermalink = parsed;
+  console.log("[marklee] permalink detected", parsed);
+  // Try to resolve immediately against any already-loaded doc.
+  const ok = resolvePendingPermalink();
+  if (ok) return;
+  // Stash for later resolution after the user opens a matching doc.
+  // TODO: when src is provided and we're in web mode, fetch + load the PDF
+  // bytes here. Requires the storage layer to accept a synthetic ("marklee://")
+  // path or a Blob handle path. Tracked as part of the FSA URL bootstrap work.
+  if (!IS_TAURI && parsed.src) {
+    console.warn("[marklee] web fetch of src=" + parsed.src + " not yet implemented; open the doc manually for now");
+  }
+}
+
+function resolvePendingPermalink() {
+  if (!pendingPermalink) return false;
+  const want = pendingPermalink.snippet;
+  if (want.id) {
+    const found = state.snippets.find((s) => s.id === want.id);
+    if (found) { pendingPermalink = null; previewSnippetInPdf(found); return true; }
+  }
+  if (want.text) {
+    const found = state.snippets.find((s) =>
+      (s.textNormalized || s.text) === want.text &&
+      (want.page == null || s.page === want.page)
+    );
+    if (found) { pendingPermalink = null; previewSnippetInPdf(found); return true; }
+  }
+  return false;
+}
 
 function setupAppMenu() {
   if (!IS_TAURI) return;

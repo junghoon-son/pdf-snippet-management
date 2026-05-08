@@ -1,4 +1,4 @@
-# MarkRank Annotation Format
+# Marklee Annotation Format
 
 **Version:** 0.1 (DRAFT)
 **Status:** Working Draft
@@ -7,7 +7,9 @@
 
 ## Abstract
 
-MarkRank is a portable, format-agnostic annotation format for documents. Annotations live in JSON sidecar files alongside source documents (PDF, Markdown, DOCX). They use **edit-tolerant text anchors** so they survive small changes to the source, carry a **directed labeled graph** of relationships between annotations, and define a **permalink URL grammar** for sharing a single annotation as a hyperlink.
+Marklee is a portable, format-agnostic annotation format for documents. Annotations live in JSON sidecar files alongside source documents (PDF, Markdown, DOCX). They use **edit-tolerant text anchors** so they survive small changes to the source, carry a **directed labeled graph** of relationships between annotations, and define a **permalink URL grammar** for sharing a single annotation as a hyperlink.
+
+The format also defines a centrality algorithm — **MarkRank** — that scores each annotation by graph centrality. The algorithm is to Marklee what PageRank is to the web: a normative ranking function over the data the format encodes.
 
 The format is local-first and file-based: no server, no account, no proprietary blob. Sidecars are plain JSON next to the source document, version-controllable, scriptable from a CLI, and self-describing.
 
@@ -22,7 +24,7 @@ The format is local-first and file-based: no server, no account, no proprietary 
 - The anchor resolution algorithm (text + context + section path).
 - Content addressing of source documents (SHA-256).
 - Permalink URL grammar for sharing one annotation.
-- The MarkRank centrality algorithm over the annotation graph.
+- The MarkRank centrality algorithm over the annotation graph (Section 8).
 
 ### 1.2 Out of scope
 
@@ -80,7 +82,7 @@ An **anchor** is the locator that places a snippet within a (possibly edited) so
 
 ```json
 {
-  "markrankVersion": "0.1",
+  "markleeVersion": "0.1",
   "source":   { ... },
   "snippets": [ ... ],
   "edges":    [ ... ],
@@ -90,7 +92,7 @@ An **anchor** is the locator that places a snippet within a (possibly edited) so
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `markrankVersion` | string | new files: yes; reading: no | semver of this spec |
+| `markleeVersion` | string | new files: yes; reading: no | semver of this spec |
 | `source` | object | no | document metadata (Section 3.2) |
 | `snippets` | array | yes | zero or more snippet objects |
 | `edges` | array | no | zero or more edge objects |
@@ -225,7 +227,7 @@ Clients SHOULD compute and store the hash when a sidecar is first written. Clien
 
 ## 6. Permalink URL grammar
 
-A **MarkRank Permalink** encodes a single snippet anchor as a URL. It is the wire form of an anchor — what an anchor looks like when serialized for sharing across the web.
+A **Marklee Permalink** encodes a single snippet anchor as a URL. It is the wire form of an anchor — what an anchor looks like when serialized for sharing across the web.
 
 ### 6.1 Form
 
@@ -246,7 +248,7 @@ A **MarkRank Permalink** encodes a single snippet anchor as a URL. It is the wir
 
 ### 6.2 Resolution
 
-A receiver of a MarkRank Permalink MUST:
+A receiver of a Marklee Permalink MUST:
 
 1. Fetch the source document from `src`. (If `src` is absent and only `hash` is given, the client MAY consult a content-addressable store; this is OPTIONAL and OUT OF SCOPE for v0.1.)
 2. Compute SHA-256 of the fetched bytes.
@@ -304,14 +306,14 @@ The algorithm is a scoring function over a sidecar (or the union of sidecars in 
 
 | Spec | Format scope | Anchor model | Sidecar | Edges | Edit-tolerant | Permalink |
 |---|---|---|---|---|---|---|
-| **MarkRank** | PDF + Markdown + DOCX | text + context + section path | yes (JSON) | yes, labeled | yes (4-tier) | defined |
+| **Marklee** | PDF + Markdown + DOCX | text + context + section path | yes (JSON) | yes, labeled | yes (4-tier) | defined |
 | W3C Web Annotation Data Model | any | TextQuoteSelector etc. | no (server-side) | indirect | partial | defined (URI) |
 | Adobe XFDF | PDF only | byte offset | yes (XML) | no | no | yes |
 | Hypothesis | HTML mostly | TextQuoteSelector | no (server-side) | reply only | yes | yes |
 | PDF `/Annot` | PDF only | byte offset | embedded | no | no | partial |
 | EPUB CFI | EPUB only | structural path | n/a | no | no | yes |
 
-MarkRank's distinct contributions:
+Marklee's distinct contributions:
 1. Cross-format unified schema (PDF + flow docs in one model).
 2. Sidecar-first (no server required).
 3. Normative tier-based anchor resolution algorithm.
@@ -329,7 +331,7 @@ Version 0.x is a working draft. The format MAY change incompatibly until 1.0.
 
 ## Appendix A. JSON Schema
 
-See [`schema/markrank-v0.1.json`](schema/markrank-v0.1.json) for a JSON Schema (draft 2020-12) covering Sections 3.1–3.5.
+See [`schema/marklee-v0.1.json`](schema/marklee-v0.1.json) for a JSON Schema (draft 2020-12) covering Sections 3.1–3.5.
 
 ## Appendix B. Test corpus
 
