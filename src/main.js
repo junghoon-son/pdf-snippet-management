@@ -269,6 +269,7 @@ let selectedEdge = null;
 let mapInitialized = false;
 let lineageInitialized = false;
 let rectDraw = null;
+let docLoadToken = 0;
 const clipUrlCache = new Map();
 state.tool = "select";
 
@@ -1262,8 +1263,6 @@ async function loadPdf(path) {
     throw err;
   }
 }
-
-let docLoadToken = 0;
 
 async function loadAnyDocument(path) {
   const myToken = ++docLoadToken;
