@@ -857,6 +857,65 @@ body.pane-max #snippets-pane { border-left: none; }
   background-color: transparent;
   overflow: hidden;
 }
+
+/* Sticker dispenser — each group row has a small draggable tab the user
+   can pull onto a snippet to tag it. The tab uses the same flag/page-tab
+   visual as the group pills on snippet cards so the metaphor is
+   continuous: peel off a sticker, slap it on a card. */
+.group-row-sticker {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 14px;
+  border: 1px solid var(--g, var(--accent));
+  border-left-width: 4px;
+  border-radius: 1px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.02) 50%, rgba(0,0,0,0.04) 100%),
+    color-mix(in srgb, var(--g, var(--accent)) 22%, transparent);
+  cursor: grab;
+  transition: transform 80ms ease, box-shadow 80ms ease;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.06);
+  margin-left: -2px;
+}
+.group-row-sticker:hover {
+  transform: translateY(-1px);
+  box-shadow: 1px 2px 3px rgba(0, 0, 0, 0.10);
+}
+.group-row-sticker:active { cursor: grabbing; }
+
+/* The ghost that follows the cursor during drag */
+.sticker-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  z-index: 9999;
+  padding: 4px 12px;
+  border: 1px solid var(--g, var(--accent));
+  border-left-width: 5px;
+  border-radius: 1px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.02) 45%, rgba(0,0,0,0.05) 100%),
+    color-mix(in srgb, var(--g, var(--accent)) 28%, var(--bg));
+  color: var(--g, var(--accent));
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18), 0 1px 2px rgba(0, 0, 0, 0.12);
+  white-space: nowrap;
+  filter: brightness(1.05) saturate(1.1);
+  transform-origin: top left;
+}
+body.dragging-sticker { cursor: grabbing !important; }
+body.dragging-sticker * { cursor: grabbing !important; }
+
+/* Drop-target highlight — a snippet under the ghost gets a faint glow */
+.snippet.sticker-drop-target {
+  background: color-mix(in srgb, var(--accent) 14%, transparent) !important;
+  box-shadow: inset 0 0 0 2px var(--accent);
+  border-radius: 4px;
+}
 .group-row-dot::-webkit-color-swatch-wrapper { padding: 0; border-radius: 50%; }
 .group-row-dot::-webkit-color-swatch { border: none; border-radius: 50%; }
 .group-row-dot::-moz-color-swatch { border: none; border-radius: 50%; }

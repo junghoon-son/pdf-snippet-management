@@ -3074,6 +3074,12 @@ function renderGroups() {
     dot.title = "Click to change group color";
     dot.addEventListener("input", () => setGroupColor(id, dot.value));
 
+    const sticker = document.createElement("span");
+    sticker.className = "group-row-sticker";
+    sticker.title = "Drag onto a snippet to tag it";
+    sticker.style.setProperty("--g", groupColorHex(id));
+    sticker.addEventListener("pointerdown", (e) => beginStickerDrag(e, id, meta));
+
     const input = document.createElement("input");
     input.type = "text";
     input.placeholder = `Group ${ids.indexOf(id) + 1}`;
@@ -3114,9 +3120,67 @@ function renderGroups() {
       await deleteGroup(id);
     });
 
-    li.append(dot, input, count, eye, del);
+    li.append(dot, sticker, input, count, eye, del);
     list.appendChild(li);
   }
+}
+
+function beginStickerDrag(downEvent, groupId, meta) {
+  if (downEvent.button !== 0) return;
+  downEvent.preventDefault();
+  downEvent.stopPropagation();
+  try { downEvent.target.setPointerCapture?.(downEvent.pointerId); } catch {}
+
+  const color = groupColorHex(groupId);
+  const ghost = document.createElement("div");
+  ghost.className = "sticker-ghost";
+  ghost.style.setProperty("--g", color);
+  ghost.textContent = (meta?.name) || `Group ${(state.groupsMeta || []).findIndex((g) => g.id === groupId) + 1}`;
+  document.body.appendChild(ghost);
+  document.body.classList.add("dragging-sticker");
+
+  let lastTarget = null;
+  const setTarget = (next) => {
+    if (next === lastTarget) return;
+    lastTarget?.classList.remove("sticker-drop-target");
+    next?.classList.add("sticker-drop-target");
+    lastTarget = next;
+  };
+  const move = (ev) => {
+    ghost.style.transform = `translate(${ev.clientX + 14}px, ${ev.clientY - 6}px)`;
+    const stack = document.elementsFromPoint(ev.clientX, ev.clientY);
+    const snip = stack.find((el) => el.classList?.contains("snippet"));
+    setTarget(snip || null);
+  };
+  const cleanup = () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    window.removeEventListener("pointercancel", cleanup);
+    document.body.classList.remove("dragging-sticker");
+    setTarget(null);
+    ghost.remove();
+  };
+  const up = async (ev) => {
+    const target = lastTarget;
+    cleanup();
+    if (!target) return;
+    const snippetId = target.dataset.snippetId;
+    if (!snippetId) return;
+    const snippet = state.snippets.find((s) => s.id === snippetId);
+    if (!snippet) return;
+    snippet.groups = snippet.groups || [];
+    if (!snippet.groups.includes(groupId)) {
+      snippet.groups.push(groupId);
+      await persist();
+      refreshActiveView();
+      applyAllHighlights();
+    }
+  };
+
+  move(downEvent);
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", cleanup);
 }
 
 function handleEdgeSelection(edge) {
