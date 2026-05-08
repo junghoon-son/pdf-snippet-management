@@ -1326,28 +1326,53 @@ body.pane-max #snippets-pane { border-left: none; }
   gap: 4px;
   margin-bottom: 4px;
 }
+/* Group "tabs" — borrows from physical Post-it page flags / sticky tabs.
+   A translucent highlighter-color strip with a solid colored adhesive
+   stripe on the left (the "stem"). Flat right edge so the full card
+   reads as a tab stuck on the snippet. The colored stripe's full
+   saturation makes it scannable; the translucent fill keeps it light. */
 .group-pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 8px 2px 6px;
-  border-radius: 11px;
+  gap: 0;
+  padding: 2px 9px 2px 9px;
   border: 1px solid;
+  border-left-width: 5px;
+  border-radius: 1px;
   font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.1px;
-  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  line-height: 1.45;
   white-space: nowrap;
   max-width: 100%;
   user-select: none;
+  position: relative;
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.04),
+    1px 1px 1.5px rgba(0, 0, 0, 0.06);
+  transition: transform 80ms ease, box-shadow 80ms ease;
 }
-.group-pill-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  display: inline-block;
+.group-pill::before {
+  /* Subtle sheen to suggest film/sticker material */
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.18) 0%,
+    rgba(255, 255, 255, 0.02) 45%,
+    rgba(0, 0, 0, 0.05) 100%
+  );
+  border-radius: inherit;
 }
+.group-pill:hover {
+  transform: translateY(-0.5px);
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.06),
+    1px 2px 3px rgba(0, 0, 0, 0.10);
+}
+.group-pill-dot { display: none; }
 .group-pill-name {
   overflow: hidden;
   text-overflow: ellipsis;
