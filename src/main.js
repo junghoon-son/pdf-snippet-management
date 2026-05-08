@@ -2083,10 +2083,8 @@ async function renderSnippets() {
       docSpan.title = ownerPath;
       label.appendChild(docSpan);
     }
-    const pageSpan = document.createElement("span");
-    pageSpan.textContent = s.anchor ? `§ ${s.anchor}` : `p.${s.page}`;
-    if (s.anchor) pageSpan.title = s.anchor;
-    label.appendChild(pageSpan);
+    // Page / anchor label moved to a quiet bottom-right footer (see below);
+    // skipped from meta row to save a row of vertical space.
     if (linkedIds.has(s.id)) {
       const score = rankScores.get(s.id) || 0;
       const pct = rankPct.get(s.id) || 0;
@@ -2229,6 +2227,11 @@ async function renderSnippets() {
       }
     });
 
+    const pageFooter = document.createElement("span");
+    pageFooter.className = "snippet-page-footer";
+    pageFooter.textContent = s.anchor ? `§ ${s.anchor}` : `p.${s.page}`;
+    if (s.anchor) pageFooter.title = s.anchor;
+
     if (isCrossDoc) {
       const tail = s.comment
         ? Object.assign(document.createElement("div"), {
@@ -2236,10 +2239,10 @@ async function renderSnippets() {
             textContent: s.comment,
           })
         : null;
-      if (tail) li.append(meta, text, tail);
-      else li.append(meta, text);
+      if (tail) li.append(meta, text, tail, pageFooter);
+      else li.append(meta, text, pageFooter);
     } else {
-      li.append(meta, text, s.comment ? ta : addBtn);
+      li.append(meta, text, s.comment ? ta : addBtn, pageFooter);
     }
     li.addEventListener("click", async (e) => {
       if (e.target === ta || e.target === del) return;
