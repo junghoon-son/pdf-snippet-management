@@ -1392,7 +1392,7 @@ body.dragging-snippet .group-row:hover {
   will-change: transform;
   transform: translate3d(0, 0, 0);
 }
-#group-overlay.active .lifted-card { opacity: 1; }
+#group-overlay.active .lifted-card { opacity: 0.55; }
 .lifted-card.over-target {
   background: color-mix(in srgb, var(--target-color, var(--accent)) 18%, #fbf9f1);
   border-color: var(--target-color, var(--accent));
@@ -1401,7 +1401,7 @@ body.dragging-snippet .group-row:hover {
     0 14px 34px color-mix(in srgb, var(--target-color, var(--accent)) 35%, transparent),
     0 0 0 2px var(--target-color, var(--accent)),
     0 0 30px color-mix(in srgb, var(--target-color, var(--accent)) 60%, transparent);
-  opacity: 0.6;
+  opacity: 0.85;
 }
 .lifted-card {
   transition:
