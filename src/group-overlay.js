@@ -81,11 +81,20 @@ export function openGroupOverlay({ snippet, allSnippets, allGroups, container, a
 
     const w = paneRect.width;
     const h = paneRect.height;
-    bubbles.forEach((b) => {
-      const a = Math.random() * Math.PI * 2;
-      const rad = Math.min(w, h) * 0.12;
-      b.x = w / 2 + Math.cos(a) * rad;
-      b.y = h / 2 + Math.sin(a) * rad;
+    // Spawn bubbles in a small ring around the drag origin so the user
+    // doesn't have to chase the menu. Bias the angle slightly toward the
+    // pane interior when the cursor sits near an edge so the ring is
+    // less likely to spawn off-screen.
+    const originX = clamp(anchor.x - paneRect.left, 0, w);
+    const originY = clamp(anchor.y - paneRect.top, 0, h);
+    const towardCenter = Math.atan2(h / 2 - originY, w / 2 - originX);
+    const ringR = Math.min(w, h) * 0.16;
+    bubbles.forEach((b, i) => {
+      // Spread bubbles around a partial arc biased toward the pane interior
+      const t = (i / Math.max(1, bubbles.length - 1)) - 0.5;
+      const a = towardCenter + t * Math.PI * 1.2;
+      b.x = originX + Math.cos(a) * ringR;
+      b.y = originY + Math.sin(a) * ringR;
     });
 
     // SVG layer for bubbles
@@ -209,16 +218,30 @@ export function openGroupOverlay({ snippet, allSnippets, allGroups, container, a
     };
     requestAnimationFrame(() => { cardW = card.offsetWidth; cardH = card.offsetHeight; placeCard(); });
 
-    // Force simulation
+    // Force simulation — bubbles cluster around the cursor (drag origin),
+    // not the pane center, so the menu sits where the user already is.
+    // Edge-repel keeps any bubble from being pushed past the pane border.
+    const EDGE_MARGIN = 60;
+    const edgeRepel = () => {
+      for (const b of bubbles) {
+        const padX = b.w / 2 + 4;
+        const padY = b.h / 2 + 4;
+        if (b.x < EDGE_MARGIN + padX) b.vx += (EDGE_MARGIN + padX - b.x) * 0.06;
+        if (b.x > w - EDGE_MARGIN - padX) b.vx -= (b.x - (w - EDGE_MARGIN - padX)) * 0.06;
+        if (b.y < EDGE_MARGIN + padY) b.vy += (EDGE_MARGIN + padY - b.y) * 0.06;
+        if (b.y > h - EDGE_MARGIN - padY) b.vy -= (b.y - (h - EDGE_MARGIN - padY)) * 0.06;
+      }
+    };
     const sim = forceSimulation(bubbles)
       .alphaDecay(0.05)
       .velocityDecay(0.55)
       .force("charge", forceManyBody().strength(-160).distanceMax(220))
-      .force("xCenter", forceX(w / 2).strength(0.08))
-      .force("yCenter", forceY(h / 2).strength(0.08))
+      .force("xCenter", forceX().x(() => cursor.x).strength(0.10))
+      .force("yCenter", forceY().y(() => cursor.y).strength(0.10))
       .force("collide", forceCollide().radius((d) => d.r + HIT_PADDING).iterations(2))
       .force("xPull", forceX().x((d) => cursor.x).strength((d) => cursorPullStrength(d, cursor)))
-      .force("yPull", forceY().y((d) => cursor.y).strength((d) => cursorPullStrength(d, cursor)));
+      .force("yPull", forceY().y((d) => cursor.y).strength((d) => cursorPullStrength(d, cursor)))
+      .force("edges", edgeRepel);
 
     sim.on("tick", () => {
       for (const { bubble, el } of bubbleEls) {
