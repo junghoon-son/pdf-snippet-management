@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+use tauri::Emitter;
 
 #[derive(Serialize, Deserialize, Clone)]
 struct Snippet {
@@ -305,11 +307,86 @@ fn write_annot(pdf_path: String, payload: AnnotFile) -> Result<(), String> {
     Ok(())
 }
 
+fn build_app_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<tauri::menu::Menu<R>> {
+    let mi = |id: &str, label: &str, accel: Option<&str>| {
+        let mut b = MenuItemBuilder::with_id(id, label);
+        if let Some(a) = accel {
+            b = b.accelerator(a);
+        }
+        b.build(app)
+    };
+
+    let app_submenu = SubmenuBuilder::new(app, "PDF Annotator")
+        .item(&PredefinedMenuItem::about(app, Some("About PDF Annotator"), None)?)
+        .separator()
+        .item(&PredefinedMenuItem::services(app, None)?)
+        .separator()
+        .item(&PredefinedMenuItem::hide(app, None)?)
+        .item(&PredefinedMenuItem::hide_others(app, None)?)
+        .item(&PredefinedMenuItem::show_all(app, None)?)
+        .separator()
+        .item(&PredefinedMenuItem::quit(app, None)?)
+        .build()?;
+
+    let file_menu = SubmenuBuilder::new(app, "File")
+        .item(&mi("file_new_workspace", "New Workspace", Some("CmdOrCtrl+N"))?)
+        .separator()
+        .item(&mi("file_open", "Open File…", Some("CmdOrCtrl+O"))?)
+        .item(&mi("file_open_folder", "Open Folder…", Some("CmdOrCtrl+Shift+O"))?)
+        .separator()
+        .item(&mi("file_clear_workspace", "Clear Workspace", None)?)
+        .separator()
+        .item(&mi("file_summary", "Summary…", None)?)
+        .item(&mi("file_export_summary", "Export Summary as HTML…", None)?)
+        .separator()
+        .item(&PredefinedMenuItem::close_window(app, None)?)
+        .build()?;
+
+    let edit_menu = SubmenuBuilder::new(app, "Edit")
+        .item(&mi("edit_undo", "Undo", Some("CmdOrCtrl+Z"))?)
+        .separator()
+        .item(&PredefinedMenuItem::cut(app, None)?)
+        .item(&PredefinedMenuItem::copy(app, None)?)
+        .item(&PredefinedMenuItem::paste(app, None)?)
+        .item(&PredefinedMenuItem::select_all(app, None)?)
+        .separator()
+        .item(&mi("edit_find", "Find in Document", Some("CmdOrCtrl+F"))?)
+        .item(&mi("edit_find_workspace", "Find in Workspace", Some("CmdOrCtrl+Shift+F"))?)
+        .build()?;
+
+    let view_menu = SubmenuBuilder::new(app, "View")
+        .item(&mi("view_zoom_in", "Zoom In", Some("CmdOrCtrl+="))?)
+        .item(&mi("view_zoom_out", "Zoom Out", Some("CmdOrCtrl+-"))?)
+        .item(&mi("view_zoom_fit", "Fit Width", Some("CmdOrCtrl+0"))?)
+        .separator()
+        .item(&mi("view_toggle_sidebar", "Toggle Sidebar", Some("CmdOrCtrl+B"))?)
+        .item(&mi("view_maximize", "Maximize Snippets Pane", Some("CmdOrCtrl+Shift+M"))?)
+        .separator()
+        .item(&mi("view_cycle_theme", "Cycle Theme", None)?)
+        .item(&mi("view_help", "How To & Shortcuts", None)?)
+        .separator()
+        .item(&PredefinedMenuItem::fullscreen(app, None)?)
+        .build()?;
+
+    MenuBuilder::new(app)
+        .items(&[&app_submenu, &file_menu, &edit_menu, &view_menu])
+        .build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .setup(|app| {
+            let menu = build_app_menu(app.handle())?;
+            app.set_menu(menu)?;
+            app.on_menu_event(|app, event| {
+                let id = event.id().0.clone();
+                let _ = app.emit("app-menu", id);
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             list_pdfs,
             list_documents,

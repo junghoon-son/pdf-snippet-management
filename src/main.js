@@ -2878,6 +2878,36 @@ function saveEdgeLabel() {
 
 updateZoomLabel();
 setupPanelResize();
+setupAppMenu();
+
+function setupAppMenu() {
+  if (!IS_TAURI) return;
+  import("@tauri-apps/api/event").then(({ listen }) => {
+    listen("app-menu", ({ payload }) => handleAppMenu(String(payload)));
+  });
+}
+
+function handleAppMenu(id) {
+  const click = (sel) => document.querySelector(sel)?.click();
+  switch (id) {
+    case "file_new_workspace":     newWorkspace(); break;
+    case "file_open":              click("#open-file"); break;
+    case "file_open_folder":       click("#open-folder"); break;
+    case "file_clear_workspace":   click("#clear-workspace"); break;
+    case "file_summary":           openSummary(); break;
+    case "file_export_summary":    openSummary(); setTimeout(exportSummaryHtml, 80); break;
+    case "edit_undo":              undo(); break;
+    case "edit_find":              openLocalSearch(); break;
+    case "edit_find_workspace":    openGlobalSearch(); break;
+    case "view_zoom_in":           zoomIn(); break;
+    case "view_zoom_out":          zoomOut(); break;
+    case "view_zoom_fit":          zoomFit(); break;
+    case "view_toggle_sidebar":    toggleSidebar(); break;
+    case "view_maximize":          toggleMaximizePane(); break;
+    case "view_cycle_theme":       click("#theme-btn"); break;
+    case "view_help":              click("#help-btn"); break;
+  }
+}
 
 function setupPanelResize() {
   for (const side of ["sidebar", "snippets"]) {
