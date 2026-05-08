@@ -286,6 +286,7 @@ if (!IS_TAURI) {
   state.workspace.files = [];
   state.workspace.currentPdfPath = null;
 }
+document.body.dataset.theme = state.workspace.theme || "cream";
 const collapsedFolders = new Set();
 
 function makeWorkspaceId() {
@@ -319,6 +320,7 @@ function loadAllWorkspaces() {
         files: seed.files,
         folders: seed.folders,
         groupsMeta: [],
+        theme: "cream",
         currentPdfPath: null,
       },
     },
@@ -329,12 +331,14 @@ function loadAllWorkspaces() {
 
 function activeWorkspaceData() {
   const ws = state.workspaces.byId[state.workspaces.active];
-  if (!ws) return { folders: [], files: [], groupsMeta: [] };
+  if (!ws) return { folders: [], files: [], groupsMeta: [], theme: "cream" };
   if (!Array.isArray(ws.groupsMeta)) ws.groupsMeta = [];
+  if (!ws.theme) ws.theme = "cream";
   return {
     folders: ws.folders || [],
     files: ws.files || [],
     groupsMeta: ws.groupsMeta,
+    theme: ws.theme,
   };
 }
 
@@ -345,9 +349,22 @@ function saveAllWorkspaces() {
     cur.files = state.workspace.files;
     cur.folders = state.workspace.folders;
     cur.groupsMeta = state.workspace.groupsMeta;
+    cur.theme = state.workspace.theme || cur.theme || "cream";
     cur.currentPdfPath = state.currentPdfPath;
   }
   try { localStorage.setItem(WORKSPACES_KEY, JSON.stringify(state.workspaces)); } catch {}
+}
+
+const VALID_THEMES = ["cream", "slate", "dark", "sepia"];
+function applyTheme(name) {
+  const theme = VALID_THEMES.includes(name) ? name : "cream";
+  document.body.dataset.theme = theme;
+}
+function setWorkspaceTheme(name) {
+  if (!VALID_THEMES.includes(name)) return;
+  state.workspace.theme = name;
+  applyTheme(name);
+  saveAllWorkspaces();
 }
 
 function saveWorkspace() {
@@ -408,6 +425,7 @@ function switchWorkspace(id) {
   state.workspaces.active = id;
   closeCurrentPdf();
   state.workspace = activeWorkspaceData();
+  applyTheme(state.workspace.theme);
   saveAllWorkspaces();
   renderWorkspaceTabs();
   renderWorkspace();
@@ -430,6 +448,7 @@ function newWorkspace() {
     files: [],
     folders: [],
     groupsMeta: [],
+    theme: "cream",
     currentPdfPath: null,
   };
   state.workspaces.order.push(id);
@@ -695,6 +714,14 @@ function toggleMaximizePane() {
   }, 80);
 }
 document.getElementById("maximize-btn").addEventListener("click", toggleMaximizePane);
+
+document.getElementById("theme-btn").addEventListener("click", () => {
+  const cur = state.workspace.theme || "cream";
+  const i = VALID_THEMES.indexOf(cur);
+  const next = VALID_THEMES[(i + 1) % VALID_THEMES.length];
+  setWorkspaceTheme(next);
+  flashButton("theme-btn", next);
+});
 
 function toggleSidebar() {
   document.body.classList.toggle("sidebar-collapsed");
@@ -970,7 +997,7 @@ document.getElementById("groups-export").addEventListener("click", exportGroups)
 document.getElementById("groups-import").addEventListener("click", importGroups);
 document.getElementById("groups-import-ws").addEventListener("click", importGroupsFromWorkspace);
 
-async function importGroupsFromWorkspace() {
+function importGroupsFromWorkspace() {
   const others = state.workspaces.order
     .map((id) => state.workspaces.byId[id])
     .filter((ws) => ws && ws.id !== state.workspaces.active)
@@ -985,31 +1012,126 @@ async function importGroupsFromWorkspace() {
     alert("No other workspaces have groups defined yet.");
     return;
   }
-  const lines = others.map((ws, i) => `  ${i + 1}. ${ws.name} (${ws.groups.length} group${ws.groups.length === 1 ? "" : "s"})`);
-  const choice = prompt(
-    `Copy groups from another workspace into "${state.workspaces.byId[state.workspaces.active]?.name || "this workspace"}":\n\n${lines.join("\n")}\n\nEnter the number:`,
-  );
-  const idx = parseInt(choice, 10) - 1;
-  if (Number.isNaN(idx) || idx < 0 || idx >= others.length) return;
-  const src = others[idx];
-  const existing = new Map((state.groupsMeta || []).map((g) => [g.id, g]));
-  let added = 0;
-  let updated = 0;
-  for (const g of src.groups) {
-    if (existing.has(g.id)) {
-      const cur = existing.get(g.id);
-      if (g.name && !cur.name) { cur.name = g.name; updated++; }
-      if (g.color && !cur.color) { cur.color = g.color; updated++; }
-    } else {
-      existing.set(g.id, { ...g });
-      added++;
+  openWsImportModal(others);
+}
+
+function openWsImportModal(workspaces) {
+  const modal = document.getElementById("ws-import-modal");
+  const body = document.getElementById("ws-import-body");
+  const countEl = document.getElementById("ws-import-count");
+  const confirmBtn = document.getElementById("ws-import-confirm");
+  const cancelBtn = document.getElementById("ws-import-cancel");
+  const closeBtn = document.getElementById("ws-import-close");
+  body.innerHTML = "";
+
+  const existingIds = new Set((state.groupsMeta || []).map((g) => g.id));
+  const checkboxes = [];
+
+  for (const ws of workspaces) {
+    const section = document.createElement("div");
+    section.className = "ws-import-section";
+
+    const header = document.createElement("div");
+    header.className = "ws-import-section-header";
+    const name = document.createElement("span");
+    name.className = "ws-import-section-name";
+    name.textContent = `${ws.name} · ${ws.groups.length} group${ws.groups.length === 1 ? "" : "s"}`;
+    const selectAll = document.createElement("button");
+    selectAll.className = "ws-import-select-all";
+    selectAll.textContent = "select all";
+    header.append(name, selectAll);
+    section.appendChild(header);
+
+    const list = document.createElement("div");
+    list.className = "ws-import-grouplist";
+    const sectionBoxes = [];
+    for (const g of ws.groups) {
+      const row = document.createElement("label");
+      row.className = "ws-import-row";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.dataset.workspaceId = ws.id;
+      cb.dataset.groupId = g.id;
+      const swatch = document.createElement("span");
+      swatch.className = "swatch";
+      swatch.style.background = g.color
+        || (typeof g.paletteSlot === "number"
+          ? `var(--group-palette-${g.paletteSlot + 1})`
+          : "#888");
+      const label = document.createElement("span");
+      label.className = "name";
+      label.textContent = g.name || `(unnamed: ${g.id.slice(0, 6)})`;
+      row.append(cb, swatch, label);
+      if (existingIds.has(g.id)) {
+        const tag = document.createElement("span");
+        tag.className = "conflict";
+        tag.textContent = "exists";
+        tag.title = "A group with this id already exists; importing will update its name/color if missing.";
+        row.appendChild(tag);
+      }
+      cb.addEventListener("change", updateCount);
+      sectionBoxes.push(cb);
+      checkboxes.push({ cb, group: g });
+      list.appendChild(row);
     }
+    selectAll.addEventListener("click", () => {
+      const allChecked = sectionBoxes.every((b) => b.checked);
+      sectionBoxes.forEach((b) => { b.checked = !allChecked; });
+      updateCount();
+    });
+    section.appendChild(list);
+    body.appendChild(section);
   }
-  state.groupsMeta = [...existing.values()];
-  saveAllWorkspaces();
-  renderGroups();
-  refreshActiveView();
-  flashButton("groups-import-ws", `+${added}~${updated}`);
+
+  function updateCount() {
+    const n = checkboxes.filter((c) => c.cb.checked).length;
+    countEl.textContent = n === 0 ? "Nothing selected" : `${n} group${n === 1 ? "" : "s"} selected`;
+    confirmBtn.disabled = n === 0;
+  }
+  updateCount();
+
+  function close() {
+    modal.hidden = true;
+    document.removeEventListener("keydown", onKey, true);
+  }
+  function onKey(e) {
+    if (e.key === "Escape") { e.preventDefault(); close(); }
+  }
+  function confirm() {
+    const existing = new Map((state.groupsMeta || []).map((g) => [g.id, g]));
+    let added = 0;
+    let updated = 0;
+    for (const { cb, group } of checkboxes) {
+      if (!cb.checked) continue;
+      if (existing.has(group.id)) {
+        const cur = existing.get(group.id);
+        let touched = false;
+        if (group.name && !cur.name) { cur.name = group.name; touched = true; }
+        if (group.color && !cur.color) { cur.color = group.color; touched = true; }
+        if (typeof group.paletteSlot === "number" && cur.paletteSlot == null) {
+          cur.paletteSlot = group.paletteSlot;
+          touched = true;
+        }
+        if (touched) updated++;
+      } else {
+        existing.set(group.id, { ...group });
+        added++;
+      }
+    }
+    state.groupsMeta = [...existing.values()];
+    saveAllWorkspaces();
+    renderGroups();
+    refreshActiveView();
+    flashButton("groups-import-ws", `+${added}~${updated}`);
+    close();
+  }
+
+  modal.hidden = false;
+  document.addEventListener("keydown", onKey, true);
+  confirmBtn.onclick = confirm;
+  cancelBtn.onclick = close;
+  closeBtn.onclick = close;
+  modal.querySelector(".modal-backdrop").onclick = close;
 }
 
 async function exportGroups() {
@@ -2077,10 +2199,39 @@ async function loadClipUrl(path, pdfPath) {
   }
 }
 
+const GROUP_PALETTE_SLOTS = 8;
+function readPaletteColor(slot) {
+  const styles = getComputedStyle(document.body);
+  const v = styles.getPropertyValue(`--group-palette-${slot + 1}`).trim();
+  return v || "#888888";
+}
+function nextPaletteIndex() {
+  // Pick the slot least-used by existing groups (round-robin avoiding
+  // collisions with already-assigned colors when possible).
+  const used = new Map();
+  for (let i = 0; i < GROUP_PALETTE_SLOTS; i++) used.set(i, 0);
+  for (const g of state.groupsMeta || []) {
+    if (typeof g.paletteSlot === "number" && used.has(g.paletteSlot)) {
+      used.set(g.paletteSlot, used.get(g.paletteSlot) + 1);
+    }
+  }
+  let best = 0;
+  let bestCount = Infinity;
+  for (let i = 0; i < GROUP_PALETTE_SLOTS; i++) {
+    if (used.get(i) < bestCount) { best = i; bestCount = used.get(i); }
+  }
+  return best;
+}
 function defaultGroupColor(id) {
+  // Look up the group's assigned palette slot; fall back to deterministic
+  // hash-based slot if it has no slot recorded yet.
+  const meta = (state.groupsMeta || []).find((g) => g.id === id);
+  if (meta && typeof meta.paletteSlot === "number") {
+    return readPaletteColor(meta.paletteSlot);
+  }
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return `hsl(${h % 360}, 70%, 55%)`;
+  return readPaletteColor(h % GROUP_PALETTE_SLOTS);
 }
 
 function hslToHex(hsl) {
@@ -2233,7 +2384,8 @@ function groupName(id) {
 function ensureGroupMeta(id, name = "") {
   state.groupsMeta = state.groupsMeta || [];
   if (!state.groupsMeta.find((g) => g.id === id)) {
-    state.groupsMeta.push({ id, name });
+    const paletteSlot = nextPaletteIndex();
+    state.groupsMeta.push({ id, name, paletteSlot });
   }
 }
 
