@@ -880,8 +880,15 @@ body.pane-max #snippets-pane { border-left: none; }
   gap: 8px;
   flex-wrap: wrap;
 }
-.header-tabs { display: flex; gap: 2px; }
-.header-tools { display: flex; gap: 6px; align-items: center; }
+.header-tabs { display: flex; gap: 2px; flex-shrink: 0; }
+.header-tools {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 6px;
+}
 .tab-btn {
   background: transparent;
   border: none;
@@ -929,6 +936,7 @@ body.pane-max #snippets-pane { border-left: none; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  white-space: nowrap;
 }
 .seg-toggle .seg-btn:first-child { border-radius: 999px 0 0 999px; }
 .seg-toggle .seg-btn:last-child  { border-radius: 0 999px 999px 0; }
