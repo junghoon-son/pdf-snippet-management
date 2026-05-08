@@ -1254,7 +1254,13 @@ function setActiveFile(path) {
 }
 
 async function loadPdf(path) {
-  return loadAnyDocument(path);
+  try {
+    return await loadAnyDocument(path);
+  } catch (err) {
+    console.error("[loadPdf] failed for", path, err);
+    alert(`Failed to open ${path.split("/").pop()}:\n${err?.message || err}`);
+    throw err;
+  }
 }
 
 let docLoadToken = 0;
