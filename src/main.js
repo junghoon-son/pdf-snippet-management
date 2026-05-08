@@ -1469,7 +1469,9 @@ async function loadAnyDocument(path) {
   if (kind === "pdf") {
     const fit = await fitWidthScale(state.pdfDoc, viewerScroll.clientWidth - FIT_PADDING);
     if (myToken !== docLoadToken) return;
-    state.scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, fit));
+    const savedZoom = loadZoomForDoc();
+    const initial = savedZoom != null ? savedZoom : fit;
+    state.scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, initial));
     viewerScroll.style.visibility = "hidden";
     try {
       await renderPages(state.pdfDoc, viewerContainer, state.scale);
@@ -1483,13 +1485,13 @@ async function loadAnyDocument(path) {
   } else if (kind === "markdown") {
     await FlowView.renderFlowDoc(viewerContainer, state.flowDoc.text, kind);
     if (myToken !== docLoadToken) return;
-    state.flowZoom = 1;
+    state.flowZoom = loadZoomForDoc() ?? 1;
     applyFlowZoom();
     if (state.tool === "rect") setTool("select");
   } else if (kind === "docx") {
     await FlowView.renderFlowDoc(viewerContainer, state.flowDoc.bytes.buffer, kind);
     if (myToken !== docLoadToken) return;
-    state.flowZoom = 1;
+    state.flowZoom = loadZoomForDoc() ?? 1;
     applyFlowZoom();
     if (state.tool === "rect") setTool("select");
   }
@@ -1503,6 +1505,29 @@ async function loadAnyDocument(path) {
   if (pendingPermalink) setTimeout(() => resolvePendingPermalink(), 200);
 }
 
+// Per-document zoom persistence — keyed by content hash when available
+// (stable across moves/renames), falls back to the file path.
+function zoomKey() {
+  const h = state.source?.contentHash;
+  if (h) return `pdf-annotator-zoom:hash:${h.replace(/^sha256:/, "")}`;
+  if (state.currentPdfPath) return `pdf-annotator-zoom:path:${state.currentPdfPath}`;
+  return null;
+}
+function saveZoomForDoc(scale) {
+  const k = zoomKey();
+  if (!k) return;
+  try { localStorage.setItem(k, String(scale)); } catch {}
+}
+function loadZoomForDoc() {
+  const k = zoomKey();
+  if (!k) return null;
+  try {
+    const v = localStorage.getItem(k);
+    const n = parseFloat(v);
+    return Number.isFinite(n) && n >= 0.4 && n <= 5 ? n : null;
+  } catch { return null; }
+}
+
 window.addEventListener("resize", () => syncHorizontalOverflow());
 
 async function setScale(next) {
@@ -1510,10 +1535,12 @@ async function setScale(next) {
   if (!state.pdfDoc || Math.abs(clamped - state.scale) < 0.001) {
     state.scale = clamped;
     updateZoomLabel();
+    saveZoomForDoc(clamped);
     return;
   }
   state.scale = clamped;
   updateZoomLabel();
+  saveZoomForDoc(clamped);
   await renderPages(state.pdfDoc, viewerContainer, state.scale);
   applyAllHighlights();
   syncHorizontalOverflow();
@@ -1538,6 +1565,7 @@ function applyFlowZoom() {
   if (!article) return;
   article.style.zoom = String(state.flowZoom);
   updateZoomLabel(state.flowZoom);
+  saveZoomForDoc(state.flowZoom);
 }
 
 function adjustScrollAfterZoom(anchor, factor) {

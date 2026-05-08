@@ -1056,7 +1056,7 @@ body.pane-max #snippets-pane { border-left: none; }
 .seg-toggle {
   display: inline-flex;
   align-items: stretch;
-  border: 1.5px solid var(--accent);
+  border: 1px solid var(--accent);
   border-radius: 999px;
   background: var(--bg);
   padding: 0;
@@ -1067,10 +1067,10 @@ body.pane-max #snippets-pane { border-left: none; }
   border: none;
   color: var(--text-dim);
   font-family: inherit;
-  font-size: 10.5px;
-  letter-spacing: 0.6px;
+  font-size: 9.5px;
+  letter-spacing: 0.4px;
   text-transform: uppercase;
-  padding: 5px 12px;
+  padding: 3px 9px;
   cursor: pointer;
   font-weight: 600;
   transition: background 100ms ease, color 100ms ease;
