@@ -1,7 +1,7 @@
 // Marklee Permalink — wire form of a snippet anchor as a URL.
 // See SPEC.md §6.
 
-const PERMALINK_BASE = "https://marklee.dev/v";
+const PERMALINK_BASE = "https://markleeapp.com/v";
 
 // Browsers: encode UTF-8 → bytes → base64 → url-safe (RFC 4648 §5, no padding).
 function base64url(input) {

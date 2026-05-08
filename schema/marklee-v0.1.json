@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://marklee.dev/schema/marklee-v0.1.json",
+  "$id": "https://markleeapp.com/schema/marklee-v0.1.json",
   "title": "Marklee Annotation Sidecar",
   "description": "Marklee Annotation Format v0.1 — see SPEC.md",
   "type": "object",
