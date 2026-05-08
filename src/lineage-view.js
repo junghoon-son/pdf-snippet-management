@@ -64,6 +64,8 @@ export function initLineage(container, callbacks) {
           "font-size": "11px",
           "shape": "round-rectangle",
           "padding": 6,
+          "text-wrap": "wrap",
+          "line-height": 1.25,
         },
       },
       {
@@ -323,7 +325,13 @@ export async function renderLineage(snippets, groupsMeta, getImageUrl) {
   docPaths.forEach((path, i) => {
     const filename = path.split("/").pop() || path;
     const kind = kindFromPath(path);
-    const display = `${kindIcon(kind)}  ${ellipsis(filename, 24)}`;
+    const docSnippets = docMap.get(path);
+    const snippetCount = docSnippets.length;
+    const uniquePages = new Set(docSnippets.map((s) => s.page || 1)).size;
+    const stats = kind === "pdf" && uniquePages > 1
+      ? `${snippetCount} snippet${snippetCount === 1 ? "" : "s"} · ${uniquePages} pp.`
+      : `${snippetCount} snippet${snippetCount === 1 ? "" : "s"}`;
+    const display = `${kindIcon(kind)}  ${ellipsis(filename, 24)}\n${stats}`;
     elements.push({
       group: "nodes",
       data: {
