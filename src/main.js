@@ -1554,6 +1554,9 @@ viewerContainer.addEventListener("mousedown", (e) => {
   if (state.source.kind !== "pdf") return;
   const wrap = e.target.closest?.(".page-wrap");
   if (!wrap) return;
+  // If the click landed on an existing highlight, skip the rubber-band
+  // so the press-gesture handler below can pick it up for drag-to-group.
+  if (hitTestHighlight(e)) return;
   e.preventDefault();
   const rect = wrap.getBoundingClientRect();
   const startX = e.clientX - rect.left;
@@ -1704,7 +1707,6 @@ viewerContainer.addEventListener("mousedown", (e) => {
   // the default text-selection behavior and start the press gesture.
   // Otherwise let the textLayer receive mousedown for normal selection.
   if (state.source.kind !== "pdf") return;
-  if (state.tool === "rect") return;
   const hit = hitTestHighlight(e);
   if (!hit) return;
   e.preventDefault();
