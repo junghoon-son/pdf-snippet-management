@@ -395,6 +395,7 @@ body:not(.sidebar-collapsed) #sidebar-collapse::before { content: "‹"; }
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  padding-top: 10px; /* room for the first card's offset group tabs */
 }
 #snippets-pane #map-view { flex: 1; min-height: 0; }
 
@@ -1324,7 +1325,12 @@ body.pane-max #snippets-pane { border-left: none; }
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-bottom: 4px;
+  /* Pull the row up so the tabs visually stick out of the card's top
+     edge — like physical page flags poking out of a paper stack.
+     Saves the vertical space the row used to occupy inside the card. */
+  margin: -12px 0 -2px 6px;
+  position: relative;
+  z-index: 2;
 }
 /* Group "tabs" — borrows from physical Post-it page flags / sticky tabs.
    A translucent highlighter-color strip with a solid colored adhesive
