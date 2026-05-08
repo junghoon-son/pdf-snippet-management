@@ -129,21 +129,58 @@ export function openGroupOverlay({ snippet, allSnippets, allGroups, container, a
         shape.setAttribute("stroke", b.color);
         shape.setAttribute("stroke-width", "1.5");
         shape.setAttribute("stroke-dasharray", "4 4");
+        g.appendChild(shape);
       } else {
-        shape = document.createElementNS(SVG_NS, "rect");
-        shape.setAttribute("x", String(-b.w / 2));
-        shape.setAttribute("y", String(-b.h / 2));
-        shape.setAttribute("width", String(b.w));
-        shape.setAttribute("height", String(b.h));
-        shape.setAttribute("rx", String(b.h / 2));
-        shape.setAttribute("ry", String(b.h / 2));
-        shape.setAttribute("fill", b.color);
-        shape.setAttribute("stroke", b.color);
+        // Folder shape: a small tab perched on top-left of a rounded body.
+        // Reads as a manila folder you'd drop a snippet into. Body filled
+        // with a translucent tint of the group color so the underlying
+        // backdrop blur shows through; stroke + tab use the saturated color.
+        const TAB_H = 8;
+        const TAB_W = Math.max(28, Math.min(b.w * 0.42, 70));
+        const TAB_X = -b.w / 2 + 6;
+        const TAB_Y = -b.h / 2;
+        const BODY_X = -b.w / 2;
+        const BODY_Y = -b.h / 2 + TAB_H - 1;
+        const BODY_W = b.w;
+        const BODY_H = b.h - TAB_H + 1;
+
+        shape = document.createElementNS(SVG_NS, "g");
+        shape.classList.add("folder-shape");
+
+        // Tab on top
+        const tab = document.createElementNS(SVG_NS, "rect");
+        tab.setAttribute("x", String(TAB_X));
+        tab.setAttribute("y", String(TAB_Y));
+        tab.setAttribute("width", String(TAB_W));
+        tab.setAttribute("height", String(TAB_H + 3));
+        tab.setAttribute("rx", "2.5");
+        tab.setAttribute("ry", "2.5");
+        tab.setAttribute("fill", b.color);
+        tab.setAttribute("stroke", b.color);
+        tab.setAttribute("stroke-width", "1");
+        shape.appendChild(tab);
+
+        // Folder body
+        const body = document.createElementNS(SVG_NS, "rect");
+        body.setAttribute("x", String(BODY_X));
+        body.setAttribute("y", String(BODY_Y));
+        body.setAttribute("width", String(BODY_W));
+        body.setAttribute("height", String(BODY_H));
+        body.setAttribute("rx", "3");
+        body.setAttribute("ry", "3");
+        body.setAttribute("fill", b.color);
+        body.setAttribute("fill-opacity", "0.18");
+        body.setAttribute("stroke", b.color);
+        body.setAttribute("stroke-width", "1.5");
+        shape.appendChild(body);
+
+        g.appendChild(shape);
       }
-      g.appendChild(shape);
 
       const text = document.createElementNS(SVG_NS, "text");
       text.setAttribute("text-anchor", "middle");
+      // Shift label slightly down so it centers inside the body, not the tab.
+      text.setAttribute("y", b.kind === "new" ? "0" : "5");
       text.setAttribute("dominant-baseline", "central");
       text.textContent = b.label;
       g.appendChild(text);

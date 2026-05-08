@@ -1634,11 +1634,18 @@ body.dragging-snippet .group-row:hover {
   transition: opacity 180ms ease-out;
 }
 #group-overlay.active .bubble { opacity: 1; }
-#group-overlay .bubble circle,
-#group-overlay .bubble rect {
+#group-overlay .bubble circle {
   transition: filter 140ms ease-out, stroke-width 140ms;
   fill-opacity: 0.92;
 }
+/* Folder shape: tab on top stays saturated, body stays translucent so
+   the backdrop blur shows through. SVG attributes set fill-opacity, but
+   CSS would override without these explicit rules. */
+#group-overlay .bubble .folder-shape rect {
+  transition: filter 140ms ease-out, stroke-width 140ms, fill-opacity 140ms;
+}
+#group-overlay .bubble .folder-shape rect:first-child { fill-opacity: 1; }
+#group-overlay .bubble .folder-shape rect:nth-child(2) { fill-opacity: 0.18; }
 #group-overlay .bubble text {
   fill: #0e0e0e;
   font-family: ui-sans-serif, -apple-system, "SF Pro Text", system-ui;
@@ -1648,17 +1655,24 @@ body.dragging-snippet .group-row:hover {
   pointer-events: none;
 }
 #group-overlay .bubble.bubble-new text { fill: #4ec9b0; font-size: 18px; font-weight: 400; }
-#group-overlay .bubble.bubble-member rect,
+#group-overlay .bubble.bubble-member .folder-shape rect:nth-child(2),
 #group-overlay .bubble.bubble-member circle {
   stroke: #fff;
   stroke-width: 2;
 }
-#group-overlay .bubble.hot rect,
 #group-overlay .bubble.hot circle {
   filter: drop-shadow(0 0 18px rgba(46, 165, 140, 0.95)) drop-shadow(0 0 6px rgba(46, 165, 140, 0.6));
   fill-opacity: 1;
   stroke-width: 4;
   stroke: #2ea58c;
+}
+#group-overlay .bubble.hot .folder-shape {
+  filter: drop-shadow(0 0 14px rgba(46, 165, 140, 0.85)) drop-shadow(0 0 4px rgba(46, 165, 140, 0.5));
+}
+#group-overlay .bubble.hot .folder-shape rect:first-child { stroke-width: 2; }
+#group-overlay .bubble.hot .folder-shape rect:nth-child(2) {
+  fill-opacity: 0.34;
+  stroke-width: 3;
 }
 #group-overlay .bubble.hot { transform-origin: center; }
 #group-overlay .bubble.hot { animation: bubble-pulse 600ms ease-out infinite; }
