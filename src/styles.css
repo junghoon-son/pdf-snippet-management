@@ -668,9 +668,8 @@ body.pane-max #snippets-pane { border-left: none; }
   transition: opacity 100ms;
 }
 #snippets-pane #groups-list .group-row:hover .group-row-delete { opacity: 1; }
-#snippets-pane #groups-list .group-row-eye { color: var(--pane-fg-dim); }
-#snippets-pane #groups-list .group-row-eye:hover { color: var(--accent); }
-#snippets-pane #groups-list .group-row.bubble-hidden .group-row-eye { color: var(--pane-fg-faint); }
+#snippets-pane #groups-list .group-row-eye { border-color: var(--pane-fg-dim); }
+#snippets-pane #groups-list .group-row-eye:hover { border-color: var(--accent); }
 #snippets-pane #groups-list .group-row.empty .group-row-count { color: var(--pane-fg-faint); }
 #snippets-pane #groups-list .group-row.empty input { color: var(--pane-fg-dim); }
 #snippets-pane #groups-list .groups-empty { color: var(--pane-fg-dim); }
@@ -972,19 +971,42 @@ body.dragging-sticker * { cursor: grabbing !important; }
   padding: 2px 4px;
 }
 .group-row-delete:hover { color: #f48771; }
+/* Custom-styled checkbox: hidden native input, drawn box + check mark.
+   Checked = group is shown in the bubble drag overlay. */
 .group-row-eye {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border: 1.5px solid var(--text-dim);
+  border-radius: 3px;
   background: transparent;
-  border: none;
-  color: var(--text-dim);
   cursor: pointer;
-  padding: 2px 4px;
-  font-size: 12px;
-  line-height: 1;
-  opacity: 0.7;
-  transition: opacity 80ms, color 80ms;
+  position: relative;
+  transition: border-color 100ms ease, background 100ms ease;
 }
-.group-row-eye:hover { color: var(--accent); opacity: 1; }
-.group-row.bubble-hidden .group-row-eye { color: var(--text-dim); opacity: 0.55; }
+.group-row-eye:hover { border-color: var(--accent); }
+.group-row-eye:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.group-row-eye:checked::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0px;
+  width: 4px;
+  height: 8px;
+  border-right: 2px solid #fbf9f3;
+  border-bottom: 2px solid #fbf9f3;
+  transform: rotate(45deg);
+}
+.group-row-eye:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 .group-row.bubble-hidden input[type="text"],
 .group-row.bubble-hidden .group-row-count { opacity: 0.5; font-style: italic; }
 .group-row.bubble-hidden .group-row-dot { opacity: 0.5; filter: grayscale(0.5); }
@@ -1409,7 +1431,11 @@ body.dragging-sticker * { cursor: grabbing !important; }
   width: 100vw;
   height: 100vh;
   pointer-events: none;
-  z-index: 40;
+  /* z-index 4: above the resize handles (5) and pane content, below the
+     viewer-toolbar / snippets-header chrome (which sit on the panes), and
+     well below modals (50+). The line lives in the gutter but never
+     overpaints the toolbars or any popover. */
+  z-index: 4;
   opacity: 0;
   transition: opacity 260ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: opacity;

@@ -1970,18 +1970,31 @@ function updateHoverConnector() {
   const hRect = highlightRectForSnippet(hoverSnippetId);
   if (!card || !hRect) { hideHoverConnector(); return; }
   const cardRect = card.getBoundingClientRect();
-  // Highlight on the left → card on the right (snippets pane is right side).
-  // Orthogonal elbow: out-right from the highlight, vertical leg to the card's
-  // y-level, then in-left to the card. Looks like a wire schematic.
-  // GAP keeps the line floating ~8px off both the highlight and the card so
-  // the wire reads as a connection, not a poke at the text.
+  // Hide when either endpoint is outside its pane's visible viewport — keeps
+  // the connector from drawing through chrome / off-screen when content is
+  // scrolled out of view.
+  const viewerVis = viewerScroll.getBoundingClientRect();
+  const listVis = snippetsListEl.getBoundingClientRect();
+  const hVisible =
+    hRect.bottom > viewerVis.top && hRect.top < viewerVis.bottom &&
+    hRect.right  > viewerVis.left && hRect.left < viewerVis.right;
+  const cVisible =
+    cardRect.bottom > listVis.top && cardRect.top < listVis.bottom &&
+    cardRect.right  > listVis.left && cardRect.left < listVis.right;
+  if (!hVisible || !cVisible) { hideHoverConnector(); return; }
+
+  // Orthogonal elbow with 8px gap on both ends.
   const GAP = 8;
   const x1 = hRect.right + GAP;
   const y1 = hRect.top + hRect.height / 2;
   const x2 = cardRect.left - GAP;
   const y2 = cardRect.top + cardRect.height / 2;
+  // Clamp endpoints to within their respective pane viewports so the elbow
+  // never extends past the gutter into chrome.
+  const cy1 = Math.max(viewerVis.top + 4, Math.min(viewerVis.bottom - 4, y1));
+  const cy2 = Math.max(listVis.top + 4, Math.min(listVis.bottom - 4, y2));
   const midX = x1 + (x2 - x1) * 0.5;
-  const path = `M ${x1} ${y1} H ${midX} V ${y2} H ${x2}`;
+  const path = `M ${x1} ${cy1} H ${midX} V ${cy2} H ${x2}`;
   const svg = ensureConnectorSvg();
   svg.querySelector("path").setAttribute("d", path);
   svg.classList.add("active");
@@ -3196,14 +3209,18 @@ function renderGroups() {
       count.dataset.short = `${n}`;
     }
 
-    const eye = document.createElement("button");
+    // Bubble-visibility checkbox — clearer than the previous filled/empty
+    // dot. Checked = group appears in the drag-to-group bubble overlay.
+    const eye = document.createElement("input");
+    eye.type = "checkbox";
     eye.className = "group-row-eye";
-    eye.textContent = meta.hidden ? "○" : "●";
-    eye.title = meta.hidden ? "Group hidden from bubbles — click to show" : "Click to hide group from drag-bubbles";
-    eye.addEventListener("click", (e) => {
+    eye.checked = !meta.hidden;
+    eye.title = meta.hidden ? "Hidden from drag-bubbles — click to show" : "Showing in drag-bubbles — click to hide";
+    eye.addEventListener("change", (e) => {
       e.stopPropagation();
-      setGroupHidden(id, !meta.hidden);
+      setGroupHidden(id, !eye.checked);
     });
+    eye.addEventListener("click", (e) => e.stopPropagation());
 
     const del = document.createElement("button");
     del.className = "group-row-delete";
