@@ -242,7 +242,14 @@ body { display: flex; flex-direction: column; height: 100vh; }
 .resize-handle:hover { background: var(--accent); }
 .resize-handle.active { background: var(--accent); }
 body.resizing { cursor: col-resize !important; user-select: none; }
-body.resizing * { cursor: col-resize !important; }
+body.resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  pointer-events: none !important;
+}
+body.resizing .resize-handle, body.resizing .resize-handle::before { pointer-events: auto !important; }
 
 #sidebar, #snippets-pane {
   background: var(--panel);

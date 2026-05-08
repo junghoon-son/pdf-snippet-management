@@ -2891,30 +2891,41 @@ function setupPanelResize() {
 
 function attachResize(handle, side, sign) {
   if (!handle) return;
-  handle.addEventListener("mousedown", (e) => {
+  const blockSelectStart = (ev) => ev.preventDefault();
+  handle.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
     e.preventDefault();
+    e.stopPropagation();
+    try { handle.setPointerCapture(e.pointerId); } catch {}
+    try { window.getSelection()?.removeAllRanges(); } catch {}
     const startX = e.clientX;
     const cssVar = `--${side}-w`;
     const startW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(cssVar)) || 240;
     document.body.classList.add("resizing");
     handle.classList.add("active");
+    document.addEventListener("selectstart", blockSelectStart, true);
 
-    function onMove(ev) {
+    const onMove = (ev) => {
       const delta = (ev.clientX - startX) * sign;
       const next = Math.max(160, Math.min(640, startW + delta));
       document.documentElement.style.setProperty(cssVar, `${next}px`);
-    }
-    function onUp() {
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
+    };
+    const cleanup = () => {
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", cleanup);
+      handle.removeEventListener("pointercancel", cleanup);
+      document.removeEventListener("selectstart", blockSelectStart, true);
       document.body.classList.remove("resizing");
       handle.classList.remove("active");
+      try { handle.releasePointerCapture(e.pointerId); } catch {}
+      try { window.getSelection()?.removeAllRanges(); } catch {}
       try {
         localStorage.setItem(`pdf-annotator-${side}-w`, document.documentElement.style.getPropertyValue(cssVar) || `${startW}px`);
       } catch {}
-    }
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
+    };
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", cleanup);
+    handle.addEventListener("pointercancel", cleanup);
   });
 }
 
