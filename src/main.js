@@ -20,6 +20,7 @@ import { TauriStore } from "./storage/tauri-store.js";
 import { FsaStore } from "./storage/fsa-store.js";
 import { computeMarkRank, rankPercentiles } from "./markrank.js";
 import { buildPermalink, parsePermalink } from "./marklee-permalink.js";
+import { GROUP_TEMPLATES, findTemplate } from "./group-templates.js";
 
 const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
 const fsaStore = IS_TAURI ? null : new FsaStore();
@@ -1040,6 +1041,78 @@ document.getElementById("groups-collapse").addEventListener("click", () => {
 document.getElementById("groups-export").addEventListener("click", exportGroups);
 document.getElementById("groups-import").addEventListener("click", importGroups);
 document.getElementById("groups-import-ws").addEventListener("click", importGroupsFromWorkspace);
+document.getElementById("groups-template").addEventListener("click", toggleTemplatesPopover);
+document.addEventListener("click", (e) => {
+  const pop = document.getElementById("group-templates-popover");
+  if (!pop || pop.hidden) return;
+  if (pop.contains(e.target)) return;
+  if (e.target.id === "groups-template") return;
+  pop.hidden = true;
+});
+
+function toggleTemplatesPopover() {
+  const pop = document.getElementById("group-templates-popover");
+  if (!pop) return;
+  if (!pop.hidden) { pop.hidden = true; return; }
+  renderTemplatesPopover(pop);
+  pop.hidden = false;
+}
+
+function renderTemplatesPopover(pop) {
+  pop.innerHTML = "";
+  const header = document.createElement("div");
+  header.className = "tpl-pop-header";
+  header.textContent = "Apply a group template";
+  pop.appendChild(header);
+  for (const tpl of GROUP_TEMPLATES) {
+    const item = document.createElement("div");
+    item.className = "tpl-pop-item";
+    const title = document.createElement("div");
+    title.className = "tpl-pop-title";
+    title.textContent = tpl.name;
+    const desc = document.createElement("div");
+    desc.className = "tpl-pop-desc";
+    desc.textContent = tpl.description;
+    const preview = document.createElement("div");
+    preview.className = "tpl-pop-preview";
+    for (const g of tpl.groups) {
+      const dot = document.createElement("span");
+      dot.className = "tpl-pop-dot";
+      dot.style.background = readPaletteColor(g.slot);
+      dot.title = g.name;
+      preview.appendChild(dot);
+    }
+    const apply = document.createElement("button");
+    apply.className = "tpl-pop-apply";
+    apply.textContent = "apply";
+    apply.addEventListener("click", (e) => {
+      e.stopPropagation();
+      applyGroupTemplate(tpl.id);
+      pop.hidden = true;
+    });
+    item.append(title, desc, preview, apply);
+    pop.appendChild(item);
+  }
+}
+
+function applyGroupTemplate(id) {
+  const tpl = findTemplate(id);
+  if (!tpl) return;
+  const existingNames = new Set((state.groupsMeta || []).map((g) => g.name.toLowerCase()));
+  let added = 0;
+  for (const g of tpl.groups) {
+    if (existingNames.has(g.name.toLowerCase())) continue;
+    state.groupsMeta.push({
+      id: crypto.randomUUID(),
+      name: g.name,
+      paletteSlot: g.slot,
+    });
+    added++;
+  }
+  saveAllWorkspaces();
+  renderGroups();
+  flashButton("groups-template", added ? `+${added}` : "no new");
+}
 
 function importGroupsFromWorkspace() {
   const others = state.workspaces.order
