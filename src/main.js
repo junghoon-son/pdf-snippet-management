@@ -1424,10 +1424,13 @@ async function loadAnyDocument(path) {
 
   refreshActiveView();
   applyAllHighlights();
+  syncHorizontalOverflow();
   await persist();
   // After a doc opens, see if a pending Marklee Permalink can resolve.
   if (pendingPermalink) setTimeout(() => resolvePendingPermalink(), 200);
 }
+
+window.addEventListener("resize", () => syncHorizontalOverflow());
 
 async function setScale(next) {
   const clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, next));
@@ -1440,6 +1443,17 @@ async function setScale(next) {
   updateZoomLabel();
   await renderPages(state.pdfDoc, viewerContainer, state.scale);
   applyAllHighlights();
+  syncHorizontalOverflow();
+}
+
+function syncHorizontalOverflow() {
+  // Toggle horizontal scroll on viewer-scroll only when content actually
+  // overflows. Avoids the cosmetic scrollbar at fit-width caused by
+  // sub-pixel rounding while still allowing pan when zoomed in.
+  requestAnimationFrame(() => {
+    const overflowsX = viewerContainer.scrollWidth > viewerScroll.clientWidth + 1;
+    viewerScroll.classList.toggle("zoomed-overflow", overflowsX);
+  });
 }
 
 state.flowZoom = 1;

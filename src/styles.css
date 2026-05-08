@@ -426,7 +426,8 @@ body.pane-max #snippets-pane { border-left: none; }
   max-height: 36vh;
   display: flex;
   flex-direction: column;
-  background: #ecead0;
+  background: var(--pane-bg-2, var(--panel));
+  color: var(--pane-fg, var(--text));
   border-top: 1px solid var(--pane-border);
   transition: max-height 180ms ease;
 }
@@ -477,16 +478,19 @@ body.pane-max #snippets-pane { border-left: none; }
   min-height: 0;
 }
 #snippets-pane #groups-list .group-row {
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  border-bottom: 1px solid color-mix(in srgb, var(--pane-border) 60%, transparent);
 }
 #snippets-pane #groups-list .group-row input {
-  color: #1f1f1f;
+  color: var(--pane-fg, var(--text));
+  background: transparent;
   border: none;
   border-bottom: 1px solid transparent;
   font-size: 12px;
   padding: 2px 0;
 }
-#snippets-pane #groups-list .group-row input:hover { border-bottom-color: rgba(0, 0, 0, 0.08); }
+#snippets-pane #groups-list .group-row input:hover {
+  border-bottom-color: color-mix(in srgb, var(--pane-fg-dim) 25%, transparent);
+}
 #snippets-pane #groups-list .group-row input:focus {
   border-bottom: 1px dashed var(--accent);
   outline: none;
@@ -2098,8 +2102,11 @@ body.dragging-snippet .group-row:hover {
 #viewer-scroll {
   flex: 1;
   overflow: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
   position: relative;
 }
+#viewer-scroll.zoomed-overflow { overflow-x: auto; }
 #viewer-empty {
   position: absolute;
   inset: 0;
