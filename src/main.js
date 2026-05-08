@@ -1971,13 +1971,14 @@ function updateHoverConnector() {
   if (!card || !hRect) { hideHoverConnector(); return; }
   const cardRect = card.getBoundingClientRect();
   // Highlight on the left → card on the right (snippets pane is right side).
-  // Connect highlight.right-middle → card.left-middle.
+  // Orthogonal elbow: out-right from the highlight, vertical leg to the card's
+  // y-level, then in-left to the card. Looks like a wire schematic.
   const x1 = hRect.right;
   const y1 = hRect.top + hRect.height / 2;
   const x2 = cardRect.left;
   const y2 = cardRect.top + cardRect.height / 2;
-  const dx = Math.max(40, (x2 - x1) * 0.45);
-  const path = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+  const midX = x1 + (x2 - x1) * 0.5;
+  const path = `M ${x1} ${y1} H ${midX} V ${y2} H ${x2}`;
   const svg = ensureConnectorSvg();
   svg.querySelector("path").setAttribute("d", path);
   svg.classList.add("active");
