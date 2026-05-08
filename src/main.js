@@ -2910,64 +2910,41 @@ function handleAppMenu(id) {
 }
 
 function setupPanelResize() {
-  document.body.classList.remove("resizing");
   for (const side of ["sidebar", "snippets"]) {
     let saved = null;
     try { saved = localStorage.getItem(`pdf-annotator-${side}-w`); } catch {}
     if (saved) document.documentElement.style.setProperty(`--${side}-w`, saved);
   }
-  const left = document.getElementById("resize-left");
-  const right = document.getElementById("resize-right");
-  console.log("[resize] handles", { left: !!left, right: !!right });
-  attachResize(left, "sidebar", +1);
-  attachResize(right, "snippets", -1);
+  attachResize(document.getElementById("resize-left"), "sidebar", +1);
+  attachResize(document.getElementById("resize-right"), "snippets", -1);
 }
 
 function attachResize(handle, side, sign) {
   if (!handle) return;
-  const blockSelectStart = (ev) => ev.preventDefault();
-  handle.addEventListener("pointerdown", (e) => {
-    console.log("[resize] pointerdown", side, "button:", e.button);
-    if (e.button !== 0) return;
+  handle.addEventListener("mousedown", (e) => {
     e.preventDefault();
-    e.stopPropagation();
-    try { handle.setPointerCapture(e.pointerId); } catch {}
-    try { window.getSelection()?.removeAllRanges(); } catch {}
     const startX = e.clientX;
     const cssVar = `--${side}-w`;
     const startW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(cssVar)) || 240;
     document.body.classList.add("resizing");
     handle.classList.add("active");
-    document.addEventListener("selectstart", blockSelectStart, true);
 
-    const onMove = (ev) => {
+    function onMove(ev) {
       const delta = (ev.clientX - startX) * sign;
       const next = Math.max(160, Math.min(640, startW + delta));
       document.documentElement.style.setProperty(cssVar, `${next}px`);
-    };
-    let cleaned = false;
-    const cleanup = () => {
-      if (cleaned) return;
-      cleaned = true;
-      handle.removeEventListener("pointermove", onMove);
-      handle.removeEventListener("pointerup", cleanup);
-      handle.removeEventListener("pointercancel", cleanup);
-      handle.removeEventListener("lostpointercapture", cleanup);
-      window.removeEventListener("blur", cleanup);
-      document.removeEventListener("selectstart", blockSelectStart, true);
+    }
+    function onUp() {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
       document.body.classList.remove("resizing");
       handle.classList.remove("active");
-      try { handle.releasePointerCapture(e.pointerId); } catch {}
-      try { window.getSelection()?.removeAllRanges(); } catch {}
       try {
         localStorage.setItem(`pdf-annotator-${side}-w`, document.documentElement.style.getPropertyValue(cssVar) || `${startW}px`);
       } catch {}
-    };
-    handle.addEventListener("pointermove", onMove);
-    handle.addEventListener("pointerup", cleanup);
-    handle.addEventListener("pointercancel", cleanup);
-    handle.addEventListener("lostpointercapture", cleanup);
-    window.addEventListener("blur", cleanup);
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
   });
 }
 
