@@ -1000,16 +1000,18 @@ body.pane-max #snippets-pane { border-left: none; }
    instead of wrapping to 3-4. data-short on each button supplies the
    abbreviated text. */
 @container snippetspane (max-width: 360px) {
-  [data-short] {
-    font-size: 0;
-    letter-spacing: 0;
+  button[data-short],
+  span[data-short] {
+    font-size: 0 !important;
+    letter-spacing: 0 !important;
   }
-  [data-short]::after {
+  button[data-short]::after,
+  span[data-short]::after {
     content: attr(data-short);
     font-size: 10.5px;
     letter-spacing: 0.6px;
   }
-  .groups-panel-actions [data-short]::after {
+  .groups-panel-actions button[data-short]::after {
     font-size: 9px;
     letter-spacing: 1px;
   }
