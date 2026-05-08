@@ -392,6 +392,7 @@ function setWorkspaceTheme(name) {
   state.workspace.theme = name;
   applyTheme(name);
   saveAllWorkspaces();
+  renderWorkspaceTabs();
 }
 
 function saveWorkspace() {
@@ -408,6 +409,7 @@ function renderWorkspaceTabs() {
     tab.className = "ws-tab";
     if (id === state.workspaces.active) tab.classList.add("active");
     tab.dataset.wsId = id;
+    tab.dataset.theme = (ws.theme && VALID_THEMES.includes(ws.theme)) ? ws.theme : "cream";
 
     const name = document.createElement("input");
     name.className = "ws-tab-name";
