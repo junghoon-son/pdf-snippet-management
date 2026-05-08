@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Marklee — portable annotations for documents</title>
+    <meta name="description" content="Marklee is a portable, format-agnostic annotation format for PDF, Markdown, and DOCX. Local-first sidecar JSON, edit-tolerant text anchors, a directed lineage graph between snippets, and the MarkRank centrality algorithm." />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <div class="container">
+        <a class="brand" href="/">
+          <span class="brand-dot"></span>
+          <span class="brand-name">Marklee</span>
+        </a>
+        <nav class="nav">
+          <a href="#what">What</a>
+          <a href="#why">Why</a>
+          <a href="/spec">Spec</a>
+          <a href="https://github.com" rel="noreferrer noopener">GitHub</a>
+        </nav>
+      </div>
+
+      <div class="container hero-body">
+        <h1>Annotations that travel<br/>with the document.</h1>
+        <p class="lede">
+          A portable, format-agnostic annotation format for PDF, Markdown, and DOCX.
+          Local-first sidecar JSON. Edit-tolerant text anchors. A directed lineage graph
+          between snippets. <strong>MarkRank</strong> centrality over your reading.
+        </p>
+        <div class="cta">
+          <a class="btn primary" href="/download/Marklee_0.1.0_universal.dmg">Download for Mac</a>
+          <a class="btn ghost" href="/spec">Read the spec</a>
+        </div>
+        <p class="hint">Universal binary · macOS Intel + Apple Silicon · 8.5 MB · unsigned dev build</p>
+      </div>
+    </header>
+
+    <section id="what" class="section">
+      <div class="container">
+        <h2>What it is</h2>
+        <div class="grid">
+          <div class="card">
+            <h3>Portable annotations</h3>
+            <p>
+              Annotations live in plain JSON sidecars next to the source file. No server,
+              no account, no proprietary blob. Email someone a <code>paper.pdf</code> and
+              <code>paper.pdf.annot.json</code> — they get your annotations.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Edit-tolerant anchors</h3>
+            <p>
+              A normative four-tier resolution algorithm finds your highlight even after
+              the source has been edited: exact text + context → exact text only →
+              fuzzy within section → orphaned with badge.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Lineage graph</h3>
+            <p>
+              Connect snippets with labeled edges — <em>supports</em>, <em>contradicts</em>,
+              <em>elaborates</em>. The graph is first-class data. <strong>MarkRank</strong>,
+              a PageRank variant over the snippet graph, surfaces the most-cited ideas.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Permalinks</h3>
+            <p>
+              Share a single annotation as a URL. The link carries hash + anchor + optional
+              text/context windows; the receiver opens the source PDF and lands on the right
+              region. Like HTML <code>#:~:text=</code> Text Fragments — but for documents.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Cross-format</h3>
+            <p>
+              One snippet schema covers PDF, Markdown, and DOCX. Lineage view mixes a
+              page-3 PDF quote with a §Methods Markdown snippet on the same canvas.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Open spec</h3>
+            <p>
+              Every implementation detail in <a href="/spec">SPEC.md</a> + a JSON Schema
+              you can validate sidecars against in CI. The format is the contract; the
+              tools are interchangeable.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="why" class="section alt">
+      <div class="container">
+        <h2>Why a new format</h2>
+        <div class="compare">
+          <table>
+            <thead>
+              <tr>
+                <th></th>
+                <th>Marklee</th>
+                <th>W3C&nbsp;WADM</th>
+                <th>XFDF</th>
+                <th>Hypothesis</th>
+                <th>Sciwheel</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><th scope="row">PDF + Markdown + DOCX</th><td class="yes">✓</td><td class="par">~</td><td class="no">PDF only</td><td class="par">HTML mostly</td><td class="par">PDF + HTML</td></tr>
+              <tr><th scope="row">Sidecar / portable</th><td class="yes">✓</td><td class="no">server</td><td class="yes">XML</td><td class="no">server</td><td class="no">cloud-only</td></tr>
+              <tr><th scope="row">Edit-tolerant anchors</th><td class="yes">4-tier</td><td class="par">partial</td><td class="no">byte offset</td><td class="yes">TextQuote</td><td class="par">unknown</td></tr>
+              <tr><th scope="row">Labeled-edge graph</th><td class="yes">✓</td><td class="no"></td><td class="no"></td><td class="par">replies only</td><td class="no"></td></tr>
+              <tr><th scope="row">Per-annotation permalink</th><td class="yes">defined</td><td class="yes">URI</td><td class="par">page-only</td><td class="yes"></td><td class="no"></td></tr>
+              <tr><th scope="row">Centrality algorithm</th><td class="yes">MarkRank</td><td class="no"></td><td class="no"></td><td class="no"></td><td class="no"></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container small">
+        <h2>Status</h2>
+        <p>
+          v0.1, working draft. Spec stable enough to write tools against;
+          format may change incompatibly until 1.0. Reference implementation is the
+          desktop app on this page. The web build (browser-mode + permalink bootstrap)
+          and Chrome extension are next.
+        </p>
+        <p>
+          Built local-first because the data model demands it. Nothing about Marklee
+          requires a server, and nothing it does will ever require an account.
+        </p>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div class="container">
+        <span>Marklee — portable annotations for documents.</span>
+        <span class="dim">© 2026 · CC&nbsp;BY&nbsp;4.0 spec · MIT-licensed reference implementation</span>
+      </div>
+    </footer>
+  </body>
+</html>
