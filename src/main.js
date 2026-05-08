@@ -2922,11 +2922,10 @@ function setupPanelResize() {
 function attachResize(handle, side, sign) {
   if (!handle) return;
   const blockSelectStart = (ev) => ev.preventDefault();
-  handle.addEventListener("pointerdown", (e) => {
+  handle.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
-    try { handle.setPointerCapture(e.pointerId); } catch {}
     try { window.getSelection()?.removeAllRanges(); } catch {}
     const startX = e.clientX;
     const cssVar = `--${side}-w`;
@@ -2936,26 +2935,24 @@ function attachResize(handle, side, sign) {
     document.addEventListener("selectstart", blockSelectStart, true);
 
     const onMove = (ev) => {
+      ev.preventDefault();
       const delta = (ev.clientX - startX) * sign;
       const next = Math.max(160, Math.min(640, startW + delta));
       document.documentElement.style.setProperty(cssVar, `${next}px`);
     };
-    const cleanup = () => {
-      handle.removeEventListener("pointermove", onMove);
-      handle.removeEventListener("pointerup", cleanup);
-      handle.removeEventListener("pointercancel", cleanup);
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove, true);
+      window.removeEventListener("mouseup", onUp, true);
       document.removeEventListener("selectstart", blockSelectStart, true);
       document.body.classList.remove("resizing");
       handle.classList.remove("active");
-      try { handle.releasePointerCapture(e.pointerId); } catch {}
       try { window.getSelection()?.removeAllRanges(); } catch {}
       try {
         localStorage.setItem(`pdf-annotator-${side}-w`, document.documentElement.style.getPropertyValue(cssVar) || `${startW}px`);
       } catch {}
     };
-    handle.addEventListener("pointermove", onMove);
-    handle.addEventListener("pointerup", cleanup);
-    handle.addEventListener("pointercancel", cleanup);
+    window.addEventListener("mousemove", onMove, true);
+    window.addEventListener("mouseup", onUp, true);
   });
 }
 

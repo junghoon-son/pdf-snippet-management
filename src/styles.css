@@ -247,9 +247,7 @@ body.resizing * {
   user-select: none !important;
   -webkit-user-select: none !important;
   -moz-user-select: none !important;
-  pointer-events: none !important;
 }
-body.resizing .resize-handle, body.resizing .resize-handle::before { pointer-events: auto !important; }
 
 #sidebar, #snippets-pane {
   background: var(--panel);
