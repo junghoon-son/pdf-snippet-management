@@ -836,10 +836,10 @@ body.pane-max #snippets-pane { border-left: none; }
 .group-row.empty .group-row-dot { opacity: 0.4; box-shadow: none; }
 .group-row.empty .group-row-count { color: #8a8a8a; font-style: italic; }
 .group-row.empty input { color: var(--text-dim); }
-/* Color picker is hidden — the sticker is the visible affordance and
-   programmatically triggers the picker on a non-drag click. */
+/* Color picker is invisible but stays in flex flow next to the sticker so
+   the OS picker popup anchors to the right screen position (instead of
+   the document's top-left). */
 .group-row-dot-hidden {
-  position: absolute;
   width: 1px;
   height: 1px;
   opacity: 0;
@@ -847,6 +847,7 @@ body.pane-max #snippets-pane { border-left: none; }
   border: 0;
   padding: 0;
   margin: 0;
+  flex: 0 0 1px;
 }
 
 /* Sticker — combined affordance: click to recolor, drag to tag a snippet.
@@ -876,6 +877,18 @@ body.pane-max #snippets-pane { border-left: none; }
 .group-row-sticker:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+/* "Peeled off" animation — when a drag starts, the source sticker briefly
+   tilts + fades to suggest one was lifted from the dispenser. Single
+   transform animation, runs once, ~6ms of paint per row. Cheap. */
+@keyframes sticker-peel {
+  0%   { transform: translateY(0) rotate(0deg); opacity: 1; }
+  35%  { transform: translateY(-3px) rotate(-6deg); opacity: 0.55; }
+  100% { transform: translateY(0) rotate(0deg); opacity: 1; }
+}
+.group-row-sticker.peeled {
+  animation: sticker-peel 220ms ease-out;
+  transform-origin: 0% 50%;
 }
 
 /* The ghost that follows the cursor during drag */

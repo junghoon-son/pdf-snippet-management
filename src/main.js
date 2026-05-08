@@ -3132,34 +3132,47 @@ function renderGroups() {
 
 function maybeBeginStickerDrag(downEvent, groupId, meta, colorInput) {
   if (downEvent.button !== 0) return;
+  // Prevent the button's default mousedown→click chain so it doesn't fire
+  // a stray click after the drag releases.
+  downEvent.preventDefault();
+  downEvent.stopPropagation();
   const startX = downEvent.clientX;
   const startY = downEvent.clientY;
+  const stickerEl = downEvent.currentTarget;
   let dragStarted = false;
+  let didCancel = false;
   const onMove = (ev) => {
-    if (dragStarted) return;
+    if (dragStarted || didCancel) return;
     const dx = ev.clientX - startX;
     const dy = ev.clientY - startY;
     if (Math.hypot(dx, dy) > 4) {
       dragStarted = true;
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointermove", onMove, true);
+      window.removeEventListener("pointerup", onUp, true);
+      // Animate the sticker as if peeled off
+      stickerEl.classList.add("peeled");
+      setTimeout(() => stickerEl.classList.remove("peeled"), 220);
       beginStickerDrag(ev, groupId, meta);
     }
   };
   const onUp = () => {
-    window.removeEventListener("pointermove", onMove);
-    window.removeEventListener("pointerup", onUp);
-    if (!dragStarted) colorInput?.click();
+    didCancel = true;
+    window.removeEventListener("pointermove", onMove, true);
+    window.removeEventListener("pointerup", onUp, true);
+    if (!dragStarted) {
+      // Click without drag → open native color picker
+      try { colorInput?.click(); } catch {}
+    }
   };
-  window.addEventListener("pointermove", onMove);
-  window.addEventListener("pointerup", onUp);
+  window.addEventListener("pointermove", onMove, true);
+  window.addEventListener("pointerup", onUp, true);
 }
 
 function beginStickerDrag(downEvent, groupId, meta) {
-  if (downEvent.button !== 0) return;
-  downEvent.preventDefault();
-  downEvent.stopPropagation();
-  try { downEvent.target.setPointerCapture?.(downEvent.pointerId); } catch {}
+  // Caller (maybeBeginStickerDrag) has already validated the button and
+  // prevented default; just guard preventDefault on this event too.
+  try { downEvent.preventDefault?.(); } catch {}
+  try { downEvent.stopPropagation?.(); } catch {}
 
   const color = groupColorHex(groupId);
   const ghost = document.createElement("div");
