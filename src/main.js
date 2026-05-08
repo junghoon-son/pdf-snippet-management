@@ -382,7 +382,7 @@ function flashSaveIndicator(state) {
   }
 }
 
-const VALID_THEMES = ["cream", "slate", "dark", "sepia"];
+const VALID_THEMES = ["cream", "slate", "dark", "sepia", "bubblegum"];
 function applyTheme(name) {
   const theme = VALID_THEMES.includes(name) ? name : "cream";
   document.body.dataset.theme = theme;
