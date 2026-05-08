@@ -2426,7 +2426,59 @@ function applyAllHighlights() {
   }
 }
 
-async function persist() {
+// `persist()` is debounced — multiple rapid edits coalesce into one
+// sidecar write 200ms after the last call. Awaiting it returns a promise
+// that resolves after the next flush completes (or rejects on error).
+// Use `flushPersist()` to bypass the debounce, e.g. before close.
+const PERSIST_DEBOUNCE_MS = 200;
+let _persistPending = null;
+let _persistResolve = null;
+let _persistReject = null;
+let _persistTimer = null;
+
+function persist() {
+  if (_persistPending) return _persistPending;
+  _persistPending = new Promise((resolve, reject) => {
+    _persistResolve = resolve;
+    _persistReject = reject;
+  });
+  _persistTimer = setTimeout(runPersistFlush, PERSIST_DEBOUNCE_MS);
+  return _persistPending;
+}
+
+async function runPersistFlush() {
+  _persistTimer = null;
+  const resolve = _persistResolve;
+  const reject = _persistReject;
+  _persistPending = null;
+  _persistResolve = null;
+  _persistReject = null;
+  try {
+    await persistImmediate();
+    resolve?.();
+  } catch (err) {
+    reject?.(err);
+  }
+}
+
+async function flushPersist() {
+  if (_persistTimer) {
+    clearTimeout(_persistTimer);
+    await runPersistFlush();
+  }
+}
+
+window.addEventListener("beforeunload", () => {
+  // Best-effort flush — synchronous localStorage writes get through even
+  // during unload; the async sidecar write may not, but the workspace
+  // metadata save inside persistImmediate covers groupsMeta + recents.
+  if (_persistTimer) {
+    clearTimeout(_persistTimer);
+    runPersistFlush();
+  }
+});
+
+async function persistImmediate() {
   if (!state.currentPdfPath) return;
   if (state.view === "map") {
     state.edges = MapView.getEdgesData();
@@ -2624,12 +2676,14 @@ async function getMapData() {
 }
 
 async function loadWorkspaceMapData() {
-  for (const folder of state.workspace.folders || []) {
+  // Parallelize folder listings — sequential listings dominate workspace
+  // load time when the user has many folders.
+  await Promise.all((state.workspace.folders || []).map(async (folder) => {
     try {
       const docs = await getStore().listDocuments(folder.path);
       folder.pdfs = docs.map((d) => d.path);
     } catch {}
-  }
+  }));
   const folderPdfs = (state.workspace.folders || []).flatMap((f) => f.pdfs || []);
   const allPaths = [...new Set([...(state.workspace.files || []), ...folderPdfs])];
   if (allPaths.length === 0) {
