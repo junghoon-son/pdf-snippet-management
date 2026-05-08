@@ -2910,22 +2910,28 @@ function handleAppMenu(id) {
 }
 
 function setupPanelResize() {
+  document.body.classList.remove("resizing");
   for (const side of ["sidebar", "snippets"]) {
     let saved = null;
     try { saved = localStorage.getItem(`pdf-annotator-${side}-w`); } catch {}
     if (saved) document.documentElement.style.setProperty(`--${side}-w`, saved);
   }
-  attachResize(document.getElementById("resize-left"), "sidebar", +1);
-  attachResize(document.getElementById("resize-right"), "snippets", -1);
+  const left = document.getElementById("resize-left");
+  const right = document.getElementById("resize-right");
+  console.log("[resize] handles", { left: !!left, right: !!right });
+  attachResize(left, "sidebar", +1);
+  attachResize(right, "snippets", -1);
 }
 
 function attachResize(handle, side, sign) {
   if (!handle) return;
   const blockSelectStart = (ev) => ev.preventDefault();
-  handle.addEventListener("mousedown", (e) => {
+  handle.addEventListener("pointerdown", (e) => {
+    console.log("[resize] pointerdown", side, "button:", e.button);
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
+    try { handle.setPointerCapture(e.pointerId); } catch {}
     try { window.getSelection()?.removeAllRanges(); } catch {}
     const startX = e.clientX;
     const cssVar = `--${side}-w`;
@@ -2935,24 +2941,33 @@ function attachResize(handle, side, sign) {
     document.addEventListener("selectstart", blockSelectStart, true);
 
     const onMove = (ev) => {
-      ev.preventDefault();
       const delta = (ev.clientX - startX) * sign;
       const next = Math.max(160, Math.min(640, startW + delta));
       document.documentElement.style.setProperty(cssVar, `${next}px`);
     };
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove, true);
-      window.removeEventListener("mouseup", onUp, true);
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", cleanup);
+      handle.removeEventListener("pointercancel", cleanup);
+      handle.removeEventListener("lostpointercapture", cleanup);
+      window.removeEventListener("blur", cleanup);
       document.removeEventListener("selectstart", blockSelectStart, true);
       document.body.classList.remove("resizing");
       handle.classList.remove("active");
+      try { handle.releasePointerCapture(e.pointerId); } catch {}
       try { window.getSelection()?.removeAllRanges(); } catch {}
       try {
         localStorage.setItem(`pdf-annotator-${side}-w`, document.documentElement.style.getPropertyValue(cssVar) || `${startW}px`);
       } catch {}
     };
-    window.addEventListener("mousemove", onMove, true);
-    window.addEventListener("mouseup", onUp, true);
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", cleanup);
+    handle.addEventListener("pointercancel", cleanup);
+    handle.addEventListener("lostpointercapture", cleanup);
+    window.addEventListener("blur", cleanup);
   });
 }
 

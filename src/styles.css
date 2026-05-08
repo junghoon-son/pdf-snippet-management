@@ -221,23 +221,25 @@ body { display: flex; flex-direction: column; height: 100vh; }
 }
 #app {
   display: grid;
-  grid-template-columns: var(--sidebar-w) 4px 1fr 4px var(--snippets-w);
+  grid-template-columns: var(--sidebar-w) 6px 1fr 6px var(--snippets-w);
   height: 100vh;
   width: 100vw;
 }
 .resize-handle {
-  background: transparent;
+  background: var(--border);
   cursor: col-resize;
   position: relative;
-  z-index: 5;
+  z-index: 50;
+  touch-action: none;
 }
 .resize-handle::before {
   content: "";
   position: absolute;
   top: 0;
   bottom: 0;
-  left: -3px;
-  right: -3px;
+  left: -4px;
+  right: -4px;
+  z-index: 1;
 }
 .resize-handle:hover { background: var(--accent); }
 .resize-handle.active { background: var(--accent); }
@@ -283,7 +285,7 @@ body.sidebar-collapsed #sidebar-collapse {
   align-self: center;
   margin: 4px 0 0;
 }
-body.sidebar-collapsed #app { grid-template-columns: 32px 4px 1fr 4px var(--snippets-w); }
+body.sidebar-collapsed #app { grid-template-columns: 32px 6px 1fr 6px var(--snippets-w); }
 body.sidebar-collapsed #resize-left { pointer-events: none; opacity: 0.3; }
 body.sidebar-collapsed #sidebar-collapse::before { content: "›"; }
 body:not(.sidebar-collapsed) #sidebar-collapse::before { content: "‹"; }
