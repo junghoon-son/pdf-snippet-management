@@ -18,6 +18,188 @@ let getGroupName = (id) => `Group ${id.slice(0, 4)}`;
 let getGroupColor = () => "#bbb";
 const searchTextCache = new Map();
 
+// Read theme-aware colors from the active theme's CSS custom properties
+// at the time of call. Re-read whenever the theme changes (applyTheme).
+function readThemePalette() {
+  const cs = getComputedStyle(document.body);
+  const v = (name, fallback) => cs.getPropertyValue(name).trim() || fallback;
+  return {
+    bg:        v("--bg",        "#f5f2ea"),
+    panel:     v("--panel",     "#ece8dc"),
+    panel2:    v("--panel-2",   "#ddd8c8"),
+    border:    v("--border",    "#cfc8b6"),
+    text:      v("--text",      "#2a2a2a"),
+    textDim:   v("--text-dim",  "#6e6e6e"),
+    accent:    v("--accent",    "#2ea58c"),
+    cardBg:    v("--card-bg",   "#fbf9f3"),
+  };
+}
+
+function buildStyle(p) {
+  return [
+    {
+      selector: "node",
+      style: {
+        "background-color": p.cardBg,
+        "border-width": 1,
+        "border-color": p.border,
+        "shape": "round-rectangle",
+        "label": "data(label)",
+        "color": p.text,
+        "font-family": "ui-serif, 'Iowan Old Style', Charter, Georgia, serif",
+        "font-size": "10.5px",
+        "text-wrap": "wrap",
+        "text-valign": "center",
+        "text-halign": "center",
+        "padding": 6,
+        "min-zoomed-font-size": 6,
+        "transition-property": "opacity background-opacity border-width border-color",
+        "transition-duration": "200ms",
+        "transition-timing-function": "ease-out",
+      },
+    },
+    {
+      selector: "node[type='doc']",
+      style: {
+        "background-color": p.panel,
+        "border-color": p.textDim,
+        "border-width": 1,
+        "width": DOC_NODE_W,
+        "height": DOC_NODE_H,
+        "text-max-width": DOC_NODE_W - 16,
+        "font-style": "italic",
+        "font-size": "11px",
+        "shape": "round-rectangle",
+        "padding": 6,
+        "text-wrap": "wrap",
+        "line-height": 1.25,
+      },
+    },
+    {
+      selector: "node[type='snippet']",
+      style: {
+        "background-color": p.cardBg,
+        "border-color": p.border,
+        "width": SNIPPET_NODE_W,
+        "height": SNIPPET_NODE_H,
+        "text-max-width": SNIPPET_NODE_W - 16,
+        "text-overflow-wrap": "ellipsis",
+        "font-family": "ui-serif, 'Iowan Old Style', Charter, Georgia, serif",
+        "font-size": "10.5px",
+        "line-height": 1.35,
+        "padding": 7,
+      },
+    },
+    {
+      selector: "node[type='snippet'][?isImage]",
+      style: {
+        "background-image": "data(imageUrl)",
+        "background-fit": "cover",
+        "width": 110,
+        "height": 72,
+        "label": "",
+        "border-color": p.accent,
+        "border-width": 1.5,
+      },
+    },
+    {
+      selector: "node[type='group']",
+      style: {
+        "background-color": "data(color)",
+        "background-opacity": 0.9,
+        "border-color": "data(color)",
+        "border-width": 1.5,
+        "color": p.text,
+        "shape": "round-rectangle",
+        "width": GROUP_NODE_W,
+        "height": GROUP_NODE_H,
+        "text-max-width": GROUP_NODE_W - 14,
+        "font-style": "italic",
+        "font-size": "11px",
+        "padding": 5,
+      },
+    },
+    {
+      selector: "node:selected",
+      style: {
+        "border-color": p.accent,
+        "border-width": 3,
+        "overlay-opacity": 0,
+      },
+    },
+    {
+      selector: "edge",
+      style: {
+        "curve-style": "bezier",
+        "control-point-step-size": 60,
+        "width": 1.4,
+        "line-color": p.border,
+        "target-arrow-shape": "none",
+        "opacity": 0.55,
+        "transition-property": "opacity line-color width",
+        "transition-duration": "200ms",
+        "transition-timing-function": "ease-out",
+      },
+    },
+    {
+      selector: "edge[type='doc-snippet']",
+      style: {
+        "line-color": p.textDim,
+        "opacity": 0.45,
+      },
+    },
+    {
+      selector: "edge[type='snippet-group']",
+      style: {
+        "line-color": "data(color)",
+        "opacity": 0.7,
+        "width": 2,
+      },
+    },
+    {
+      selector: "edge.hot",
+      style: {
+        "opacity": 1,
+        "width": 3,
+        "line-color": p.accent,
+      },
+    },
+    {
+      selector: "node.dim",
+      style: { "opacity": 0.18 },
+    },
+    {
+      selector: "edge.dim",
+      style: { "opacity": 0.06 },
+    },
+    {
+      selector: "node.match",
+      style: {
+        "border-color": p.accent,
+        "border-width": 3,
+        "shadow-blur": 18,
+        "shadow-color": p.accent,
+        "shadow-opacity": 0.7,
+      },
+    },
+    {
+      selector: "node.connected",
+      style: {
+        "border-color": p.accent,
+        "border-width": 2,
+      },
+    },
+    {
+      selector: "edge.connected",
+      style: {
+        "line-color": p.accent,
+        "opacity": 0.85,
+        "width": 2.4,
+      },
+    },
+  ];
+}
+
 export function initLineage(container, callbacks) {
   onSnippetClick = callbacks.onSnippetClick;
   onDocClick = callbacks.onDocClick;
@@ -29,172 +211,7 @@ export function initLineage(container, callbacks) {
     minZoom: 0.25,
     maxZoom: 2.5,
     wheelSensitivity: 0.2,
-    style: [
-      {
-        selector: "node",
-        style: {
-          "background-color": "#fbf9f3",
-          "border-width": 1,
-          "border-color": "#cfc8b6",
-          "shape": "round-rectangle",
-          "label": "data(label)",
-          "color": "#1f1f1f",
-          "font-family": "ui-serif, 'Iowan Old Style', Charter, Georgia, serif",
-          "font-size": "10.5px",
-          "text-wrap": "wrap",
-          "text-valign": "center",
-          "text-halign": "center",
-          "padding": 6,
-          "min-zoomed-font-size": 6,
-          "transition-property": "opacity background-opacity border-width border-color",
-          "transition-duration": "200ms",
-          "transition-timing-function": "ease-out",
-        },
-      },
-      {
-        selector: "node[type='doc']",
-        style: {
-          "background-color": "#ece8dc",
-          "border-color": "#a89e83",
-          "border-width": 1,
-          "width": DOC_NODE_W,
-          "height": DOC_NODE_H,
-          "text-max-width": DOC_NODE_W - 16,
-          "font-style": "italic",
-          "font-size": "11px",
-          "shape": "round-rectangle",
-          "padding": 6,
-          "text-wrap": "wrap",
-          "line-height": 1.25,
-        },
-      },
-      {
-        selector: "node[type='snippet']",
-        style: {
-          "background-color": "#fbf9f3",
-          "border-color": "#d4cebc",
-          "width": SNIPPET_NODE_W,
-          "height": SNIPPET_NODE_H,
-          "text-max-width": SNIPPET_NODE_W - 16,
-          "text-overflow-wrap": "ellipsis",
-          "font-family": "ui-serif, 'Iowan Old Style', Charter, Georgia, serif",
-          "font-size": "10.5px",
-          "line-height": 1.35,
-          "padding": 7,
-        },
-      },
-      {
-        selector: "node[type='snippet'][?isImage]",
-        style: {
-          "background-image": "data(imageUrl)",
-          "background-fit": "cover",
-          "width": 110,
-          "height": 72,
-          "label": "",
-          "border-color": "#2ea58c",
-          "border-width": 1.5,
-        },
-      },
-      {
-        selector: "node[type='group']",
-        style: {
-          "background-color": "data(color)",
-          "background-opacity": 0.9,
-          "border-color": "data(color)",
-          "border-width": 1.5,
-          "color": "#1a1a1a",
-          "shape": "round-rectangle",
-          "width": GROUP_NODE_W,
-          "height": GROUP_NODE_H,
-          "text-max-width": GROUP_NODE_W - 14,
-          "font-style": "italic",
-          "font-size": "11px",
-          "padding": 5,
-        },
-      },
-      {
-        selector: "node:selected",
-        style: {
-          "border-color": "#2ea58c",
-          "border-width": 3,
-          "overlay-opacity": 0,
-        },
-      },
-      {
-        selector: "edge",
-        style: {
-          "curve-style": "bezier",
-          "control-point-step-size": 60,
-          "width": 1.4,
-          "line-color": "#c0b89c",
-          "target-arrow-shape": "none",
-          "opacity": 0.55,
-          "transition-property": "opacity line-color width",
-          "transition-duration": "200ms",
-          "transition-timing-function": "ease-out",
-        },
-      },
-      {
-        selector: "edge[type='doc-snippet']",
-        style: {
-          "line-color": "#a89e83",
-          "opacity": 0.45,
-        },
-      },
-      {
-        selector: "edge[type='snippet-group']",
-        style: {
-          "line-color": "data(color)",
-          "opacity": 0.7,
-          "width": 2,
-        },
-      },
-      {
-        selector: "edge.hot",
-        style: {
-          "opacity": 1,
-          "width": 3,
-          "line-color": "#2ea58c",
-        },
-      },
-      {
-        selector: "node.dim",
-        style: {
-          "opacity": 0.18,
-        },
-      },
-      {
-        selector: "edge.dim",
-        style: {
-          "opacity": 0.06,
-        },
-      },
-      {
-        selector: "node.match",
-        style: {
-          "border-color": "#d97757",
-          "border-width": 3,
-          "shadow-blur": 18,
-          "shadow-color": "#d97757",
-          "shadow-opacity": 0.7,
-        },
-      },
-      {
-        selector: "node.connected",
-        style: {
-          "border-color": "#2ea58c",
-          "border-width": 2,
-        },
-      },
-      {
-        selector: "edge.connected",
-        style: {
-          "line-color": "#2ea58c",
-          "opacity": 0.85,
-          "width": 2.4,
-        },
-      },
-    ],
+    style: buildStyle(readThemePalette()),
     layout: { name: "preset" },
   });
 
@@ -499,4 +516,9 @@ export function resize() {
 
 export function fit() {
   if (cy) cy.fit(undefined, 40);
+}
+
+export function applyTheme() {
+  if (!cy) return;
+  cy.style(buildStyle(readThemePalette()));
 }

@@ -394,6 +394,7 @@ function setWorkspaceTheme(name) {
   applyTheme(name);
   saveAllWorkspaces();
   renderWorkspaceTabs();
+  try { LineageView.applyTheme(); } catch {}
 }
 
 function saveWorkspace() {
