@@ -141,7 +141,6 @@ body { display: flex; flex-direction: column; height: 100vh; }
   scrollbar-width: none;
 }
 #ws-tabs-list::-webkit-scrollbar { display: none; }
-#workspace-tabs::after { content: ""; flex: 1 1 auto; }
 .ws-tab {
   display: flex;
   align-items: center;
@@ -352,14 +351,18 @@ body:not(.sidebar-collapsed) #sidebar-collapse::before { content: "‹"; }
 #maximize-btn,
 #theme-btn {
   background: transparent;
-  border: 1px solid var(--pane-border);
-  color: var(--pane-fg-dim);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
   font-family: inherit;
-  font-size: 11px;
-  padding: 3px 7px;
+  font-size: 14px;
+  padding: 3px 9px;
   border-radius: 4px;
   cursor: pointer;
   line-height: 1;
+  align-self: center;
+  margin-left: auto;
+  margin-right: 6px;
+  flex-shrink: 0;
 }
 #maximize-btn:hover,
 #theme-btn:hover { color: var(--accent); border-color: var(--accent); }
