@@ -871,6 +871,10 @@ body.pane-max #snippets-pane { border-left: none; }
   font-family: ui-monospace, "SF Mono", monospace;
 }
 
+#snippets-pane {
+  container-type: inline-size;
+  container-name: snippetspane;
+}
 .snippets-header {
   padding: 12px 14px 10px;
   border-bottom: 1px solid var(--border);
@@ -879,6 +883,30 @@ body.pane-max #snippets-pane { border-left: none; }
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* Compact labels at narrow pane widths — keep one row of header-tools
+   instead of wrapping to 3-4. data-short on each button supplies the
+   abbreviated text. */
+@container snippetspane (max-width: 360px) {
+  [data-short] {
+    font-size: 0;
+    letter-spacing: 0;
+  }
+  [data-short]::after {
+    content: attr(data-short);
+    font-size: 10.5px;
+    letter-spacing: 0.6px;
+  }
+  .groups-panel-actions [data-short]::after {
+    font-size: 9px;
+    letter-spacing: 1px;
+  }
+  .group-row-count[data-short]::after {
+    font-size: 10px;
+    letter-spacing: 0.3px;
+    font-family: ui-monospace, "SF Mono", monospace;
+  }
 }
 .header-tabs { display: flex; gap: 2px; flex-shrink: 0; }
 .header-tools {

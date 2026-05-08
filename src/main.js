@@ -2989,7 +2989,13 @@ function renderGroups() {
     const count = document.createElement("span");
     count.className = "group-row-count";
     const n = counts.get(id) || 0;
-    count.textContent = n === 0 ? "not in this doc" : `${n} here`;
+    if (n === 0) {
+      count.textContent = "not in this doc";
+      count.dataset.short = "—";
+    } else {
+      count.textContent = `${n} here`;
+      count.dataset.short = `${n}`;
+    }
 
     const eye = document.createElement("button");
     eye.className = "group-row-eye";
