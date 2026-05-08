@@ -836,18 +836,32 @@ body.pane-max #snippets-pane { border-left: none; }
 .group-row.empty .group-row-dot { opacity: 0.4; box-shadow: none; }
 .group-row.empty .group-row-count { color: #8a8a8a; font-style: italic; }
 .group-row.empty input { color: var(--text-dim); }
-/* Color picker is invisible but stays in flex flow next to the sticker so
-   the OS picker popup anchors to the right screen position (instead of
-   the document's top-left). */
-.group-row-dot-hidden {
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
-  border: 0;
+/* Custom palette popover — replaces the native <input type="color"> so
+   we can anchor it precisely under the sticker. Eight palette slots from
+   the active theme. */
+.color-popover {
+  position: fixed;
+  z-index: 100;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18), 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+.color-popover-swatch {
+  width: 22px;
+  height: 22px;
+  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+  border-radius: 4px;
   padding: 0;
-  margin: 0;
-  flex: 0 0 1px;
+  cursor: pointer;
+  transition: transform 80ms ease;
+}
+.color-popover-swatch:hover {
+  transform: scale(1.12);
 }
 
 /* Sticker — combined affordance: click to recolor, drag to tag a snippet.

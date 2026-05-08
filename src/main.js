@@ -2473,6 +2473,22 @@ async function setGroupColor(id, color) {
   }
 }
 
+async function setGroupPaletteSlot(id, slot) {
+  ensureGroupMeta(id, "");
+  const meta = state.groupsMeta.find((g) => g.id === id);
+  if (!meta) return;
+  meta.paletteSlot = slot;
+  delete meta.color; // palette slot wins; clear any custom color override
+  await persist();
+  refreshActiveView();
+  applyAllHighlights();
+  if (mapInitialized) {
+    const data = await getMapData();
+    MapView.renderMap(data.snippets, data.edges, state.layout, loadClipUrl);
+  }
+  try { LineageView.applyTheme(); } catch {}
+}
+
 async function setGroupHidden(id, hidden) {
   ensureGroupMeta(id, "");
   const meta = state.groupsMeta.find((g) => g.id === id);
@@ -3068,23 +3084,16 @@ function renderGroups() {
       applyAllHighlights();
     });
 
-    // Hidden color picker — driven programmatically by clicks on the sticker
-    const dot = document.createElement("input");
-    dot.type = "color";
-    dot.className = "group-row-dot-hidden";
-    dot.value = groupColorHex(id);
-    dot.tabIndex = -1;
-    dot.addEventListener("input", () => {
-      setGroupColor(id, dot.value);
-      sticker.style.setProperty("--g", dot.value);
-    });
-
     const sticker = document.createElement("button");
     sticker.type = "button";
     sticker.className = "group-row-sticker";
     sticker.title = "Click to recolor · drag onto a snippet to tag it";
     sticker.style.setProperty("--g", groupColorHex(id));
-    sticker.addEventListener("pointerdown", (e) => maybeBeginStickerDrag(e, id, meta, dot));
+    // Click → open palette popover anchored to the sticker.
+    // Drag → start sticker drag onto a snippet (handled by maybeBeginStickerDrag).
+    sticker.addEventListener("pointerdown", (e) => {
+      maybeBeginStickerDrag(e, id, meta, () => openColorPopover(sticker, id));
+    });
 
     const input = document.createElement("input");
     input.type = "text";
@@ -3126,12 +3135,12 @@ function renderGroups() {
       await deleteGroup(id);
     });
 
-    li.append(dot, sticker, input, count, eye, del);
+    li.append(sticker, input, count, eye, del);
     list.appendChild(li);
   }
 }
 
-function maybeBeginStickerDrag(downEvent, groupId, meta, colorInput) {
+function maybeBeginStickerDrag(downEvent, groupId, meta, onPlainClick) {
   if (downEvent.button !== 0) return;
   // Prevent the button's default mousedown→click chain so it doesn't fire
   // a stray click after the drag releases.
@@ -3150,7 +3159,6 @@ function maybeBeginStickerDrag(downEvent, groupId, meta, colorInput) {
       dragStarted = true;
       window.removeEventListener("pointermove", onMove, true);
       window.removeEventListener("pointerup", onUp, true);
-      // Animate the sticker as if peeled off
       stickerEl.classList.add("peeled");
       setTimeout(() => stickerEl.classList.remove("peeled"), 220);
       beginStickerDrag(ev, groupId, meta);
@@ -3161,12 +3169,67 @@ function maybeBeginStickerDrag(downEvent, groupId, meta, colorInput) {
     window.removeEventListener("pointermove", onMove, true);
     window.removeEventListener("pointerup", onUp, true);
     if (!dragStarted) {
-      // Click without drag → open native color picker
-      try { colorInput?.click(); } catch {}
+      try { onPlainClick?.(); } catch {}
     }
   };
   window.addEventListener("pointermove", onMove, true);
   window.addEventListener("pointerup", onUp, true);
+}
+
+// Custom palette popover — replaces the native <input type="color">
+// because WkWebView anchors the OS picker to the document corner when
+// the input is invisibly small. Eight palette slots from the active
+// theme; click a swatch to assign it to the group.
+let _activeColorPopover = null;
+function openColorPopover(anchorEl, groupId) {
+  closeColorPopover();
+  const pop = document.createElement("div");
+  pop.className = "color-popover";
+  for (let slot = 0; slot < GROUP_PALETTE_SLOTS; slot++) {
+    const sw = document.createElement("button");
+    sw.className = "color-popover-swatch";
+    sw.style.background = readPaletteColor(slot);
+    sw.title = `Palette slot ${slot + 1}`;
+    sw.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await setGroupPaletteSlot(groupId, slot);
+      closeColorPopover();
+    });
+    pop.appendChild(sw);
+  }
+  document.body.appendChild(pop);
+  // Position near the sticker, kept inside the viewport.
+  const r = anchorEl.getBoundingClientRect();
+  const pw = pop.offsetWidth;
+  const ph = pop.offsetHeight;
+  let left = r.left;
+  let top = r.bottom + 6;
+  if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+  if (left < 8) left = 8;
+  if (top + ph > window.innerHeight - 8) top = r.top - ph - 6;
+  pop.style.left = `${left}px`;
+  pop.style.top = `${top}px`;
+  _activeColorPopover = pop;
+  setTimeout(() => {
+    document.addEventListener("click", _onColorPopoverOutside, true);
+    document.addEventListener("keydown", _onColorPopoverEsc, true);
+  }, 0);
+}
+function closeColorPopover() {
+  if (_activeColorPopover) {
+    _activeColorPopover.remove();
+    _activeColorPopover = null;
+  }
+  document.removeEventListener("click", _onColorPopoverOutside, true);
+  document.removeEventListener("keydown", _onColorPopoverEsc, true);
+}
+function _onColorPopoverOutside(e) {
+  if (!_activeColorPopover) return;
+  if (_activeColorPopover.contains(e.target)) return;
+  closeColorPopover();
+}
+function _onColorPopoverEsc(e) {
+  if (e.key === "Escape") closeColorPopover();
 }
 
 function beginStickerDrag(downEvent, groupId, meta) {
