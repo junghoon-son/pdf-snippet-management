@@ -2520,7 +2520,7 @@ async function renderSnippets() {
       e.stopPropagation();
       try {
         if (s.kind === "image" && s.imagePath) {
-          await getStore().copyImageToClipboard(ownerPath, s.imagePath);
+          await getStore().copyImageToClipboard(s._imageOwnerPath || ownerPath, s.imagePath);
         } else {
           await navigator.clipboard.writeText(s.text);
         }
@@ -2600,7 +2600,9 @@ async function renderSnippets() {
       const img = document.createElement("img");
       img.alt = s.text || `clip p.${s.page}`;
       img.loading = "lazy";
-      loadClipUrl(s.imagePath, ownerPath).then((url) => {
+      // Pasted image clips live at _imageOwnerPath, not the pseudo source.
+      const clipOwnerPath = s._imageOwnerPath || ownerPath;
+      loadClipUrl(s.imagePath, clipOwnerPath).then((url) => {
         if (url) img.src = url;
         else {
           text.classList.add("missing");
