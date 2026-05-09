@@ -1636,8 +1636,9 @@ body.dragging-sticker * { cursor: grabbing !important; }
   gap: 4px;
   /* Pull the row up so the tabs visually stick out of the card's top
      edge — like physical page flags poking out of a paper stack.
-     Saves the vertical space the row used to occupy inside the card. */
-  margin: -12px 0 -2px 6px;
+     Bottom margin keeps a little air between tabs and the doc title /
+     meta line below so descenders don't kiss tab borders. */
+  margin: -16px 0 4px 6px;
   position: relative;
   z-index: 2;
 }
