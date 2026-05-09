@@ -3405,18 +3405,35 @@ function beginStickerDrag(downEvent, groupId, meta) {
   document.body.appendChild(ghost);
   document.body.classList.add("dragging-sticker");
 
+  // Drop target may be either:
+  //  - DOM .snippet card in the snippets list, OR
+  //  - cytoscape snippet node in the lineage canvas.
+  // Track them in a unified lastTarget shape: { kind, ref, snippetId }.
   let lastTarget = null;
   const setTarget = (next) => {
-    if (next === lastTarget) return;
-    lastTarget?.classList.remove("sticker-drop-target");
-    next?.classList.add("sticker-drop-target");
+    if (lastTarget === next) return;
+    if (lastTarget?.kind === "card") lastTarget.ref.classList.remove("sticker-drop-target");
+    if (lastTarget?.kind === "lineage") LineageView.setStickerTarget(null);
+    if (next?.kind === "card") next.ref.classList.add("sticker-drop-target");
+    if (next?.kind === "lineage") LineageView.setStickerTarget(next.snippetId);
     lastTarget = next;
   };
   const move = (ev) => {
     ghost.style.transform = `translate(${ev.clientX + 14}px, ${ev.clientY - 6}px)`;
+    // Card-list hit first.
     const stack = document.elementsFromPoint(ev.clientX, ev.clientY);
-    const snip = stack.find((el) => el.classList?.contains("snippet"));
-    setTarget(snip || null);
+    const card = stack.find((el) => el.classList?.contains("snippet"));
+    if (card) {
+      setTarget({ kind: "card", ref: card, snippetId: card.dataset.snippetId });
+      return;
+    }
+    // Lineage canvas hit second.
+    const lineageHit = LineageView.snippetAtScreenPoint(ev.clientX, ev.clientY);
+    if (lineageHit) {
+      setTarget({ kind: "lineage", ref: lineageHit.node, snippetId: lineageHit.snippetId });
+      return;
+    }
+    setTarget(null);
   };
   const cleanup = () => {
     window.removeEventListener("pointermove", move);
@@ -3426,13 +3443,11 @@ function beginStickerDrag(downEvent, groupId, meta) {
     setTarget(null);
     ghost.remove();
   };
-  const up = async (ev) => {
+  const up = async () => {
     const target = lastTarget;
     cleanup();
-    if (!target) return;
-    const snippetId = target.dataset.snippetId;
-    if (!snippetId) return;
-    const snippet = state.snippets.find((s) => s.id === snippetId);
+    if (!target?.snippetId) return;
+    const snippet = state.snippets.find((s) => s.id === target.snippetId);
     if (!snippet) return;
     snippet.groups = snippet.groups || [];
     if (!snippet.groups.includes(groupId)) {

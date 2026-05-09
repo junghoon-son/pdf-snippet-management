@@ -197,6 +197,17 @@ function buildStyle(p) {
         "width": 2.4,
       },
     },
+    {
+      selector: "node.sticker-target",
+      style: {
+        "border-color": p.accent,
+        "border-width": 3,
+        "shadow-blur": 22,
+        "shadow-color": p.accent,
+        "shadow-opacity": 0.85,
+        "background-opacity": 1,
+      },
+    },
   ];
 }
 
@@ -521,4 +532,37 @@ export function fit() {
 export function applyTheme() {
   if (!cy) return;
   cy.style(buildStyle(readThemePalette()));
+}
+
+// Hit-test for sticker drag — returns { snippetId, pdfPath, node } if a
+// snippet node sits under the given client (screen) coordinates inside
+// the lineage canvas, else null.
+export function snippetAtScreenPoint(clientX, clientY) {
+  if (!cy) return null;
+  const cont = cy.container();
+  if (!cont) return null;
+  const rect = cont.getBoundingClientRect();
+  if (clientX < rect.left || clientX > rect.right ||
+      clientY < rect.top || clientY > rect.bottom) {
+    return null;
+  }
+  const x = clientX - rect.left;
+  const y = clientY - rect.top;
+  // Cytoscape returns elements in z-order; pick the first snippet node hit.
+  const hits = cy.elementsAtRenderedPoint?.(x, y);
+  if (!hits) return null;
+  for (let i = 0; i < hits.length; i++) {
+    const el = hits[i];
+    if (el.isNode?.() && el.data("type") === "snippet") {
+      return { snippetId: el.data("snippetId"), pdfPath: el.data("pdfPath"), node: el };
+    }
+  }
+  return null;
+}
+
+export function setStickerTarget(snippetId) {
+  if (!cy) return;
+  cy.nodes().removeClass("sticker-target");
+  if (!snippetId) return;
+  cy.nodes(`[snippetId = "${snippetId}"]`).addClass("sticker-target");
 }
