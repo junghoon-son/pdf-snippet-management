@@ -979,10 +979,21 @@ const RECENTS_KEY = "pdf-annotator-recents";
 const RECENTS_LIMIT = 20;
 
 function getRecents() {
-  try { return JSON.parse(localStorage.getItem(RECENTS_KEY) || "[]"); } catch { return []; }
+  try {
+    const raw = JSON.parse(localStorage.getItem(RECENTS_KEY) || "[]");
+    // Filter out synthetic paths that can't be reopened (marklee:pasted etc.)
+    // — these crept in from older code that called addRecent on every load.
+    const cleaned = raw.filter((p) => typeof p === "string" && !p.startsWith("marklee:"));
+    if (cleaned.length !== raw.length) {
+      try { localStorage.setItem(RECENTS_KEY, JSON.stringify(cleaned)); } catch {}
+    }
+    return cleaned;
+  } catch { return []; }
 }
 
 function addRecent(path) {
+  // Don't track pseudo-sources — they're not real files.
+  if (typeof path !== "string" || path.startsWith("marklee:")) return;
   const next = getRecents().filter((p) => p !== path);
   next.unshift(path);
   next.splice(RECENTS_LIMIT);
@@ -1695,10 +1706,23 @@ document.addEventListener("paste", async (e) => {
       return;
     }
   }
-  // Text fallback.
-  const text = (cd.getData("text/plain") || "").trim();
+  // Text fallback. iPhone → Mac via Universal Clipboard sometimes only
+  // exposes text/uri-list or text/html instead of text/plain, so try
+  // multiple types in priority order before giving up.
+  let text = (cd.getData("text/plain") || "").trim();
+  if (!text) text = (cd.getData("text") || "").trim();
   if (!text) {
-    console.warn("[paste] no text/plain in clipboard");
+    const html = cd.getData("text/html") || "";
+    if (html) {
+      // Strip HTML tags + decode common entities for a plain-text fallback.
+      const tmp = document.createElement("div");
+      tmp.innerHTML = html;
+      text = (tmp.textContent || tmp.innerText || "").trim();
+    }
+  }
+  if (!text) text = (cd.getData("text/uri-list") || "").trim();
+  if (!text) {
+    console.warn("[paste] no usable text in clipboard. types:", cd.types);
     return;
   }
   e.preventDefault();
@@ -2588,6 +2612,9 @@ async function renderSnippets() {
     }
     li.addEventListener("click", async (e) => {
       if (e.target === ta || e.target === del) return;
+      // Pasted snippets aren't backed by a real file — clicking shouldn't
+      // try to "open" the pseudo-source.
+      if (ownerPath === PASTED_PSEUDO_PATH) return;
       if (isCrossDoc) {
         await loadPdf(ownerPath);
         setTimeout(() => previewSnippetInPdf(s), 60);
