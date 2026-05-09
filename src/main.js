@@ -340,13 +340,15 @@ function loadAllWorkspaces() {
 
 function activeWorkspaceData() {
   const ws = state.workspaces.byId[state.workspaces.active];
-  if (!ws) return { folders: [], files: [], groupsMeta: [], theme: "cream" };
+  if (!ws) return { folders: [], files: [], groupsMeta: [], theme: "cream", pastedSnippets: [] };
   if (!Array.isArray(ws.groupsMeta)) ws.groupsMeta = [];
+  if (!Array.isArray(ws.pastedSnippets)) ws.pastedSnippets = [];
   if (!ws.theme) ws.theme = "cream";
   return {
     folders: ws.folders || [],
     files: ws.files || [],
     groupsMeta: ws.groupsMeta,
+    pastedSnippets: ws.pastedSnippets,
     theme: ws.theme,
   };
 }
@@ -358,6 +360,7 @@ function saveAllWorkspaces() {
     cur.files = state.workspace.files;
     cur.folders = state.workspace.folders;
     cur.groupsMeta = state.workspace.groupsMeta;
+    cur.pastedSnippets = state.workspace.pastedSnippets || [];
     cur.theme = state.workspace.theme || cur.theme || "cream";
     cur.currentPdfPath = state.currentPdfPath;
   }
@@ -479,6 +482,7 @@ function newWorkspace() {
     files: [],
     folders: [],
     groupsMeta: [],
+    pastedSnippets: [],
     theme: "cream",
     currentPdfPath: null,
   };
@@ -1610,7 +1614,13 @@ document.addEventListener("paste", async (e) => {
   await createPastedTextSnippet(text);
 });
 
+// Pseudo-source path for pasted snippets — never written to disk; lives in
+// workspace-level localStorage. Lineage view + workspace list treat this as
+// its own document so pasted notes have their own source/umbrella.
+const PASTED_PSEUDO_PATH = "marklee:pasted";
+
 async function createPastedTextSnippet(text) {
+  if (!Array.isArray(state.workspace.pastedSnippets)) state.workspace.pastedSnippets = [];
   const snippet = {
     id: crypto.randomUUID(),
     kind: "text",
@@ -1623,15 +1633,23 @@ async function createPastedTextSnippet(text) {
     groups: [],
     anchor: "pasted",
   };
-  state.snippets.push(snippet);
-  undoStack.push({ type: "add", id: snippet.id });
-  await persist();
+  state.workspace.pastedSnippets.push(snippet);
+  saveAllWorkspaces();
   refreshActiveView();
-  applyAllHighlights();
   flashSaveIndicator("saved");
 }
 
 async function createPastedImageSnippet(bytes, mime) {
+  // Image clips need disk storage; route through the active doc's clip dir
+  // when one is open. The snippet itself still belongs to the Pasted
+  // pseudo-source — imagePath is recorded as absolute so it loads regardless
+  // of which doc is active.
+  if (!state.currentPdfPath) {
+    flashSaveIndicator("error");
+    console.warn("[paste] image paste requires an open document for clip storage");
+    return;
+  }
+  if (!Array.isArray(state.workspace.pastedSnippets)) state.workspace.pastedSnippets = [];
   const id = crypto.randomUUID();
   let imagePath;
   try {
@@ -1647,16 +1665,15 @@ async function createPastedImageSnippet(bytes, mime) {
     text: "Pasted image",
     rects: [],
     imagePath,
+    _imageOwnerPath: state.currentPdfPath,
     comment: "",
     created: new Date().toISOString(),
     groups: [],
     anchor: "pasted",
   };
-  state.snippets.push(snippet);
-  undoStack.push({ type: "add", id });
-  await persist();
+  state.workspace.pastedSnippets.push(snippet);
+  saveAllWorkspaces();
   refreshActiveView();
-  applyAllHighlights();
   flashSaveIndicator("saved");
 }
 
@@ -2305,7 +2322,9 @@ async function renderSnippets() {
     if (isCrossDoc) {
       const docSpan = document.createElement("span");
       docSpan.className = "meta-doc";
-      docSpan.textContent = (ownerPath.split("/").pop() || ownerPath);
+      docSpan.textContent = ownerPath === PASTED_PSEUDO_PATH
+        ? "📋 Pasted"
+        : (ownerPath.split("/").pop() || ownerPath);
       docSpan.title = ownerPath;
       label.appendChild(docSpan);
     }
@@ -3078,6 +3097,11 @@ async function loadWorkspaceMapData() {
   if (state.currentPdfPath && !allPaths.includes(state.currentPdfPath)) {
     for (const s of state.snippets) snippets.push({ ...s, _pdfPath: state.currentPdfPath });
     edges.push(...state.edges);
+  }
+  // Workspace-level pasted snippets — virtual source so they appear under
+  // their own umbrella in the lineage view + summary + workspace search.
+  for (const s of state.workspace?.pastedSnippets || []) {
+    snippets.push({ ...s, _pdfPath: PASTED_PSEUDO_PATH });
   }
   return { snippets, edges };
 }

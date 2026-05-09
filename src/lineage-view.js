@@ -291,10 +291,12 @@ function bold(s) {
 function kindIcon(kind) {
   if (kind === "markdown") return "📝";
   if (kind === "docx") return "📘";
+  if (kind === "pasted") return "📋";
   return "📄";
 }
 
 function kindFromPath(p) {
+  if (p === "marklee:pasted") return "pasted";
   const m = (p || "").toLowerCase().match(/\.([a-z0-9]+)$/);
   if (!m) return "pdf";
   if (m[1] === "md" || m[1] === "markdown") return "markdown";
@@ -351,8 +353,8 @@ export async function renderLineage(snippets, groupsMeta, getImageUrl) {
 
   // 4. Doc nodes
   docPaths.forEach((path, i) => {
-    const filename = path.split("/").pop() || path;
     const kind = kindFromPath(path);
+    const filename = kind === "pasted" ? "Pasted" : (path.split("/").pop() || path);
     const docSnippets = docMap.get(path);
     const snippetCount = docSnippets.length;
     const uniquePages = new Set(docSnippets.map((s) => s.page || 1)).size;
