@@ -18,6 +18,9 @@ Read commands (JSON to stdout):
   find-text-flow <md> --query "text"           [MD] Locate text in source; returns context windows
   highlight <pdf> --page N --query "text" ...  [PDF] one-shot find-text + add-text
   highlight-flow <md> --query "text" [...]     [MD] one-shot find-text-flow + add-text-flow
+  export-for-llm <file>                        Markdown view of the sidecar
+                                               (snippets + lineage + ranks)
+                                               optimized for LLM consumption
 
 Write commands (JSON ack to stdout):
   add-text <pdf> --page N --rect L,T,W,H... --text "..." [...]
@@ -202,6 +205,132 @@ async function cmdGetSnippet({ positional }) {
 async function cmdListGroups() {
   const groups = await readGlobalGroups();
   out({ count: groups.length, groups });
+}
+
+// ---- LLM-friendly export ----
+// Emits Markdown optimized for paste-into-LLM consumption: each snippet as
+// a labeled block with quote + comment + groups + rank + page anchor; a
+// lineage section listing labeled edges as natural-language statements.
+async function cmdExportForLLM({ positional, flags }) {
+  const file = positional[0];
+  if (!file) die("missing <file>");
+  const af = await readAnnot(file);
+  const allGroups = await readGlobalGroups();
+  const groupNameById = new Map();
+  for (const g of (af.groups || [])) groupNameById.set(g.id, g.name || g.id.slice(0, 6));
+  for (const g of allGroups) if (!groupNameById.has(g.id)) groupNameById.set(g.id, g.name || g.id.slice(0, 6));
+
+  const snippets = af.snippets || [];
+  const edges = af.edges || [];
+  const ranks = computeMarkRank(snippets, edges);
+
+  const idToIndex = new Map();
+  snippets.forEach((s, i) => idToIndex.set(s.id, i + 1));
+
+  const lines = [];
+  const src = af.source || {};
+  lines.push(`# Marklee notes — ${src.filename || path.basename(file)}`);
+  if (src.title) lines.push(`**Title**: ${src.title}`);
+  if (src.author) lines.push(`**Author**: ${src.author}`);
+  if (src.contentHash) lines.push(`**Content hash**: \`${src.contentHash}\``);
+  lines.push(`**Snippets**: ${snippets.length}  ·  **Edges**: ${edges.length}`);
+  lines.push("");
+
+  if (snippets.length === 0) {
+    lines.push("_No snippets in this sidecar._");
+  } else {
+    lines.push("## Snippets");
+    lines.push("");
+    snippets.forEach((s, i) => {
+      const idx = i + 1;
+      const anchor = s.anchor ? `§ ${s.anchor}` : `p.${s.page ?? 1}`;
+      const groups = (s.groups || []).map((gid) => groupNameById.get(gid) || gid).join(" · ") || "—";
+      const rank = ranks.get(s.id) ?? 0;
+      lines.push(`### #${idx} · ${anchor}`);
+      if (s.kind === "image") {
+        lines.push(`*[image clip${s.imagePath ? `: ${s.imagePath}` : ""}]*`);
+      } else {
+        const text = (s.text || "").trim();
+        for (const ln of text.split("\n")) lines.push(`> ${ln || ""}`);
+      }
+      if (s.contextBefore || s.contextAfter) {
+        lines.push("");
+        if (s.contextBefore) lines.push(`*Before*: ${truncate(s.contextBefore, 160)}`);
+        if (s.contextAfter)  lines.push(`*After*: ${truncate(s.contextAfter, 160)}`);
+      }
+      if (s.comment && s.comment.trim()) {
+        lines.push("");
+        lines.push(`**Note**: ${s.comment.trim()}`);
+      }
+      lines.push(`**Groups**: ${groups}`);
+      if (rank > 0) lines.push(`**MarkRank**: ${(rank * 100).toFixed(2)}`);
+      lines.push("");
+    });
+  }
+
+  if (edges.length > 0) {
+    lines.push("## Lineage");
+    lines.push("");
+    for (const e of edges) {
+      const a = idToIndex.get(e.source);
+      const b = idToIndex.get(e.target);
+      if (!a || !b) continue;
+      const verb = e.label && e.label.trim() ? e.label.trim() : "→";
+      lines.push(`- Snippet #${a} **${verb}** Snippet #${b}`);
+    }
+    lines.push("");
+  }
+
+  process.stdout.write(lines.join("\n"));
+}
+
+function truncate(s, n) {
+  s = String(s);
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
+
+// Local PageRank — duplicates src/markrank.js for CLI use without bundler.
+function computeMarkRank(snippets, edges) {
+  const damping = 0.85;
+  const tolerance = 1e-7;
+  const maxIter = 100;
+  const N = snippets.length;
+  if (N === 0) return new Map();
+  const idx = new Map();
+  for (let i = 0; i < N; i++) idx.set(snippets[i].id, i);
+  const out = Array.from({ length: N }, () => []);
+  const inAdj = Array.from({ length: N }, () => []);
+  for (const e of edges || []) {
+    const s = idx.get(e.source), t = idx.get(e.target);
+    if (s == null || t == null || s === t) continue;
+    out[s].push(t);
+    inAdj[t].push(s);
+  }
+  let rank = new Float64Array(N);
+  for (let i = 0; i < N; i++) rank[i] = 1 / N;
+  const next = new Float64Array(N);
+  const teleport = (1 - damping) / N;
+  for (let iter = 0; iter < maxIter; iter++) {
+    let dangling = 0;
+    for (let i = 0; i < N; i++) if (out[i].length === 0) dangling += rank[i];
+    const danglingShare = (damping * dangling) / N;
+    let diff = 0;
+    for (let i = 0; i < N; i++) {
+      let inflow = 0;
+      const incoming = inAdj[i];
+      for (let k = 0; k < incoming.length; k++) {
+        const j = incoming[k];
+        inflow += rank[j] / out[j].length;
+      }
+      next[i] = teleport + danglingShare + damping * inflow;
+      diff += Math.abs(next[i] - rank[i]);
+    }
+    [rank] = [Float64Array.from(next), rank];
+    if (diff < tolerance) break;
+  }
+  const result = new Map();
+  for (let i = 0; i < N; i++) result.set(snippets[i].id, rank[i]);
+  return result;
 }
 
 // ---- write commands ----
@@ -481,6 +610,7 @@ const COMMANDS = {
   "find-text-flow": cmdFindTextFlow,
   "highlight": cmdHighlight,
   "highlight-flow": cmdHighlightFlow,
+  "export-for-llm": cmdExportForLLM,
   "serve": cmdServe,
 };
 
@@ -502,6 +632,7 @@ const ROUTES = {
   "find-text-flow": { fn: cmdFindTextFlow, positional: ["file"] },
   "highlight": { fn: cmdHighlight, positional: ["file"] },
   "highlight-flow": { fn: cmdHighlightFlow, positional: ["file"] },
+  "export-for-llm": { fn: cmdExportForLLM, positional: ["file"] },
 };
 
 function bodyToArgs(body, route) {

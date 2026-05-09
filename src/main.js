@@ -1575,6 +1575,91 @@ function loadZoomForDoc() {
 
 window.addEventListener("resize", () => syncHorizontalOverflow());
 
+// Paste-as-snippet — ⌘V (or ⌃V) anywhere outside an editable field grabs
+// clipboard text or image and creates a new snippet attached to the
+// active document. Useful for quoting from other tools / pasting figures
+// from screenshots without having to flip back to the source first.
+document.addEventListener("paste", async (e) => {
+  // Skip when the user is typing into an input/textarea — let the native
+  // paste behavior win.
+  const tag = (e.target?.tagName || "").toUpperCase();
+  if (tag === "INPUT" || tag === "TEXTAREA" || e.target?.isContentEditable) return;
+  if (!state.currentPdfPath) return;
+  const cd = e.clipboardData;
+  if (!cd) return;
+
+  // Image first — most clipboard images come from screenshots.
+  for (const item of cd.items || []) {
+    if (item.kind === "file" && item.type?.startsWith("image/")) {
+      const blob = item.getAsFile();
+      if (!blob) continue;
+      e.preventDefault();
+      try {
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        await createPastedImageSnippet(bytes, item.type);
+      } catch (err) {
+        console.error("[paste] image failed", err);
+      }
+      return;
+    }
+  }
+  // Text fallback.
+  const text = (cd.getData("text/plain") || "").trim();
+  if (!text) return;
+  e.preventDefault();
+  await createPastedTextSnippet(text);
+});
+
+async function createPastedTextSnippet(text) {
+  const snippet = {
+    id: crypto.randomUUID(),
+    kind: "text",
+    page: 1,
+    text,
+    textNormalized: normalizeText(text),
+    rects: [],
+    comment: "",
+    created: new Date().toISOString(),
+    groups: [],
+    anchor: "pasted",
+  };
+  state.snippets.push(snippet);
+  undoStack.push({ type: "add", id: snippet.id });
+  await persist();
+  refreshActiveView();
+  applyAllHighlights();
+  flashSaveIndicator("saved");
+}
+
+async function createPastedImageSnippet(bytes, mime) {
+  const id = crypto.randomUUID();
+  let imagePath;
+  try {
+    imagePath = await getStore().writeClip(state.currentPdfPath, id, bytes);
+  } catch (err) {
+    console.error("[paste] writeClip failed", err);
+    return;
+  }
+  const snippet = {
+    id,
+    kind: "image",
+    page: 1,
+    text: "Pasted image",
+    rects: [],
+    imagePath,
+    comment: "",
+    created: new Date().toISOString(),
+    groups: [],
+    anchor: "pasted",
+  };
+  state.snippets.push(snippet);
+  undoStack.push({ type: "add", id });
+  await persist();
+  refreshActiveView();
+  applyAllHighlights();
+  flashSaveIndicator("saved");
+}
+
 async function setScale(next) {
   const clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, next));
   if (!state.pdfDoc || Math.abs(clamped - state.scale) < 0.001) {
