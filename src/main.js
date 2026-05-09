@@ -4023,9 +4023,17 @@ async function getSummaryData() {
     }
     return { snippets: data.snippets, sources: [...sources].filter(Boolean) };
   }
+  // Doc scope — include workspace-level pasted snippets too so summaries
+  // and exports surface them alongside the active doc's content.
+  const docSnippets = state.snippets.map((s) => ({ ...s, _pdfPath: state.currentPdfPath }));
+  const pastedSnippets = (state.workspace?.pastedSnippets || [])
+    .map((s) => ({ ...s, _pdfPath: PASTED_PSEUDO_PATH }));
+  const sources = [];
+  if (state.currentPdfPath) sources.push(state.currentPdfPath);
+  if (pastedSnippets.length) sources.push(PASTED_PSEUDO_PATH);
   return {
-    snippets: state.snippets.map((s) => ({ ...s, _pdfPath: state.currentPdfPath })),
-    sources: state.currentPdfPath ? [state.currentPdfPath] : [],
+    snippets: [...docSnippets, ...pastedSnippets],
+    sources,
   };
 }
 
@@ -4094,8 +4102,12 @@ async function openSummary() {
     }
     const itemMeta = document.createElement("div");
     itemMeta.className = "summary-item-meta";
-    const fname = (s._pdfPath || "").split("/").pop();
-    itemMeta.textContent = isWorkspace && fname ? `${fname} · p.${s.page}` : `p.${s.page}`;
+    const path = s._pdfPath || "";
+    const fname = path === PASTED_PSEUDO_PATH ? "📋 Pasted" : (path.split("/").pop() || "");
+    const loc = s.anchor ? `§ ${s.anchor}` : `p.${s.page}`;
+    itemMeta.textContent = (isWorkspace || path === PASTED_PSEUDO_PATH) && fname
+      ? `${fname} · ${loc}`
+      : loc;
     const itemText = document.createElement("blockquote");
     itemText.textContent = s.text;
     item.append(itemMeta, itemText);
@@ -4160,8 +4172,10 @@ async function copySummary() {
     }
   }
   const writeSnippet = (s) => {
-    const fname = (s._pdfPath || "").split("/").pop();
-    const ref = isWorkspace && fname ? `${fname} p.${s.page}` : `p.${s.page}`;
+    const path = s._pdfPath || "";
+    const fname = path === PASTED_PSEUDO_PATH ? "📋 Pasted" : (path.split("/").pop() || "");
+    const loc = s.anchor ? `§ ${s.anchor}` : `p.${s.page}`;
+    const ref = (isWorkspace || path === PASTED_PSEUDO_PATH) && fname ? `${fname} ${loc}` : loc;
     lines.push(`[${ref}] "${s.text}"`);
     if (s.comment) lines.push(`  → ${s.comment}`);
     lines.push("");
@@ -4196,8 +4210,11 @@ async function exportSummaryHtml() {
     const imageMap = new Map();
     const imageSnippets = snippets.filter((s) => s.kind === "image" && s.imagePath);
     await Promise.all(imageSnippets.map(async (s) => {
+      // Pasted image clips live under the placeholder clipboard doc, not
+      // their nominal _pdfPath. Honor _imageOwnerPath when present.
+      const owner = s._imageOwnerPath || s._pdfPath || state.currentPdfPath;
       try {
-        const u8 = await getStore().readClip(s._pdfPath || state.currentPdfPath, s.imagePath);
+        const u8 = await getStore().readClip(owner, s.imagePath);
         let binary = "";
         for (let i = 0; i < u8.length; i++) binary += String.fromCharCode(u8[i]);
         imageMap.set(s.id, `data:image/png;base64,${btoa(binary)}`);
@@ -4252,11 +4269,13 @@ function renderHtmlExportPlain({ title, sources, snippets, sections, ungrouped, 
   };
   const renderSnippet = (s) => {
     const path = s._pdfPath || "";
-    const filename = path.split("/").pop() || "?";
-    const href = path ? `file://${encodeURI(path)}#page=${s.page}` : "";
+    const isPasted = path === PASTED_PSEUDO_PATH;
+    const filename = isPasted ? "📋 Pasted" : (path.split("/").pop() || "?");
+    const href = (path && !isPasted) ? `file://${encodeURI(path)}#page=${s.page}` : "";
+    const loc = s.anchor ? `§ ${s.anchor}` : `p.${s.page}`;
     const cite = href
-      ? `<a href="${esc(href)}">${esc(filename)} p.${s.page}</a>`
-      : `${esc(filename)} p.${s.page}`;
+      ? `<a href="${esc(href)}">${esc(filename)} ${esc(loc)}</a>`
+      : `${esc(filename)} ${esc(loc)}`;
     let body;
     if (s.kind === "image" && imageMap.get(s.id)) {
       body = `<p><img src="${imageMap.get(s.id)}" alt="${esc(s.text || "")}"></p>`;
@@ -4278,7 +4297,7 @@ function renderHtmlExportPlain({ title, sources, snippets, sections, ungrouped, 
   out.push(`<h1>${esc(title)}</h1>`);
   out.push(`<p>${snippets.length} snippets · ${sections.size} groups${isWorkspace ? ` · ${sources.length} sources` : ""}</p>`);
   if (sources.length > 0) {
-    out.push(`<p><small>${sources.map((p) => esc(p.split("/").pop() || p)).join(" · ")}</small></p>`);
+    out.push(`<p><small>${sources.map((p) => esc(p === PASTED_PSEUDO_PATH ? "📋 Pasted" : (p.split("/").pop() || p))).join(" · ")}</small></p>`);
   }
   out.push(`<hr>`);
   for (const [gid, members] of sections) {
@@ -4365,7 +4384,7 @@ function renderHtmlExport({ title, sources, snippets, sections, ungrouped, image
     </section>`);
   }
 
-  const sourceList = sources.map((p) => esc(p.split("/").pop() || p)).join(" · ");
+  const sourceList = sources.map((p) => esc(p === PASTED_PSEUDO_PATH ? "📋 Pasted" : (p.split("/").pop() || p))).join(" · ");
 
   return `<!doctype html>
 <html lang="en">
