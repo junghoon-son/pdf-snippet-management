@@ -1162,6 +1162,53 @@ body.dragging-sticker * { cursor: grabbing !important; }
 }
 #recents-list li.active .recent-name { color: var(--accent); }
 #recents-list li.active .recent-folder { color: var(--text-dim); }
+
+.sidebar-section-count {
+  font-family: ui-monospace, "SF Mono", monospace;
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 0;
+  font-weight: 500;
+}
+#clipped-list .clipped-empty {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+  padding: 8px 14px;
+  cursor: default;
+}
+#clipped-list .clipped-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 11px;
+  color: var(--text);
+  cursor: pointer;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 35%, transparent);
+}
+#clipped-list .clipped-item:last-child { border-bottom: none; }
+#clipped-list .clipped-item:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+#clipped-list .clipped-icon {
+  flex-shrink: 0;
+  font-size: 11px;
+  opacity: 0.75;
+}
+#clipped-list .clipped-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes clipped-flash {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; background: var(--card-bg, var(--panel)); }
+  30% { box-shadow: 0 0 0 2px var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--card-bg, var(--panel))); }
+}
+.snippet.flash {
+  animation: clipped-flash 900ms ease-out;
+}
 #file-list li, #recents-list li {
   padding: 6px 14px;
   cursor: pointer;

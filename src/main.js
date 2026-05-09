@@ -1059,6 +1059,49 @@ function renderRecents() {
   refreshFileExistence();
 }
 
+function renderClipped() {
+  const list = document.getElementById("clipped-list");
+  const countEl = document.getElementById("clipped-count");
+  if (!list) return;
+  list.innerHTML = "";
+  const items = (state.workspace?.pastedSnippets) || [];
+  countEl.textContent = items.length ? String(items.length) : "";
+  if (items.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "clipped-empty";
+    empty.textContent = "Pastes appear here";
+    list.appendChild(empty);
+    return;
+  }
+  for (const s of items) {
+    const li = document.createElement("li");
+    li.className = "clipped-item";
+    li.dataset.snippetId = s.id;
+    const icon = document.createElement("span");
+    icon.className = "clipped-icon";
+    icon.textContent = s.kind === "image" ? "🖼" : "📋";
+    const label = document.createElement("span");
+    label.className = "clipped-label";
+    if (s.kind === "image") {
+      label.textContent = "Image clip";
+    } else {
+      const text = (s.text || "").replace(/\s+/g, " ").trim();
+      label.textContent = text.length > 60 ? text.slice(0, 59) + "…" : text;
+    }
+    li.append(icon, label);
+    li.title = s.kind === "image" ? "Pasted image" : (s.text || "");
+    li.addEventListener("click", () => {
+      const card = snippetsListEl.querySelector(`.snippet[data-snippet-id="${s.id}"]`);
+      if (card) {
+        card.scrollIntoView({ behavior: "smooth", block: "center" });
+        card.classList.add("flash");
+        setTimeout(() => card.classList.remove("flash"), 900);
+      }
+    });
+    list.appendChild(li);
+  }
+}
+
 document.getElementById("clear-recents").addEventListener("click", () => {
   try { localStorage.removeItem(RECENTS_KEY); } catch {}
   renderRecents();
@@ -1068,6 +1111,7 @@ renderRecents();
 renderWorkspaceTabs();
 renderWorkspace();
 renderGroups();
+renderClipped();
 
 document.getElementById("groups-collapse").addEventListener("click", () => {
   document.getElementById("groups-panel").classList.toggle("collapsed");
@@ -3163,6 +3207,7 @@ async function refreshActiveView() {
     await renderSnippets();
   }
   renderGroups();
+  renderClipped();
 }
 
 function applyLineageFilter() {
