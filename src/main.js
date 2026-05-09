@@ -2542,7 +2542,10 @@ async function renderSnippets() {
     });
     const actions = document.createElement("span");
     actions.className = "actions";
-    if (isCrossDoc) actions.append(share, copy);
+    // Cross-doc snippets normally hide delete (you'd need the source doc
+    // open to remove from its sidecar). Pasted snippets are an exception —
+    // they live in the workspace, deletable from anywhere.
+    if (isCrossDoc && ownerPath !== PASTED_PSEUDO_PATH) actions.append(share, copy);
     else actions.append(share, copy, del);
     meta.append(label, actions);
 
