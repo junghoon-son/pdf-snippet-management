@@ -655,6 +655,74 @@ body.pane-max #snippets-pane { border-left: none; }
   white-space: nowrap;
 }
 .tpl-apply:hover { filter: brightness(1.08); }
+
+.tpl-actions {
+  grid-area: apply;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.tpl-delete {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  font-size: 10px;
+  font-family: inherit;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.tpl-delete:hover { color: #c44; border-color: #c44; }
+
+.tpl-item-user .tpl-title { color: var(--accent-deep, var(--accent)); }
+.tpl-user-tag {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  padding: 1px 6px;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+
+.tpl-savebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 6px 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.tpl-savebar-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  flex: 1;
+  line-height: 1.4;
+}
+.tpl-savebtn {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  padding: 7px 14px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tpl-savebtn:hover { border-color: var(--accent); color: var(--accent); }
 #templates-close {
   background: transparent;
   border: 1px solid var(--border);

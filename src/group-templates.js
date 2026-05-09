@@ -127,5 +127,49 @@ export const GROUP_TEMPLATES = [
 ];
 
 export function findTemplate(id) {
-  return GROUP_TEMPLATES.find((t) => t.id === id) || null;
+  const all = [...GROUP_TEMPLATES, ...loadUserTemplates()];
+  return all.find((t) => t.id === id) || null;
+}
+
+// User templates — saved by the user, persisted in localStorage. Listed
+// alongside the built-ins. Built-ins are read-only; user templates can be
+// renamed and deleted from the templates modal.
+const USER_TEMPLATES_KEY = "marklee-user-templates";
+
+export function loadUserTemplates() {
+  try {
+    const raw = localStorage.getItem(USER_TEMPLATES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveUserTemplates(list) {
+  try {
+    localStorage.setItem(USER_TEMPLATES_KEY, JSON.stringify(list || []));
+  } catch (err) {
+    console.warn("[group-templates] save failed", err);
+  }
+}
+
+export function addUserTemplate(tpl) {
+  const list = loadUserTemplates();
+  list.push(tpl);
+  saveUserTemplates(list);
+}
+
+export function deleteUserTemplate(id) {
+  const list = loadUserTemplates().filter((t) => t.id !== id);
+  saveUserTemplates(list);
+}
+
+export function isBuiltinTemplate(id) {
+  return GROUP_TEMPLATES.some((t) => t.id === id);
+}
+
+export function listAllTemplates() {
+  return [...GROUP_TEMPLATES, ...loadUserTemplates()];
 }

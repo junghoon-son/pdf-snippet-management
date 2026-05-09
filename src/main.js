@@ -20,7 +20,14 @@ import { TauriStore } from "./storage/tauri-store.js";
 import { FsaStore } from "./storage/fsa-store.js";
 import { computeMarkRank, rankPercentiles } from "./markrank.js";
 import { buildPermalink, parsePermalink } from "./marklee-permalink.js";
-import { GROUP_TEMPLATES, findTemplate } from "./group-templates.js";
+import {
+  GROUP_TEMPLATES,
+  findTemplate,
+  listAllTemplates,
+  addUserTemplate,
+  deleteUserTemplate,
+  isBuiltinTemplate,
+} from "./group-templates.js";
 
 const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
 const fsaStore = IS_TAURI ? null : new FsaStore();
@@ -1106,16 +1113,45 @@ document.addEventListener("keydown", (e) => {
 function openTemplatesModal() {
   const modal = document.getElementById("templates-modal");
   const body = document.getElementById("templates-body");
+  renderTemplatesModalBody(body);
+  modal.hidden = false;
+}
+
+function renderTemplatesModalBody(body) {
   body.innerHTML = "";
-  for (const tpl of GROUP_TEMPLATES) {
+
+  // "Save current as template" — top of the modal so it's always reachable
+  const saveBar = document.createElement("div");
+  saveBar.className = "tpl-savebar";
+  const saveLabel = document.createElement("div");
+  saveLabel.className = "tpl-savebar-label";
+  saveLabel.innerHTML = "Save the current workspace's groups as a reusable template";
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "tpl-savebtn";
+  saveBtn.textContent = "Save current as template";
+  saveBtn.addEventListener("click", () => saveCurrentGroupsAsTemplate(body));
+  saveBar.append(saveLabel, saveBtn);
+  body.appendChild(saveBar);
+
+  for (const tpl of listAllTemplates()) {
     const item = document.createElement("div");
     item.className = "tpl-item";
+    if (!isBuiltinTemplate(tpl.id)) item.classList.add("tpl-item-user");
+
     const title = document.createElement("div");
     title.className = "tpl-title";
     title.textContent = tpl.name;
+    if (!isBuiltinTemplate(tpl.id)) {
+      const userTag = document.createElement("span");
+      userTag.className = "tpl-user-tag";
+      userTag.textContent = "yours";
+      title.appendChild(userTag);
+    }
+
     const desc = document.createElement("div");
     desc.className = "tpl-desc";
-    desc.textContent = tpl.description;
+    desc.textContent = tpl.description || "";
+
     const preview = document.createElement("div");
     preview.className = "tpl-preview";
     for (const g of tpl.groups) {
@@ -1129,6 +1165,9 @@ function openTemplatesModal() {
       pill.append(dot, name);
       preview.appendChild(pill);
     }
+
+    const actions = document.createElement("div");
+    actions.className = "tpl-actions";
     const apply = document.createElement("button");
     apply.className = "tpl-apply";
     apply.textContent = "Apply";
@@ -1136,10 +1175,45 @@ function openTemplatesModal() {
       applyGroupTemplate(tpl.id);
       closeTemplatesModal();
     });
-    item.append(title, desc, preview, apply);
+    actions.appendChild(apply);
+    if (!isBuiltinTemplate(tpl.id)) {
+      const del = document.createElement("button");
+      del.className = "tpl-delete";
+      del.textContent = "Delete";
+      del.title = "Delete this user template (built-ins can't be deleted)";
+      del.addEventListener("click", () => {
+        if (!confirm(`Delete template "${tpl.name}"? This doesn't affect any groups already created from it.`)) return;
+        deleteUserTemplate(tpl.id);
+        renderTemplatesModalBody(body);
+      });
+      actions.appendChild(del);
+    }
+
+    item.append(title, desc, preview, actions);
     body.appendChild(item);
   }
-  modal.hidden = false;
+}
+
+function saveCurrentGroupsAsTemplate(body) {
+  const groupsMeta = state.groupsMeta || [];
+  if (groupsMeta.length === 0) {
+    alert("This workspace has no groups yet. Create a few groups first, then save them as a template.");
+    return;
+  }
+  const name = prompt("Template name", `${state.workspace.name || "My"} groups`);
+  if (!name || !name.trim()) return;
+  const description = prompt("Short description (optional)", "") || "";
+  const tpl = {
+    id: `user-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    name: name.trim(),
+    description: description.trim(),
+    groups: groupsMeta.map((g, i) => ({
+      name: g.name || `Group ${i + 1}`,
+      slot: typeof g.paletteSlot === "number" ? g.paletteSlot : (i % GROUP_PALETTE_SLOTS),
+    })),
+  };
+  addUserTemplate(tpl);
+  renderTemplatesModalBody(body);
 }
 
 function closeTemplatesModal() {
