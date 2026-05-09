@@ -2345,28 +2345,30 @@ function updateHoverConnector() {
     cardRect.right  > listVis.left && cardRect.left < listVis.right;
   if (!hVisible || !cVisible) { hideHoverConnector(); return; }
 
-  // Orthogonal elbow with a wider gap on both ends so the channel reads
-  // as a corridor between document and card, not as a poke at either.
-  const GAP = 20;
-  const x1 = hRect.right + GAP;
+  // Asymmetric gap: small gap on the doc side so we don't crowd the text,
+  // zero gap on the card side so the connector visibly *touches* the card.
+  const DOC_GAP = 12;
+  const x1 = hRect.right + DOC_GAP;
   const y1 = hRect.top + hRect.height / 2;
-  const x2 = cardRect.left - GAP;
+  const x2 = cardRect.left;
   const y2 = cardRect.top + cardRect.height / 2;
-  // Clamp endpoints to within their respective pane viewports so the elbow
-  // never extends past the gutter into chrome.
   const cy1 = Math.max(viewerVis.top + 4, Math.min(viewerVis.bottom - 4, y1));
   const cy2 = Math.max(listVis.top + 4, Math.min(listVis.bottom - 4, y2));
   const midX = x1 + (x2 - x1) * 0.5;
   const path = `M ${x1} ${cy1} H ${midX} V ${cy2} H ${x2}`;
   const svg = ensureConnectorSvg();
   for (const p of svg.querySelectorAll("path")) p.setAttribute("d", path);
-  // Position the gradient so it runs along the channel — strong at the
-  // document side, fading to soft as it absorbs into the card.
   const grad = svg.querySelector("#hover-conn-grad");
   grad.setAttribute("x1", x1);
   grad.setAttribute("y1", cy1);
   grad.setAttribute("x2", x2);
   grad.setAttribute("y2", cy2);
+  // "Far" mode: when the vertical leg is long enough that the connector
+  // is bridging non-adjacent regions, switch to a dashed beam so the
+  // line reads as "elsewhere on the page" rather than insisting it's a
+  // tight neighbor.
+  const verticalSpan = Math.abs(cy2 - cy1);
+  svg.classList.toggle("far", verticalSpan > 240);
   svg.classList.add("active");
 }
 // Recompute on scroll of either pane while hovering. Throttled via rAF.

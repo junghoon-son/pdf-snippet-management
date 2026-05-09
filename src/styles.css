@@ -1593,46 +1593,60 @@ body.dragging-sticker * { cursor: grabbing !important; }
   will-change: opacity;
   transform: translateZ(0);
 }
-.hover-connector.active { opacity: 0.95; }
+.hover-connector.active { opacity: 0.85; }
 
-/* Three stroked layers form the "channel": wide soft halo (the glow you
-   see between the doc and card), a mid-width beam carrying the gradient
-   that fades into the card, and a thin sharp core for definition. */
+/* Three stroked layers form the "channel": wide soft halo, mid-width beam
+   carrying the gradient that fades into the card, and a thin sharp core
+   for definition. Dialed-back vs the previous pass — the connector is a
+   hint, not a spotlight. */
 .hover-connector-halo {
   stroke: var(--accent);
-  stroke-opacity: 0.18;
-  stroke-width: 18;
+  stroke-opacity: 0.10;
+  stroke-width: 14;
   stroke-linecap: round;
   stroke-linejoin: round;
-  filter: blur(6px);
+  filter: blur(5px);
 }
 .hover-connector-beam {
-  stroke-width: 7;
+  stroke-width: 5;
   stroke-linecap: round;
   stroke-linejoin: round;
   /* stroke supplied via url(#hover-conn-grad) */
 }
 .hover-connector-path {
   stroke: var(--accent);
-  stroke-width: 1.4;
-  stroke-opacity: 0.85;
+  stroke-width: 1.2;
+  stroke-opacity: 0.6;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-/* Gradient stops — strong at the doc side, fading to translucent into
-   the card. Theme-color consistent via var(--accent). */
-.hover-conn-stop-doc  { stop-color: var(--accent); stop-opacity: 0.55; }
-.hover-conn-stop-mid  { stop-color: var(--accent); stop-opacity: 0.30; }
+/* Gradient stops — quieter than before. Strong-ish at the doc side,
+   fading to fully transparent into the card so the beam visually
+   absorbs into the card edge instead of touching it with a hard line. */
+.hover-conn-stop-doc  { stop-color: var(--accent); stop-opacity: 0.40; }
+.hover-conn-stop-mid  { stop-color: var(--accent); stop-opacity: 0.18; }
 .hover-conn-stop-card { stop-color: var(--accent); stop-opacity: 0.0; }
+
+/* "Far" mode: vertical span > 240px means the connector is bridging
+   regions that aren't next to each other. Drop the halo (looks weird
+   blurred over a long distance) and dash the visible strokes so the
+   line reads as "way over there" rather than "directly adjacent." */
+.hover-connector.far .hover-connector-halo { display: none; }
+.hover-connector.far .hover-connector-beam {
+  stroke-dasharray: 6 8;
+}
+.hover-connector.far .hover-connector-path {
+  stroke-dasharray: 2 6;
+}
 
 .hover-connector.active .hover-connector-halo,
 .hover-connector.active .hover-connector-beam,
 .hover-connector.active .hover-connector-path {
-  animation: connector-pulse 600ms ease-out;
+  animation: connector-pulse 500ms ease-out;
 }
 @keyframes connector-pulse {
   0%   { opacity: 0; }
-  60%  { opacity: 1; }
+  70%  { opacity: 1; }
   100% { opacity: 1; }
 }
 .snippet-page-footer {
