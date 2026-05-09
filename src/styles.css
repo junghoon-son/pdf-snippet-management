@@ -2616,6 +2616,17 @@ body[data-runtime="web"] #viewer-empty::after {
   line-height: 1.65;
   color: #1f1f1f;
 }
+.flow-doc .flow-plaintext {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 13.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin: 0;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
 .flow-doc h1, .flow-doc h2, .flow-doc h3, .flow-doc h4, .flow-doc h5, .flow-doc h6 {
   font-family: ui-sans-serif, -apple-system, system-ui;
   color: #1a1a1a;

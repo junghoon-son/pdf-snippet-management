@@ -24,6 +24,13 @@ export async function renderFlowDoc(container, source, kind) {
     const mammoth = await import("mammoth/mammoth.browser.js");
     const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
     html = result.value || "";
+  } else if (kind === "text") {
+    // Plain text — preserve whitespace + line breaks via <pre>; escape HTML
+    // so any "<script>" in the file renders as text, not markup.
+    const text = typeof source === "string"
+      ? source
+      : new TextDecoder("utf-8").decode(new Uint8Array(source));
+    html = `<pre class="flow-plaintext">${escapeHtml(text)}</pre>`;
   } else {
     html = `<pre>${escapeHtml(String(source || ""))}</pre>`;
   }

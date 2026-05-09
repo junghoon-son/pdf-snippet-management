@@ -87,7 +87,7 @@ async function locateMissingFile(oldPath, mode, folder) {
       newPath = await open({
         multiple: false,
         directory: false,
-        filters: [{ name: "Documents", extensions: ["pdf", "md", "markdown", "docx"] }],
+        filters: [{ name: "Documents", extensions: ["pdf", "md", "markdown", "docx", "txt", "text"] }],
       });
     } else {
       const file = await pickBrowserFile([{ description: "Document", accept: { "application/octet-stream": [".pdf", ".md", ".markdown", ".docx"] } }]);
@@ -177,6 +177,9 @@ function fileKindBadge(path) {
   } else if (kind === "docx") {
     span.textContent = "DOC";
     span.dataset.kind = "docx";
+  } else if (kind === "txt" || kind === "text") {
+    span.textContent = "TXT";
+    span.dataset.kind = "txt";
   } else {
     span.textContent = (kind || "·").toUpperCase().slice(0, 4);
     span.dataset.kind = "other";
@@ -219,7 +222,7 @@ async function pickBrowserFile(types) {
   });
 }
 
-const FLOW_EXTS = ["md", "markdown"];
+const FLOW_EXTS = ["md", "markdown", "txt", "text"];
 function detectKindFromPath(path) {
   const m = (path || "").toLowerCase().match(/\.([a-z0-9]+)$/);
   if (!m) return "pdf";
@@ -227,6 +230,7 @@ function detectKindFromPath(path) {
   if (ext === "pdf") return "pdf";
   if (ext === "md" || ext === "markdown") return "markdown";
   if (ext === "docx") return "docx";
+  if (ext === "txt" || ext === "text") return "text";
   return "pdf";
 }
 
@@ -523,7 +527,7 @@ document.getElementById("open-file").addEventListener("click", async () => {
   const path = await open({
     multiple: true,
     directory: false,
-    filters: [{ name: "Documents", extensions: ["pdf", "md", "markdown", "docx"] }],
+    filters: [{ name: "Documents", extensions: ["pdf", "md", "markdown", "docx", "txt", "text"] }],
   });
   if (!path) return;
   const paths = Array.isArray(path) ? path : [path];
@@ -1460,7 +1464,7 @@ async function loadAnyDocument(path) {
   const existing = await getStore().readAnnot(path);
   if (myToken !== docLoadToken) return;
 
-  let title = filename.replace(/\.(pdf|md|markdown|docx)$/i, "");
+  let title = filename.replace(/\.(pdf|md|markdown|docx|txt|text)$/i, "");
   let author = "";
 
   if (kind === "pdf") {
@@ -1479,6 +1483,12 @@ async function loadAnyDocument(path) {
     if (firstHeading) title = firstHeading[1].trim();
   } else if (kind === "docx") {
     state.flowDoc = { kind, bytes: new Uint8Array(bytes) };
+  } else if (kind === "text") {
+    const text = new TextDecoder("utf-8").decode(new Uint8Array(bytes));
+    state.flowDoc = { kind, text };
+    // First non-empty line as the title.
+    const firstLine = text.split(/\r?\n/).map((l) => l.trim()).find(Boolean);
+    if (firstLine) title = firstLine.slice(0, 120);
   }
 
   if (myToken !== docLoadToken) return;
@@ -1531,7 +1541,7 @@ async function loadAnyDocument(path) {
     } finally {
       viewerScroll.style.visibility = "";
     }
-  } else if (kind === "markdown") {
+  } else if (kind === "markdown" || kind === "text") {
     await FlowView.renderFlowDoc(viewerContainer, state.flowDoc.text, kind);
     if (myToken !== docLoadToken) return;
     state.flowZoom = loadZoomForDoc() ?? 1;
