@@ -2425,6 +2425,10 @@ function canonicalGroupIds() {
 }
 
 async function renderSnippets() {
+  // Preserve scroll position across rebuilds — the list is a flat re-render
+  // every time, so without this the user gets bounced to the top after any
+  // edit (delete, comment, group toggle, etc.).
+  const savedScrollTop = snippetsListEl.scrollTop;
   snippetsListEl.innerHTML = "";
   const isWorkspace = state.mapScope === "workspace";
   let source;
@@ -2750,6 +2754,11 @@ async function renderSnippets() {
 
     snippetsListEl.appendChild(li);
   });
+  // Restore scroll position after the list rebuild. Clamp to the new
+  // scrollable height in case the list shrank (e.g. delete + nothing
+  // below to scroll to).
+  const max = snippetsListEl.scrollHeight - snippetsListEl.clientHeight;
+  snippetsListEl.scrollTop = Math.min(savedScrollTop, Math.max(0, max));
 }
 
 function attachCardPressGesture(li, snippet) {
