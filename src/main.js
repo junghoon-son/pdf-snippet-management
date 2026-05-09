@@ -1904,10 +1904,11 @@ async function setScale(next) {
 
 function syncHorizontalOverflow() {
   // Toggle horizontal scroll on viewer-scroll only when content actually
-  // overflows. Avoids the cosmetic scrollbar at fit-width caused by
-  // sub-pixel rounding while still allowing pan when zoomed in.
+  // overflows. Tolerance of 8px so micro-rounding (panel resize gutters,
+  // sub-pixel render math, scrollbar gutter shifts) doesn't trip a
+  // cosmetic scrollbar at fit-width.
   requestAnimationFrame(() => {
-    const overflowsX = viewerContainer.scrollWidth > viewerScroll.clientWidth + 1;
+    const overflowsX = viewerContainer.scrollWidth > viewerScroll.clientWidth + 8;
     viewerScroll.classList.toggle("zoomed-overflow", overflowsX);
   });
 }
