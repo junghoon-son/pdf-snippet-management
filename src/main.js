@@ -954,9 +954,17 @@ async function undo() {
   if (!action) return;
   if (action.type === "add") {
     state.snippets = state.snippets.filter((s) => s.id !== action.id);
+    if (state.workspace?.pastedSnippets) {
+      state.workspace.pastedSnippets = state.workspace.pastedSnippets.filter((s) => s.id !== action.id);
+    }
   } else if (action.type === "delete") {
     state.snippets.splice(Math.min(action.index, state.snippets.length), 0, action.snippet);
+  } else if (action.type === "delete-pasted") {
+    if (!Array.isArray(state.workspace.pastedSnippets)) state.workspace.pastedSnippets = [];
+    const arr = state.workspace.pastedSnippets;
+    arr.splice(Math.min(action.index, arr.length), 0, action.snippet);
   }
+  saveAllWorkspaces();
   await persist();
   refreshActiveView();
   applyAllHighlights();
@@ -2483,6 +2491,23 @@ async function renderSnippets() {
     del.textContent = "delete";
     del.addEventListener("click", async (e) => {
       e.stopPropagation();
+      // Pasted snippets live on the workspace, not on a doc's sidecar.
+      if (ownerPath === PASTED_PSEUDO_PATH) {
+        const arr = state.workspace.pastedSnippets || [];
+        const i = arr.findIndex((x) => x.id === s.id);
+        if (i < 0) return;
+        const [removed] = arr.splice(i, 1);
+        undoStack.push({ type: "delete-pasted", snippet: removed, index: i });
+        if (removed.kind === "image" && removed.imagePath && removed._imageOwnerPath) {
+          try { await getStore().deleteClip(removed._imageOwnerPath, removed.imagePath); } catch {}
+          const cacheKey = `${removed._imageOwnerPath}::${removed.imagePath}`;
+          const cached = clipUrlCache.get(cacheKey);
+          if (cached) { URL.revokeObjectURL(cached); clipUrlCache.delete(cacheKey); }
+        }
+        saveAllWorkspaces();
+        refreshActiveView();
+        return;
+      }
       const index = state.snippets.findIndex((x) => x.id === s.id);
       if (index < 0) return;
       const [removed] = state.snippets.splice(index, 1);
