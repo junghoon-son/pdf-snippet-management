@@ -1116,6 +1116,9 @@ body.dragging-sticker * { cursor: grabbing !important; }
 .group-row.bubble-hidden .group-row-count { opacity: 0.5; font-style: italic; }
 .group-row.bubble-hidden .group-row-dot { opacity: 0.5; filter: grayscale(0.5); }
 .sidebar-section { display: flex; flex-direction: column; }
+.sidebar-section + .sidebar-section { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 8px; }
+#recents-list .recent-folder { cursor: pointer; transition: color 100ms ease; }
+#recents-list .recent-folder:hover { color: var(--accent); text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
 .sidebar-section-header {
   display: flex;
   justify-content: space-between;

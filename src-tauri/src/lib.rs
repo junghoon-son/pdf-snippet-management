@@ -265,6 +265,40 @@ fn global_groups_path() -> Result<PathBuf, String> {
 // ~/.marklee/ so it's workspace-agnostic and doesn't depend on any open
 // document.
 #[tauri::command]
+fn reveal_in_finder(path: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err(format!("path does not exist: {}", path));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", path))
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        // xdg-open opens the parent directory; most file managers don't
+        // support "select item" via CLI cleanly across distros.
+        let parent = p.parent().unwrap_or_else(|| Path::new("."));
+        std::process::Command::new("xdg-open")
+            .arg(parent)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn clipboard_doc_path() -> Result<String, String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
     let dir = Path::new(&home).join(".marklee");
@@ -454,7 +488,8 @@ pub fn run() {
             read_global_groups,
             write_global_groups,
             copy_image_to_clipboard,
-            clipboard_doc_path
+            clipboard_doc_path,
+            reveal_in_finder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

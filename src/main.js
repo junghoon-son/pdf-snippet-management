@@ -636,7 +636,9 @@ async function renderWorkspace() {
         state.workspace.currentPdfPath = null;
       }
       saveWorkspace();
-      for (const p of removedPaths) removeRecent(p);
+      // Workspace removal != recents removal. The user explicitly removed
+      // from workspace, but the doc itself still exists on disk and we
+      // want it findable under "Recent" for re-opening.
       renderWorkspace();
     });
 
@@ -707,7 +709,7 @@ async function renderWorkspace() {
           state.workspace.currentPdfPath = null;
         }
         saveWorkspace();
-        removeRecent(p);
+        // Don't drop from recents — see folder-remove handler above.
         renderWorkspace();
       });
       li.appendChild(x);
@@ -1038,6 +1040,14 @@ function renderRecents() {
     const folder = document.createElement("div");
     folder.className = "recent-folder";
     folder.textContent = parent;
+    folder.title = `Reveal in Finder: ${parent}`;
+    folder.addEventListener("click", (e) => {
+      // Click on the folder/path text reveals the file in Finder/Explorer
+      // instead of opening it in the app — cheaper way to peek at the
+      // surrounding directory.
+      e.stopPropagation();
+      revealInFinder(path);
+    });
     li.append(name, folder);
     li.addEventListener("click", async () => {
       if (li.classList.contains("missing")) {
@@ -1790,6 +1800,20 @@ const PASTED_PSEUDO_PATH = "marklee:pasted";
 // clips. Lives at ~/.marklee/clipboard. Derived clip dir is
 // ~/.marklee/.clipboard.clips/ via clip_dir_for. Resolved once per session.
 let _clipboardDocPath = null;
+async function revealInFinder(path) {
+  if (!IS_TAURI) {
+    console.warn("[reveal] only supported in Tauri build");
+    return;
+  }
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("reveal_in_finder", { path });
+  } catch (err) {
+    console.error("[reveal] failed", err);
+    alert(`Couldn't open in Finder:\n${err}`);
+  }
+}
+
 async function getClipboardDocPath() {
   if (_clipboardDocPath) return _clipboardDocPath;
   if (!IS_TAURI) return null; // FSA mode unsupported for now
