@@ -7,7 +7,9 @@
 
 ## Abstract
 
-Marklee is a portable, format-agnostic annotation format for documents. Annotations live in JSON sidecar files alongside source documents (PDF, Markdown, DOCX). They use **edit-tolerant text anchors** so they survive small changes to the source, carry a **directed labeled graph** of relationships between annotations, and define a **permalink URL grammar** for sharing a single annotation as a hyperlink.
+Marklee is a portable, format-agnostic annotation format for documents. Its core contribution is **edit-tolerant anchoring** — a normative algorithm that locates a quoted span inside a document even after the source has been edited. Annotations live in JSON sidecar files alongside source documents (PDF, Markdown, DOCX, plain text), carry a **directed labeled graph** of relationships between annotations, and define a **permalink URL grammar** for sharing a single anchor as a hyperlink.
+
+The anchoring algorithm doubles as a **verifier**: any text claimed to come from a source — whether quoted by a human, an LLM, or another tool — can be checked by attempting to anchor it. Real quotes resolve to a precise location; hallucinated quotes fail to anchor. This makes Marklee usable as the citation-grounding layer for LLM pipelines that today produce ungrounded text.
 
 The format also defines a centrality algorithm — **MarkRank** — that scores each annotation by graph centrality. The algorithm is to Marklee what PageRank is to the web: a normative ranking function over the data the format encodes.
 
@@ -21,7 +23,7 @@ The format is local-first and file-based: no server, no account, no proprietary 
 - Snippet schema for text and image annotations.
 - Edge schema for relationships between annotations.
 - Group schema for many-to-many tagging.
-- The anchor resolution algorithm (text + context + section path).
+- The anchor model and **anchoring algorithm** — edit-tolerant resolution of a quoted span to its source location (text + context + section path).
 - Content addressing of source documents (SHA-256).
 - Permalink URL grammar for sharing one annotation.
 - The MarkRank centrality algorithm over the annotation graph (Section 8).
@@ -74,7 +76,7 @@ A **group** is a tag-like overlay. A snippet MAY belong to zero or more groups.
 
 ### 2.6 Anchor
 
-An **anchor** is the locator that places a snippet within a (possibly edited) source document. See Section 4.
+An **anchor** is the locator that places a snippet within a (possibly edited) source document. **Anchoring** is the act of resolving an anchor to a concrete location in a document — text + context windows + optional section path are matched against the source via the algorithm in Section 4. The algorithm is also a verifier: it returns "orphaned" for spans that don't exist in the source, which is what makes Marklee usable for citation grounding (LLM output, automated extraction, third-party annotations) on top of human-authored notes.
 
 ## 3. Sidecar schema
 
@@ -186,9 +188,9 @@ Future versions MAY add fields. Readers MUST preserve unknown fields on round-tr
 }
 ```
 
-## 4. Anchor resolution
+## 4. Anchoring
 
-The **anchor resolution algorithm** locates where in a (possibly edited) source document a given snippet anchors. Implementations MUST attempt the following tiers in order, returning the first successful match:
+The **anchoring algorithm** is Marklee's central technical contribution. Given a quoted span — its `text`, optional `contextBefore` / `contextAfter` windows, and optional `anchor` (section path) — it locates where in a possibly-edited source document the span lives. Implementations MUST attempt the following tiers in order, returning the first successful match:
 
 ### Tier 1 — Exact text + context
 
@@ -343,9 +345,9 @@ The algorithm is a scoring function over a sidecar (or the union of sidecars in 
 | EPUB CFI | EPUB only | structural path | n/a | no | no | yes |
 
 Marklee's distinct contributions:
-1. Cross-format unified schema (PDF + flow docs in one model).
-2. Sidecar-first (no server required).
-3. Normative tier-based anchor resolution algorithm.
+1. **Edit-tolerant anchoring as a normative algorithm** — the only spec in this list that defines a tier-based resolution algorithm with explicit fallback ordering. Doubles as a verifier for any text claimed to come from a source.
+2. Cross-format unified schema (PDF + flow docs in one model).
+3. Sidecar-first (no server required).
 4. First-class labeled edges for graph reasoning.
 5. Permalink URL grammar that carries the anchor (not just the position).
 
