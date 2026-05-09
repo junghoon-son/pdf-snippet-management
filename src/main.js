@@ -1039,10 +1039,54 @@ document.getElementById("groups-collapse").addEventListener("click", () => {
   document.getElementById("groups-panel").classList.toggle("collapsed");
 });
 
-document.getElementById("groups-export").addEventListener("click", exportGroups);
-document.getElementById("groups-import").addEventListener("click", importGroups);
-document.getElementById("groups-import-ws").addEventListener("click", importGroupsFromWorkspace);
 document.getElementById("groups-template").addEventListener("click", openTemplatesModal);
+document.getElementById("groups-overflow").addEventListener("click", (e) => {
+  e.stopPropagation();
+  openGroupsOverflowMenu(e.currentTarget);
+});
+
+function openGroupsOverflowMenu(anchor) {
+  closeGroupsOverflow();
+  const pop = document.createElement("div");
+  pop.className = "groups-overflow-menu";
+  const items = [
+    { label: "Import from workspace…", fn: importGroupsFromWorkspace },
+    { label: "Import from JSON…",      fn: importGroups },
+    { label: "Export as JSON…",        fn: exportGroups },
+  ];
+  for (const item of items) {
+    const b = document.createElement("button");
+    b.className = "groups-overflow-item";
+    b.textContent = item.label;
+    b.addEventListener("click", () => { closeGroupsOverflow(); item.fn(); });
+    pop.appendChild(b);
+  }
+  document.body.appendChild(pop);
+  const r = anchor.getBoundingClientRect();
+  let left = r.right - pop.offsetWidth;
+  let top = r.bottom + 4;
+  if (left < 8) left = 8;
+  if (top + pop.offsetHeight > window.innerHeight - 8) top = r.top - pop.offsetHeight - 4;
+  pop.style.left = `${left}px`;
+  pop.style.top = `${top}px`;
+  _activeGroupsOverflow = pop;
+  setTimeout(() => {
+    document.addEventListener("click", _onGroupsOverflowOutside, true);
+    document.addEventListener("keydown", _onGroupsOverflowEsc, true);
+  }, 0);
+}
+let _activeGroupsOverflow = null;
+function closeGroupsOverflow() {
+  if (_activeGroupsOverflow) { _activeGroupsOverflow.remove(); _activeGroupsOverflow = null; }
+  document.removeEventListener("click", _onGroupsOverflowOutside, true);
+  document.removeEventListener("keydown", _onGroupsOverflowEsc, true);
+}
+function _onGroupsOverflowOutside(e) {
+  if (!_activeGroupsOverflow) return;
+  if (_activeGroupsOverflow.contains(e.target)) return;
+  closeGroupsOverflow();
+}
+function _onGroupsOverflowEsc(e) { if (e.key === "Escape") closeGroupsOverflow(); }
 document.getElementById("templates-close").addEventListener("click", closeTemplatesModal);
 document.querySelector("#templates-modal .modal-backdrop").addEventListener("click", closeTemplatesModal);
 document.addEventListener("keydown", (e) => {
@@ -2110,7 +2154,15 @@ async function renderSnippets() {
   const rankPct = rankPercentiles(rankScores);
   const linkedIds = new Set();
   for (const e of edgeSource) { linkedIds.add(e.source); linkedIds.add(e.target); }
-  let ordered = orderedSnippets(source).filter(snippetMatchesLocal);
+  // Filter out snippets whose ALL groups are hidden. Snippets with no groups
+  // pass through. Snippets with at least one visible group pass through.
+  const hiddenGroupIds = new Set((state.groupsMeta || []).filter((g) => g.hidden).map((g) => g.id));
+  const passesGroupFilter = (s) => {
+    const gs = s.groups || [];
+    if (gs.length === 0) return true;
+    return gs.some((gid) => !hiddenGroupIds.has(gid));
+  };
+  let ordered = orderedSnippets(source).filter(passesGroupFilter).filter(snippetMatchesLocal);
   if (state.snippetSort === "rank") {
     ordered = [...ordered].sort((a, b) => (rankScores.get(b.id) || 0) - (rankScores.get(a.id) || 0));
   }
@@ -2587,6 +2639,8 @@ async function setGroupHidden(id, hidden) {
   if (meta) meta.hidden = hidden;
   await persist();
   renderGroups();
+  refreshActiveView();
+  applyAllHighlights();
 }
 
 function lightenColor(c) {
@@ -2643,10 +2697,18 @@ function previewSnippetInPdf(s) {
 }
 
 function applyAllHighlights() {
+  // Filter out snippets whose groups are all hidden so highlights match
+  // what's visible in the snippets list.
+  const hidden = new Set((state.groupsMeta || []).filter((g) => g.hidden).map((g) => g.id));
+  const visible = state.snippets.filter((s) => {
+    const gs = s.groups || [];
+    if (gs.length === 0) return true;
+    return gs.some((gid) => !hidden.has(gid));
+  });
   if (state.source.kind === "pdf") {
-    applyHighlights(viewerContainer, state.snippets);
+    applyHighlights(viewerContainer, visible);
   } else if (state.source.kind === "markdown" || state.source.kind === "docx") {
-    FlowView.applyFlowHighlights(viewerContainer, state.snippets);
+    FlowView.applyFlowHighlights(viewerContainer, visible);
   }
 }
 
@@ -3209,13 +3271,14 @@ function renderGroups() {
       count.dataset.short = `${n}`;
     }
 
-    // Bubble-visibility checkbox — clearer than the previous filled/empty
-    // dot. Checked = group appears in the drag-to-group bubble overlay.
+    // Group-visibility checkbox. Checked = snippets in this group are
+    // shown in the list / lineage / highlights / drag-bubbles. Unchecked
+    // hides them everywhere (toggle, not destructive).
     const eye = document.createElement("input");
     eye.type = "checkbox";
     eye.className = "group-row-eye";
     eye.checked = !meta.hidden;
-    eye.title = meta.hidden ? "Hidden from drag-bubbles — click to show" : "Showing in drag-bubbles — click to hide";
+    eye.title = meta.hidden ? "Group hidden — click to show" : "Group visible — click to hide";
     eye.addEventListener("change", (e) => {
       e.stopPropagation();
       setGroupHidden(id, !eye.checked);
