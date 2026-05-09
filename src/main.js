@@ -2658,12 +2658,26 @@ async function renderSnippets() {
       ta.style.height = "auto";
       ta.style.height = ta.scrollHeight + "px";
     };
+    // Pasted snippets persist via saveAllWorkspaces (workspace-level
+    // localStorage), everything else goes through persist (per-doc
+    // sidecar). Pick the right writer for this snippet.
+    const isPasted = ownerPath === PASTED_PSEUDO_PATH;
+    const persistComment = () => {
+      if (isPasted) {
+        // s came from a spread copy in render; mutate the live workspace entry
+        const live = (state.workspace.pastedSnippets || []).find((x) => x.id === s.id);
+        if (live) live.comment = s.comment;
+        saveAllWorkspaces();
+      } else {
+        persist();
+      }
+    };
     let saveTimer;
     ta.addEventListener("input", () => {
       s.comment = ta.value;
       autoresize();
       clearTimeout(saveTimer);
-      saveTimer = setTimeout(persist, 300);
+      saveTimer = setTimeout(persistComment, 300);
     });
     ta.addEventListener("focus", autoresize);
     setTimeout(autoresize, 0);
@@ -2681,7 +2695,7 @@ async function renderSnippets() {
         s.comment = "";
         ta.replaceWith(addBtn);
         clearTimeout(saveTimer);
-        persist();
+        persistComment();
       }
     });
 
@@ -2690,7 +2704,10 @@ async function renderSnippets() {
     pageFooter.textContent = s.anchor ? `§ ${s.anchor}` : `p.${s.page}`;
     if (s.anchor) pageFooter.title = s.anchor;
 
-    if (isCrossDoc) {
+    // Pasted snippets are nominally cross-doc but live on the workspace
+    // and stay editable. Real cross-doc snippets (snippets from another
+    // open file) keep the readonly comment treatment.
+    if (isCrossDoc && ownerPath !== PASTED_PSEUDO_PATH) {
       const tail = s.comment
         ? Object.assign(document.createElement("div"), {
             className: "snippet-comment-readonly",
