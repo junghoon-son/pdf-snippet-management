@@ -1786,6 +1786,23 @@ document.addEventListener("paste", async (e) => {
 // its own document so pasted notes have their own source/umbrella.
 const PASTED_PSEUDO_PATH = "marklee:pasted";
 
+// Real on-disk placeholder doc used as the storage anchor for pasted image
+// clips. Lives at ~/.marklee/clipboard. Derived clip dir is
+// ~/.marklee/.clipboard.clips/ via clip_dir_for. Resolved once per session.
+let _clipboardDocPath = null;
+async function getClipboardDocPath() {
+  if (_clipboardDocPath) return _clipboardDocPath;
+  if (!IS_TAURI) return null; // FSA mode unsupported for now
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    _clipboardDocPath = await invoke("clipboard_doc_path");
+    return _clipboardDocPath;
+  } catch (err) {
+    console.warn("[clipboard] couldn't resolve clipboard doc path", err);
+    return null;
+  }
+}
+
 async function createPastedTextSnippet(text) {
   if (!Array.isArray(state.workspace.pastedSnippets)) state.workspace.pastedSnippets = [];
   const snippet = {
@@ -1807,20 +1824,21 @@ async function createPastedTextSnippet(text) {
 }
 
 async function createPastedImageSnippet(bytes, mime) {
-  // Image clips need disk storage; route through the active doc's clip dir
-  // when one is open. The snippet itself still belongs to the Pasted
-  // pseudo-source — imagePath is recorded as absolute so it loads regardless
-  // of which doc is active.
-  if (!state.currentPdfPath) {
+  // Pasted image clips go to ~/.marklee/.clipboard.clips/ via the
+  // placeholder clipboard doc — workspace-agnostic, no open document
+  // required. The snippet records the placeholder path so the loader
+  // can resolve the bytes later.
+  const clipboardDoc = await getClipboardDocPath();
+  if (!clipboardDoc) {
     flashSaveIndicator("error");
-    console.warn("[paste] image paste requires an open document for clip storage");
+    console.warn("[paste] image paste needs Tauri (clipboard storage)");
     return;
   }
   if (!Array.isArray(state.workspace.pastedSnippets)) state.workspace.pastedSnippets = [];
   const id = crypto.randomUUID();
   let imagePath;
   try {
-    imagePath = await getStore().writeClip(state.currentPdfPath, id, bytes);
+    imagePath = await getStore().writeClip(clipboardDoc, id, bytes);
   } catch (err) {
     console.error("[paste] writeClip failed", err);
     return;
@@ -1832,7 +1850,7 @@ async function createPastedImageSnippet(bytes, mime) {
     text: "Pasted image",
     rects: [],
     imagePath,
-    _imageOwnerPath: state.currentPdfPath,
+    _imageOwnerPath: clipboardDoc,
     comment: "",
     created: new Date().toISOString(),
     groups: [],

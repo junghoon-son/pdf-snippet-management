@@ -259,6 +259,19 @@ fn global_groups_path() -> Result<PathBuf, String> {
     Ok(dir.join("groups.json"))
 }
 
+// Placeholder "clipboard doc" path used as the source-path argument to
+// write_clip / read_clip for pasted snippets. No actual file is written
+// at this path — only its derived clip directory is used. Lives under
+// ~/.marklee/ so it's workspace-agnostic and doesn't depend on any open
+// document.
+#[tauri::command]
+fn clipboard_doc_path() -> Result<String, String> {
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    let dir = Path::new(&home).join(".marklee");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir.join("clipboard").to_string_lossy().to_string())
+}
+
 #[tauri::command]
 fn read_global_groups() -> Result<Vec<GroupMeta>, String> {
     let p = global_groups_path()?;
@@ -440,7 +453,8 @@ pub fn run() {
             check_paths,
             read_global_groups,
             write_global_groups,
-            copy_image_to_clipboard
+            copy_image_to_clipboard,
+            clipboard_doc_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
