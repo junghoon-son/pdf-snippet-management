@@ -1598,9 +1598,13 @@ document.addEventListener("paste", async (e) => {
   // paste behavior win.
   const tag = (e.target?.tagName || "").toUpperCase();
   if (tag === "INPUT" || tag === "TEXTAREA" || e.target?.isContentEditable) return;
-  if (!state.currentPdfPath) return;
+  if (!state.workspace) return;
   const cd = e.clipboardData;
-  if (!cd) return;
+  if (!cd) {
+    console.warn("[paste] no clipboardData on event");
+    return;
+  }
+  console.log("[paste] received", { types: cd.types, items: [...(cd.items || [])].map((it) => `${it.kind}/${it.type}`) });
 
   // Image first — most clipboard images come from screenshots.
   for (const item of cd.items || []) {
@@ -1619,7 +1623,10 @@ document.addEventListener("paste", async (e) => {
   }
   // Text fallback.
   const text = (cd.getData("text/plain") || "").trim();
-  if (!text) return;
+  if (!text) {
+    console.warn("[paste] no text/plain in clipboard");
+    return;
+  }
   e.preventDefault();
   await createPastedTextSnippet(text);
 });
@@ -2259,7 +2266,11 @@ async function renderSnippets() {
     source = data.snippets;
     edgeSource = data.edges || [];
   } else {
-    source = state.snippets;
+    // Doc scope: current doc's snippets + workspace-level pasted snippets so
+    // a user who just pasted doesn't see "nothing happened".
+    const pasted = (state.workspace?.pastedSnippets || []).map((s) =>
+      ({ ...s, _pdfPath: PASTED_PSEUDO_PATH }));
+    source = [...state.snippets, ...pasted];
     edgeSource = state.edges || [];
   }
   const rankScores = computeMarkRank(source, edgeSource);
@@ -2324,7 +2335,9 @@ async function renderSnippets() {
     }
 
     const ownerPath = s._pdfPath || state.currentPdfPath;
-    const isCrossDoc = isWorkspace && ownerPath && ownerPath !== state.currentPdfPath;
+    // Show the cross-doc badge for any snippet not from the active document
+    // — workspace scope shows other docs, doc scope shows pasted snippets.
+    const isCrossDoc = ownerPath && ownerPath !== state.currentPdfPath;
     const meta = document.createElement("div");
     meta.className = "meta";
     const label = document.createElement("span");
