@@ -2266,10 +2266,41 @@ function ensureConnectorSvg() {
   svg = document.createElementNS(NS, "svg");
   svg.id = "hover-connector";
   svg.classList.add("hover-connector");
-  const path = document.createElementNS(NS, "path");
-  path.classList.add("hover-connector-path");
-  path.setAttribute("fill", "none");
-  svg.appendChild(path);
+
+  // Gradient that fades from "anchored at the document" to "absorbed into
+  // the card." Direction is set per render via x1/x2 so the fade lines
+  // up with the connector's actual span.
+  const defs = document.createElementNS(NS, "defs");
+  const grad = document.createElementNS(NS, "linearGradient");
+  grad.setAttribute("id", "hover-conn-grad");
+  grad.setAttribute("gradientUnits", "userSpaceOnUse");
+  const stop1 = document.createElementNS(NS, "stop");
+  stop1.setAttribute("offset", "0%");
+  stop1.setAttribute("class", "hover-conn-stop-doc");
+  const stop2 = document.createElementNS(NS, "stop");
+  stop2.setAttribute("offset", "60%");
+  stop2.setAttribute("class", "hover-conn-stop-mid");
+  const stop3 = document.createElementNS(NS, "stop");
+  stop3.setAttribute("offset", "100%");
+  stop3.setAttribute("class", "hover-conn-stop-card");
+  grad.append(stop1, stop2, stop3);
+  defs.appendChild(grad);
+  svg.appendChild(defs);
+
+  // Three layers stacked: wide soft halo (channel glow) → mid stroke
+  // (the visible beam) → thin bright core (sharp center line).
+  const halo = document.createElementNS(NS, "path");
+  halo.classList.add("hover-connector-halo");
+  halo.setAttribute("fill", "none");
+  const beam = document.createElementNS(NS, "path");
+  beam.classList.add("hover-connector-beam");
+  beam.setAttribute("fill", "none");
+  beam.setAttribute("stroke", "url(#hover-conn-grad)");
+  const core = document.createElementNS(NS, "path");
+  core.classList.add("hover-connector-path");
+  core.setAttribute("fill", "none");
+  svg.append(halo, beam, core);
+
   document.body.appendChild(svg);
   return svg;
 }
@@ -2314,8 +2345,9 @@ function updateHoverConnector() {
     cardRect.right  > listVis.left && cardRect.left < listVis.right;
   if (!hVisible || !cVisible) { hideHoverConnector(); return; }
 
-  // Orthogonal elbow with 8px gap on both ends.
-  const GAP = 8;
+  // Orthogonal elbow with a wider gap on both ends so the channel reads
+  // as a corridor between document and card, not as a poke at either.
+  const GAP = 20;
   const x1 = hRect.right + GAP;
   const y1 = hRect.top + hRect.height / 2;
   const x2 = cardRect.left - GAP;
@@ -2327,7 +2359,14 @@ function updateHoverConnector() {
   const midX = x1 + (x2 - x1) * 0.5;
   const path = `M ${x1} ${cy1} H ${midX} V ${cy2} H ${x2}`;
   const svg = ensureConnectorSvg();
-  svg.querySelector("path").setAttribute("d", path);
+  for (const p of svg.querySelectorAll("path")) p.setAttribute("d", path);
+  // Position the gradient so it runs along the channel — strong at the
+  // document side, fading to soft as it absorbs into the card.
+  const grad = svg.querySelector("#hover-conn-grad");
+  grad.setAttribute("x1", x1);
+  grad.setAttribute("y1", cy1);
+  grad.setAttribute("x2", x2);
+  grad.setAttribute("y2", cy2);
   svg.classList.add("active");
 }
 // Recompute on scroll of either pane while hovering. Throttled via rAF.

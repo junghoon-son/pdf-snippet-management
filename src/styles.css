@@ -1593,25 +1593,47 @@ body.dragging-sticker * { cursor: grabbing !important; }
   will-change: opacity;
   transform: translateZ(0);
 }
-.hover-connector.active { opacity: 0.55; }
-.hover-connector-path {
+.hover-connector.active { opacity: 0.95; }
+
+/* Three stroked layers form the "channel": wide soft halo (the glow you
+   see between the doc and card), a mid-width beam carrying the gradient
+   that fades into the card, and a thin sharp core for definition. */
+.hover-connector-halo {
   stroke: var(--accent);
-  stroke-width: 1.6;
+  stroke-opacity: 0.18;
+  stroke-width: 18;
   stroke-linecap: round;
   stroke-linejoin: round;
-  fill: none;
-  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 50%, transparent));
-  transition: stroke-width 180ms ease-out;
+  filter: blur(6px);
 }
+.hover-connector-beam {
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  /* stroke supplied via url(#hover-conn-grad) */
+}
+.hover-connector-path {
+  stroke: var(--accent);
+  stroke-width: 1.4;
+  stroke-opacity: 0.85;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* Gradient stops — strong at the doc side, fading to translucent into
+   the card. Theme-color consistent via var(--accent). */
+.hover-conn-stop-doc  { stop-color: var(--accent); stop-opacity: 0.55; }
+.hover-conn-stop-mid  { stop-color: var(--accent); stop-opacity: 0.30; }
+.hover-conn-stop-card { stop-color: var(--accent); stop-opacity: 0.0; }
+
+.hover-connector.active .hover-connector-halo,
+.hover-connector.active .hover-connector-beam,
 .hover-connector.active .hover-connector-path {
-  /* Gentle "draw in" — start a hair thinner, settle to full width.
-     Single transition triggered by the .active class, no JS animation loop. */
   animation: connector-pulse 600ms ease-out;
 }
 @keyframes connector-pulse {
-  0%   { stroke-width: 0.8; opacity: 0.0; }
-  60%  { stroke-width: 1.6; opacity: 1.0; }
-  100% { stroke-width: 1.6; opacity: 1.0; }
+  0%   { opacity: 0; }
+  60%  { opacity: 1; }
+  100% { opacity: 1; }
 }
 .snippet-page-footer {
   position: absolute;
