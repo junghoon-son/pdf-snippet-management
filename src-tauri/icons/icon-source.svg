@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Marklee app icon — page with three colored tabs.
+  1024×1024 base. Generate the icon set with:
+    bun tauri icon src-tauri/icons/icon-source.svg
+  Tauri produces 32x32.png / 128x128.png / 128x128@2x.png / icon.icns / icon.ico
+  from this source automatically.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- Soft warm cream backdrop with subtle vignette -->
+    <radialGradient id="bg" cx="50%" cy="35%" r="80%">
+      <stop offset="0%"  stop-color="#fdf9ef"/>
+      <stop offset="100%" stop-color="#f0e9d6"/>
+    </radialGradient>
+
+    <!-- Page surface with subtle vertical highlight -->
+    <linearGradient id="page" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f6f1e2"/>
+    </linearGradient>
+
+    <!-- Tab colors — map to the brand dot's teal → pink → purple gradient -->
+    <linearGradient id="tab1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#3fc4a8"/>
+      <stop offset="100%" stop-color="#2ea58c"/>
+    </linearGradient>
+    <linearGradient id="tab2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#ff5d9e"/>
+      <stop offset="100%" stop-color="#ff3b8a"/>
+    </linearGradient>
+    <linearGradient id="tab3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#a78bfa"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+
+    <!-- Soft drop shadow for the page -->
+    <filter id="pageShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14"/>
+      <feOffset dx="0" dy="8" result="shadow"/>
+      <feComponentTransfer in="shadow" result="shadow">
+        <feFuncA type="linear" slope="0.18"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode in="shadow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Tab shadow -->
+    <filter id="tabShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+      <feOffset dx="0" dy="4" result="shadow"/>
+      <feComponentTransfer in="shadow" result="shadow">
+        <feFuncA type="linear" slope="0.20"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode in="shadow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Backdrop with rounded corners (macOS / iOS treat the icon as a squircle;
+       rounded corners give a graceful look on platforms that don't mask) -->
+  <rect x="0" y="0" width="1024" height="1024" rx="200" ry="200" fill="url(#bg)"/>
+
+  <!-- Page body — slight rotation gives the icon liveliness. Centered visually
+       leaving room for tabs at the top. -->
+  <g transform="translate(512 540) rotate(-3)" filter="url(#pageShadow)">
+    <rect x="-280" y="-340" width="560" height="700" rx="22" ry="22"
+          fill="url(#page)" stroke="#d8d2bf" stroke-width="3"/>
+
+    <!-- Document text lines (suggesting text content) -->
+    <g fill="none" stroke="#c4bfae" stroke-width="6" stroke-linecap="round">
+      <line x1="-220" y1="-220" x2="200" y2="-220"/>
+      <line x1="-220" y1="-180" x2="170" y2="-180"/>
+      <line x1="-220" y1="-140" x2="220" y2="-140"/>
+      <line x1="-220" y1="-100" x2="190" y2="-100"/>
+      <!-- Highlighted line — yellow rect underlining -->
+      <rect x="-220" y="-72" width="380" height="22" rx="3"
+            fill="rgba(255, 215, 90, 0.55)" stroke="none"/>
+      <line x1="-220" y1="-60" x2="160" y2="-60"/>
+      <line x1="-220" y1="-20" x2="220" y2="-20"/>
+      <line x1="-220" y1="20"  x2="180" y2="20"/>
+      <line x1="-220" y1="60"  x2="220" y2="60"/>
+      <line x1="-220" y1="100" x2="200" y2="100"/>
+      <line x1="-220" y1="140" x2="170" y2="140"/>
+      <line x1="-220" y1="180" x2="220" y2="180"/>
+      <line x1="-220" y1="220" x2="190" y2="220"/>
+      <line x1="-220" y1="260" x2="160" y2="260"/>
+      <line x1="-220" y1="300" x2="220" y2="300"/>
+    </g>
+  </g>
+
+  <!-- Three sticker tabs poking out the top of the page.
+       Different heights + colors so the icon reads instantly at small sizes. -->
+  <g filter="url(#tabShadow)">
+    <!-- Tab 1: leftmost, teal, tallest -->
+    <g transform="translate(312 178) rotate(-3)">
+      <rect x="0" y="0" width="116" height="92" rx="8" ry="8" fill="url(#tab1)"/>
+      <rect x="0" y="0" width="116" height="92" rx="8" ry="8"
+            fill="none" stroke="#1f8270" stroke-width="2.5" stroke-opacity="0.3"/>
+    </g>
+    <!-- Tab 2: middle, pink, medium -->
+    <g transform="translate(440 162) rotate(-3)">
+      <rect x="0" y="0" width="116" height="118" rx="8" ry="8" fill="url(#tab2)"/>
+      <rect x="0" y="0" width="116" height="118" rx="8" ry="8"
+            fill="none" stroke="#c91d6e" stroke-width="2.5" stroke-opacity="0.3"/>
+    </g>
+    <!-- Tab 3: rightmost, purple, shortest -->
+    <g transform="translate(568 192) rotate(-3)">
+      <rect x="0" y="0" width="116" height="80" rx="8" ry="8" fill="url(#tab3)"/>
+      <rect x="0" y="0" width="116" height="80" rx="8" ry="8"
+            fill="none" stroke="#6d3ed4" stroke-width="2.5" stroke-opacity="0.3"/>
+    </g>
+  </g>
+</svg>
