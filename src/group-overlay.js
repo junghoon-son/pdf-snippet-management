@@ -22,6 +22,43 @@ function pillWidth(label) {
   return Math.max(PILL_MIN_W, Math.min(PILL_MAX_W, PILL_PAD_X * 2 + len * CHAR_W));
 }
 
+// Push any input color into a "neon Post-it" zone for the drag overlay
+// — saturation maxed, lightness locked to a punchy mid-tone. Hue is
+// preserved so each group is still recognizable. Doesn't try to match
+// the source palette swatch; the brief is "pop, not fidelity".
+function popColor(input) {
+  if (!input) return "hsl(280, 85%, 58%)";
+  let h, s, l;
+  const hsl = /hsla?\(\s*(\d+(?:\.\d+)?)[\s,]+(\d+(?:\.\d+)?)%[\s,]+(\d+(?:\.\d+)?)%/.exec(input);
+  if (hsl) {
+    h = +hsl[1]; s = +hsl[2]; l = +hsl[3];
+  } else {
+    const hex = String(input).trim().replace("#", "");
+    if (hex.length !== 3 && hex.length !== 6 && hex.length !== 8) return input;
+    const c = hex.length === 3 ? hex.split("").map((x) => x + x).join("") : hex.slice(0, 6);
+    const r = parseInt(c.slice(0, 2), 16) / 255;
+    const g = parseInt(c.slice(2, 4), 16) / 255;
+    const b = parseInt(c.slice(4, 6), 16) / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    l = (max + min) / 2;
+    if (max === min) { h = 0; s = 0; }
+    else {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      if (max === r) h = ((g - b) / d + (g < b ? 6 : 0));
+      else if (max === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h *= 60;
+    }
+    s *= 100;
+    l *= 100;
+  }
+  // Vivid Post-it band: saturation maxed, lightness in the 52–60 punch zone.
+  s = Math.max(90, s);
+  l = Math.max(52, Math.min(60, l));
+  return `hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`;
+}
+
 export function openGroupOverlay({ snippet, allSnippets, allGroups, container, anchor, groupColor, groupName, paneRect, dragMode = false }) {
   return new Promise((resolve) => {
     const overlay = container;
@@ -62,7 +99,7 @@ export function openGroupOverlay({ snippet, allSnippets, allGroups, container, a
         w,
         h,
         r: Math.max(w, h) / 2,
-        color: groupColor(id),
+        color: popColor(groupColor(id)),
         isMember: memberOf.has(id),
       };
     });

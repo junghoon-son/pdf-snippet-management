@@ -1942,19 +1942,18 @@ body.dragging-snippet .group-row:hover {
 #group-overlay .bubble .folder-shape rect {
   transition: filter 140ms ease-out, stroke-width 140ms, fill-opacity 140ms;
 }
-/* HDR-loud folders. Hard saturate + brightness boost via CSS filter so
-   colors POP off the dark backdrop, even at the cost of fidelity to the
-   palette swatches. Drop-shadow gives weight against the lighter
-   backdrop. */
+/* Folder colors come pre-popped from popColor() in JS — saturation
+   maxed, lightness locked to the 52–60 punch zone. Filter only adds
+   the shadow / weight. Saturate/brightness kept modest to avoid
+   blowing already-vivid HSL into clipping. */
 #group-overlay .bubble .folder-shape rect:first-child { fill-opacity: 1; }
 #group-overlay .bubble .folder-shape rect:nth-child(2) { fill-opacity: 1; }
 #group-overlay .bubble .folder-shape {
   filter:
-    saturate(2.4)
-    brightness(1.35)
-    contrast(1.08)
-    drop-shadow(0 2px 6px rgba(0, 0, 0, 0.20))
-    drop-shadow(0 0 0.5px rgba(255, 255, 255, 0.6));
+    saturate(1.1)
+    brightness(1.05)
+    drop-shadow(0 2px 6px rgba(0, 0, 0, 0.22))
+    drop-shadow(0 0 1px rgba(255, 255, 255, 0.7));
 }
 #group-overlay .bubble text {
   fill: #111;
@@ -1985,9 +1984,9 @@ body.dragging-snippet .group-row:hover {
 }
 #group-overlay .bubble.hot .folder-shape {
   filter:
-    saturate(2.8) brightness(1.5) contrast(1.12)
-    drop-shadow(0 3px 8px rgba(0, 0, 0, 0.25))
-    drop-shadow(0 0 16px rgba(46, 165, 140, 0.85))
+    saturate(1.25) brightness(1.18)
+    drop-shadow(0 3px 10px rgba(0, 0, 0, 0.28))
+    drop-shadow(0 0 18px rgba(46, 165, 140, 0.85))
     drop-shadow(0 0 4px rgba(46, 165, 140, 0.5));
 }
 #group-overlay .bubble.hot .folder-shape rect:first-child { stroke-width: 2; }
