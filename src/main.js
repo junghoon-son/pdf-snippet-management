@@ -2337,7 +2337,12 @@ function ensureConnectorSvg() {
 }
 function hideHoverConnector() {
   const svg = document.getElementById("hover-connector");
-  if (svg) svg.classList.remove("active");
+  if (svg) {
+    svg.classList.remove("active");
+    // Distance-fade sets svg.style.opacity inline; clear it so the CSS
+    // base rule (opacity: 0 when not .active) takes effect again.
+    svg.style.opacity = "";
+  }
 }
 function highlightRectForSnippet(snippetId) {
   const fmark = viewerContainer.querySelector(`mark.hl[data-snippet-id="${snippetId}"]`);
