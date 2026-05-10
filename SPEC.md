@@ -78,13 +78,31 @@ A **group** is a tag-like overlay. A snippet MAY belong to zero or more groups.
 
 An **anchor** is the locator that places a snippet within a (possibly edited) source document. **Anchoring** is the act of resolving an anchor to a concrete location in a document — text + context windows + optional section path are matched against the source via the algorithm in Section 4. The algorithm is also a verifier: it returns "orphaned" for spans that don't exist in the source, which is what makes Marklee usable for citation grounding (LLM output, automated extraction, third-party annotations) on top of human-authored notes.
 
-## 3. Sidecar schema
+### 2.7 Workspace
 
-### 3.1 Top-level structure
+A **workspace** is a user-scoped collection that groups documents and free-floating notes under one identity (name, theme, group palette). Workspaces are independent of any particular source: a workspace can reference zero or many documents and contain its own unanchored notes (e.g. clipboard pastes, free-form ideas). Conformant implementations MAY support workspaces; they are OPTIONAL.
+
+### 2.8 Note
+
+A **note** is an annotation that lives at the workspace level rather than being anchored to a document. Notes carry text, optional image, comment, and group memberships — the same metadata as snippets — but have no `source`, `page`, `anchor`, or `rects`. They participate in the same edge graph as snippets and rank under MarkRank using the same algorithm.
+
+## 3. Sidecar schemas
+
+A Marklee sidecar is one of two kinds, distinguished by a top-level `kind` field:
+
+| `kind` | Stored where | Contains |
+|---|---|---|
+| `"document"` | `<document-path>.annot.json` next to a source file | annotations anchored to that source |
+| `"workspace"` | implementation-defined (RECOMMENDED `~/.marklee/workspaces/<id>.json` or in a user-chosen workspace directory) | workspace metadata, notes, references to documents |
+
+A reader MUST inspect `kind` and select the appropriate schema. Pre-0.1-draft files without `kind` MUST be treated as `kind: "document"` for backward compatibility.
+
+### 3.1 Document sidecar — top-level structure
 
 ```json
 {
   "markleeVersion": "0.1",
+  "kind":     "document",
   "source":   { ... },
   "snippets": [ ... ],
   "edges":    [ ... ],
@@ -95,6 +113,7 @@ An **anchor** is the locator that places a snippet within a (possibly edited) so
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `markleeVersion` | string | new files: yes; reading: no | semver of this spec |
+| `kind` | string | new files: yes; reading: no | MUST be `"document"`; absent on legacy files (treated as document) |
 | `source` | object | no | document metadata (Section 3.2) |
 | `snippets` | array | yes | zero or more snippet objects |
 | `edges` | array | no | zero or more edge objects |
@@ -187,6 +206,90 @@ Future versions MAY add fields. Readers MUST preserve unknown fields on round-tr
   "color": "#88aaff"
 }
 ```
+
+### 3.6 Workspace sidecar — top-level structure
+
+A workspace sidecar groups documents and free-floating notes under one user-scoped identity. It is OPTIONAL — implementations that only need per-document annotations MAY ignore it.
+
+```json
+{
+  "markleeVersion": "0.1",
+  "kind":     "workspace",
+  "id":       "ws-uuid",
+  "name":     "Reading list, May",
+  "theme":    "cream",
+  "members":  [ ... ],
+  "notes":    [ ... ],
+  "edges":    [ ... ],
+  "groups":   [ ... ]
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `markleeVersion` | string | new files: yes | semver of this spec |
+| `kind` | string | yes | MUST be `"workspace"` |
+| `id` | string | yes | stable identifier; UUID v4 RECOMMENDED |
+| `name` | string | no | human-readable label |
+| `theme` | string | no | client-side theme hint; implementations MAY ignore |
+| `members` | array | no | references to documents in this workspace (Section 3.7) |
+| `notes` | array | no | zero or more note objects (Section 3.8) — free-floating annotations not anchored to any source |
+| `edges` | array | no | edges between notes, between notes and document snippets, or between document snippets across workspace members; same shape as Section 3.4 |
+| `groups` | array | no | group metadata referenced by this workspace's notes and members |
+
+Unknown top-level fields MUST be preserved by readers on round-trip.
+
+### 3.7 Member
+
+A **member** is a workspace's reference to a document sidecar. The member entry carries enough metadata for a reader to locate the document; the actual annotations live in the document's own sidecar.
+
+```json
+{
+  "path":        "/abs/or/rel/path/file.pdf",
+  "contentHash": "sha256:ab12...",
+  "title":       "Optional override"
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | yes | filesystem path or URL of the source document |
+| `contentHash` | string | no | SHA-256 of the source bytes for verification (Section 5) |
+| `title` | string | no | display label override; falls back to the document's own `source.title` |
+
+### 3.8 Note
+
+A **note** is an annotation at the workspace level — text or image content the user has captured without anchoring it to a document (typed scratch, clipboard paste, screenshot, etc.).
+
+```json
+{
+  "id":         "uuid",
+  "kind":       "text",
+  "text":       "...",
+  "imagePath":  ".clipboard.clips/abc.png",
+  "imageHash":  "sha256:...",
+  "comment":    "user note",
+  "groups":     ["group-uuid"],
+  "tags":       ["string"],
+  "created":    "2026-05-09T10:23:11Z"
+}
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | string | yes | UUID v4 RECOMMENDED — referenced by edges, permalinks, MarkRank |
+| `kind` | string | yes | `"text"` or `"image"` |
+| `text` | string | yes | verbatim content (text notes) or descriptive label (image notes) |
+| `imagePath` | string | yes for image | location of the image bytes; relative to the workspace sidecar OR absolute |
+| `imageHash` | string | no | SHA-256 of the image bytes |
+| `comment` | string | no | user-authored note |
+| `groups` | array of string | no | group IDs |
+| `tags` | array of string | no | free-form labels |
+| `created` | string | no | ISO 8601 timestamp |
+
+A note has no `source`, `page`, `anchor`, `rects`, `flowPos`, `contextBefore`, or `contextAfter`. The anchoring algorithm (Section 4) does not apply to notes — they are unanchored by definition.
+
+Notes participate in the same edge graph (Section 3.4) and the same MarkRank computation (Section 8) as document snippets. Edges may connect a note to another note, a note to a document snippet, or two document snippets across different workspace members — all by `id`. The MarkRank graph union of a workspace = all notes ∪ all snippets reachable via `members`.
 
 ## 4. Anchoring
 

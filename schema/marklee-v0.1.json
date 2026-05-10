@@ -2,30 +2,102 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://markleeapp.com/schema/marklee-v0.1.json",
   "title": "Marklee Annotation Sidecar",
-  "description": "Marklee Annotation Format v0.1 — see SPEC.md",
-  "type": "object",
-  "required": ["snippets"],
-  "properties": {
-    "markleeVersion": {
-      "type": "string",
-      "description": "Semver of the Marklee spec this file conforms to.",
-      "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?(-.+)?$"
-    },
-    "source": { "$ref": "#/$defs/source" },
-    "snippets": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/snippet" }
-    },
-    "edges": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/edge" }
-    },
-    "groups": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/group" }
-    }
-  },
+  "description": "Marklee Annotation Format v0.1 — see SPEC.md. Two sidecar shapes: document (per-source) and workspace (free-floating + members).",
+  "oneOf": [
+    { "$ref": "#/$defs/documentSidecar" },
+    { "$ref": "#/$defs/workspaceSidecar" }
+  ],
   "$defs": {
+    "documentSidecar": {
+      "type": "object",
+      "required": ["snippets"],
+      "properties": {
+        "markleeVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?(-.+)?$"
+        },
+        "kind": { "const": "document" },
+        "source": { "$ref": "#/$defs/source" },
+        "snippets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/snippet" }
+        },
+        "edges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/edge" }
+        },
+        "groups": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/group" }
+        }
+      }
+    },
+    "workspaceSidecar": {
+      "type": "object",
+      "required": ["kind", "id"],
+      "properties": {
+        "markleeVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?(-.+)?$"
+        },
+        "kind": { "const": "workspace" },
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "theme": { "type": "string" },
+        "members": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/member" }
+        },
+        "notes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/note" }
+        },
+        "edges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/edge" }
+        },
+        "groups": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/group" }
+        }
+      }
+    },
+    "member": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "contentHash": {
+          "type": "string",
+          "pattern": "^(sha256:)?[0-9a-f]{64}$"
+        },
+        "title": { "type": "string" }
+      }
+    },
+    "note": {
+      "type": "object",
+      "required": ["id", "kind", "text"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["text", "image"] },
+        "text": { "type": "string" },
+        "imagePath": { "type": "string" },
+        "imageHash": {
+          "type": "string",
+          "pattern": "^(sha256:)?[0-9a-f]{64}$"
+        },
+        "comment": { "type": "string" },
+        "groups": { "type": "array", "items": { "type": "string" } },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "created": { "type": "string", "format": "date-time" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "image" } }, "required": ["kind"] },
+          "then": { "required": ["imagePath"] }
+        }
+      ]
+    },
     "source": {
       "type": "object",
       "properties": {
