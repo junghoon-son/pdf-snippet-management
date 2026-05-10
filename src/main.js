@@ -2335,6 +2335,36 @@ function ensureConnectorSvg() {
   document.body.appendChild(svg);
   return svg;
 }
+async function removeGroupFromSnippet(snippetId, groupId, ownerPath) {
+  // Three storage homes for a snippet's groups:
+  //   1. Pasted: state.workspace.pastedSnippets (workspace localStorage).
+  //   2. Active doc: state.snippets (per-doc sidecar, written by persist).
+  //   3. Cross-doc (workspace scope, viewing another file's snippets):
+  //      sidecar belongs to that file; we'd need to load + write it.
+  //      Skipped for now — open the doc to manage its groups.
+  if (ownerPath === PASTED_PSEUDO_PATH) {
+    const live = (state.workspace.pastedSnippets || []).find((x) => x.id === snippetId);
+    if (!live) return;
+    live.groups = (live.groups || []).filter((g) => g !== groupId);
+    saveAllWorkspaces();
+    refreshActiveView();
+    applyAllHighlights();
+    return;
+  }
+  if (ownerPath && ownerPath !== state.currentPdfPath) {
+    // Cross-doc — would need to load that doc's sidecar, mutate, write back.
+    // For now, just refuse and tell the user.
+    console.warn("[group-remove] cross-doc edits not supported; open the doc to remove groups");
+    return;
+  }
+  const live = state.snippets.find((x) => x.id === snippetId);
+  if (!live) return;
+  live.groups = (live.groups || []).filter((g) => g !== groupId);
+  await persist();
+  refreshActiveView();
+  applyAllHighlights();
+}
+
 function hideHoverConnector() {
   const svg = document.getElementById("hover-connector");
   if (svg) {
@@ -2342,6 +2372,49 @@ function hideHoverConnector() {
     // Distance-fade sets svg.style.opacity inline; clear it so the CSS
     // base rule (opacity: 0 when not .active) takes effect again.
     svg.style.opacity = "";
+  }
+}
+
+// Direction indicators. Two arrows positioned at pane edges that appear
+// when the related element is scrolled off-screen. Click → scrolls it
+// back into view via existing preview/scrollIntoView paths.
+function ensureDirIndicator(side) {
+  const id = `dir-indicator-${side}`;
+  let el = document.getElementById(id);
+  if (el) return el;
+  el = document.createElement("button");
+  el.id = id;
+  el.className = "dir-indicator";
+  el.setAttribute("aria-label", side === "doc" ? "Scroll to highlight" : "Scroll to snippet");
+  el.innerHTML = '<span class="dir-arrow"></span>';
+  document.body.appendChild(el);
+  return el;
+}
+function updateDirIndicator(side, rect, paneRect, visible, onClick) {
+  const el = ensureDirIndicator(side);
+  if (visible) { el.classList.remove("active"); return; }
+  // Determine direction: rect above the pane → "up"; below → "down".
+  let dir;
+  if (rect.bottom <= paneRect.top) dir = "up";
+  else if (rect.top >= paneRect.bottom) dir = "down";
+  else { el.classList.remove("active"); return; }
+  el.dataset.direction = dir;
+  // Center horizontally over the pane; vertically pin at the relevant edge.
+  const x = (paneRect.left + paneRect.right) / 2;
+  const y = dir === "up" ? paneRect.top + 14 : paneRect.bottom - 14;
+  el.style.left = `${x}px`;
+  el.style.top = `${y}px`;
+  el.classList.add("active");
+  el.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onClick?.();
+  };
+}
+function hideDirIndicators() {
+  for (const side of ["doc", "list"]) {
+    const el = document.getElementById(`dir-indicator-${side}`);
+    if (el) el.classList.remove("active");
   }
 }
 function highlightRectForSnippet(snippetId) {
@@ -2363,14 +2436,11 @@ function highlightRectForSnippet(snippetId) {
   };
 }
 function updateHoverConnector() {
-  if (!hoverSnippetId) { hideHoverConnector(); return; }
+  if (!hoverSnippetId) { hideHoverConnector(); hideDirIndicators(); return; }
   const card = snippetsListEl.querySelector(`.snippet[data-snippet-id="${hoverSnippetId}"]`);
   const hRect = highlightRectForSnippet(hoverSnippetId);
-  if (!card || !hRect) { hideHoverConnector(); return; }
+  if (!card || !hRect) { hideHoverConnector(); hideDirIndicators(); return; }
   const cardRect = card.getBoundingClientRect();
-  // Hide when either endpoint is outside its pane's visible viewport — keeps
-  // the connector from drawing through chrome / off-screen when content is
-  // scrolled out of view.
   const viewerVis = viewerScroll.getBoundingClientRect();
   const listVis = snippetsListEl.getBoundingClientRect();
   const hVisible =
@@ -2379,6 +2449,18 @@ function updateHoverConnector() {
   const cVisible =
     cardRect.bottom > listVis.top && cardRect.top < listVis.bottom &&
     cardRect.right  > listVis.left && cardRect.left < listVis.right;
+
+  // Off-screen direction indicators — when an endpoint is scrolled out of
+  // view, show a small clickable arrow at the pane edge pointing toward
+  // it. Click scrolls the target into view.
+  updateDirIndicator("doc", hRect, viewerVis, hVisible, () => {
+    const snippet = state.snippets.find((s) => s.id === hoverSnippetId);
+    if (snippet) previewSnippetInPdf(snippet);
+  });
+  updateDirIndicator("list", cardRect, listVis, cVisible, () => {
+    card.scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+
   if (!hVisible || !cVisible) { hideHoverConnector(); return; }
 
   // Asymmetric gap: small gap on the doc side so we don't crowd the text,
@@ -2567,6 +2649,7 @@ async function renderSnippets() {
     if (expandedIds.has(s.id)) li.classList.add("expanded");
     li.dataset.snippetId = s.id;
     const groups = s.groups || [];
+    const ownerPath = s._pdfPath || state.currentPdfPath;
 
     if (groups.length > 0) {
       const sortedGroups = [...groups].sort(
@@ -2594,17 +2677,13 @@ async function renderSnippets() {
         x.title = `Remove from "${groupName(gid)}"`;
         x.addEventListener("click", async (e) => {
           e.stopPropagation();
-          s.groups = (s.groups || []).filter((g) => g !== gid);
-          await persist();
-          refreshActiveView();
+          await removeGroupFromSnippet(s.id, gid, ownerPath);
         });
         pill.append(dot, name, x);
         chipRow.appendChild(pill);
       }
       li.appendChild(chipRow);
     }
-
-    const ownerPath = s._pdfPath || state.currentPdfPath;
     // Show the cross-doc badge for any snippet not from the active document
     // — workspace scope shows other docs, doc scope shows pasted snippets.
     const isCrossDoc = ownerPath && ownerPath !== state.currentPdfPath;

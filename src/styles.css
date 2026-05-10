@@ -1598,6 +1598,62 @@ body.dragging-sticker * { cursor: grabbing !important; }
 }
 .hover-connector.active { opacity: 0.85; }
 
+/* Direction indicators: small chevrons at pane edges when the linked
+   highlight or snippet card is scrolled out of view. Click to scroll
+   back to it. */
+.dir-indicator {
+  position: fixed;
+  z-index: 41;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.85);
+  transition: opacity 200ms ease-out, transform 200ms ease-out;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 40%, transparent));
+  animation: dir-bob 1.6s ease-in-out infinite;
+}
+.dir-indicator.active {
+  opacity: 0.95;
+  transform: translate(-50%, -50%) scale(1);
+  pointer-events: auto;
+}
+.dir-indicator:hover { background: var(--accent); }
+.dir-indicator:hover .dir-arrow { border-color: #fbf9f3; }
+.dir-arrow {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-right: 2.5px solid var(--accent);
+  border-bottom: 2.5px solid var(--accent);
+  transform: rotate(45deg);
+  margin-top: -3px;
+}
+.dir-indicator[data-direction="up"] .dir-arrow {
+  transform: rotate(-135deg);
+  margin-top: 3px;
+}
+@keyframes dir-bob {
+  0%, 100% { transform: translate(-50%, -50%) translateY(0); }
+  50%      { transform: translate(-50%, -50%) translateY(2px); }
+}
+.dir-indicator[data-direction="up"] {
+  animation-name: dir-bob-up;
+}
+@keyframes dir-bob-up {
+  0%, 100% { transform: translate(-50%, -50%) translateY(0); }
+  50%      { transform: translate(-50%, -50%) translateY(-2px); }
+}
+
 /* Three stroked layers form the "channel": wide soft halo, mid-width beam
    carrying the gradient that fades into the card, and a thin sharp core
    for definition. Dialed-back vs the previous pass — the connector is a
