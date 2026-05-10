@@ -2672,8 +2672,12 @@ function updateHoverConnector() {
   const y2 = contentRect.top + contentRect.height / 2;
   const cy1 = Math.max(viewerVis.top + 4, Math.min(viewerVis.bottom - 4, y1));
   const cy2 = Math.max(listVis.top + 4, Math.min(listVis.bottom - 4, y2));
-  const midX = x1 + (x2 - x1) * 0.5;
-  const path = `M ${x1} ${cy1} H ${midX} V ${cy2} H ${x2}`;
+  // Single Bézier curve from bracket-end to card content. Avoids the
+  // orthogonal elbow's vertical segment running parallel to the resize
+  // handle / pane border (double-thin-line clutter problem). Horizontal
+  // tangents at both ends keep it reading like a smooth pull-off.
+  const dx = Math.max(40, (x2 - x1) * 0.55);
+  const path = `M ${x1} ${cy1} C ${x1 + dx} ${cy1}, ${x2 - dx} ${cy2}, ${x2} ${cy2}`;
   // Bracket (`]` pointing left) at the margin, height = highlight extent.
   const bracketTop = Math.max(viewerVis.top + 4, hRect.top);
   const bracketBot = Math.min(viewerVis.bottom - 4, hRect.bottom);

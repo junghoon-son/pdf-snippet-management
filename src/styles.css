@@ -1724,16 +1724,13 @@ body.dragging-sticker * { cursor: grabbing !important; }
 .hover-conn-stop-mid  { stop-color: var(--accent); stop-opacity: 0.55; }
 .hover-conn-stop-card { stop-color: var(--accent); stop-opacity: 0.05; }
 
-/* "Far" mode: vertical span > 240px means the connector is bridging
-   regions that aren't next to each other. Drop the halo (looks weird
-   blurred over a long distance) and dash the visible strokes so the
-   line reads as "way over there" rather than "directly adjacent." */
-.hover-connector.far .hover-connector-halo { display: none; }
-.hover-connector.far .hover-connector-beam {
-  stroke-dasharray: 6 8;
-}
+/* "Far" mode: just dim further. Bézier curves don't need dashing —
+   distance fade alone signals the long-reach connection. */
 .hover-connector.far .hover-connector-path {
-  stroke-dasharray: 2 6;
+  stroke-opacity: 0.28;
+}
+.hover-connector.far .hover-connector-bracket {
+  stroke-opacity: 0.28;
 }
 
 /* Single fade-in on activation — no width pulse, no flourish.
