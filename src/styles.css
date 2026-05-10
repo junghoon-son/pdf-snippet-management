@@ -2048,21 +2048,13 @@ body.dragging-snippet .group-row:hover {
     drop-shadow(0 0 1px rgba(255, 255, 255, 0.7));
 }
 #group-overlay .bubble text {
-  fill: #111;
+  /* fill + filter (halo) set inline per bubble in JS based on the
+     background luminance — see pickTextStyle() in group-overlay.js. */
   font-family: ui-sans-serif, -apple-system, "SF Pro Text", system-ui;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.1px;
   pointer-events: none;
-  /* Softer halo via stacked drop-shadows (gaussian-blurred = naturally
-     anti-aliased) instead of a hard SVG stroke. Stroke produces aliased
-     edges where the halo meets the saturated body; drop-shadow blends
-     smoothly. Two stacked shadows give the halo enough thickness to
-     read as a separator over any palette color. */
-  filter:
-    drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.95))
-    drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.85));
-  /* macOS-style sub-pixel-ish AA for the glyph fill */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;

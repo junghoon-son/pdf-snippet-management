@@ -59,6 +59,35 @@ function popColor(input) {
   return `hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`;
 }
 
+// Pick text fill (and matching halo) based on perceptual luminance of the
+// background color. WCAG relative luminance — handles the case where two
+// hsl() colors with the same lightness aren't equally perceived (a yellow
+// at L=55 reads MUCH brighter than a blue at L=55).
+function pickTextStyle(hslColor) {
+  const m = /hsl\(\s*(\d+(?:\.\d+)?)[\s,]+(\d+(?:\.\d+)?)%[\s,]+(\d+(?:\.\d+)?)%/.exec(hslColor);
+  if (!m) return { fill: "#111", halo: "rgba(255,255,255,0.85)" };
+  const h = +m[1], sat = +m[2] / 100, light = +m[3] / 100;
+  const c = (1 - Math.abs(2 * light - 1)) * sat;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const mAdj = light - c / 2;
+  let r, g, b;
+  if (h < 60) [r, g, b] = [c, x, 0];
+  else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x];
+  else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  r += mAdj; g += mAdj; b += mAdj;
+  const lin = (v) => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  // Threshold around 0.45 — anything brighter takes dark text, dimmer
+  // takes white text. Halo flips to oppose the text so contrast holds.
+  if (L > 0.45) {
+    return { fill: "#0d0d0d", halo: "rgba(255,255,255,0.85)" };
+  }
+  return { fill: "#fafafa", halo: "rgba(0,0,0,0.55)" };
+}
+
 export function openGroupOverlay({ snippet, allSnippets, allGroups, container, anchor, groupColor, groupName, paneRect, dragMode = false }) {
   return new Promise((resolve) => {
     const overlay = container;
@@ -220,6 +249,15 @@ export function openGroupOverlay({ snippet, allSnippets, allGroups, container, a
       text.setAttribute("y", b.kind === "new" ? "0" : "5");
       text.setAttribute("dominant-baseline", "central");
       text.textContent = b.label;
+      // Per-bubble text color + halo: dark text + white halo on light
+      // folders; white text + dark halo on dark/saturated ones. WCAG
+      // luminance via pickTextStyle().
+      if (b.kind !== "new") {
+        const style = pickTextStyle(b.color);
+        text.setAttribute("fill", style.fill);
+        text.style.filter =
+          `drop-shadow(0 0 1.5px ${style.halo}) drop-shadow(0 0 1.5px ${style.halo})`;
+      }
       g.appendChild(text);
 
       svg.appendChild(g);
