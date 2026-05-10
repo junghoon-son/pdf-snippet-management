@@ -2579,6 +2579,25 @@ body.dragging-snippet .group-row:hover {
   border-left: 2px solid #c4c2b8;
   padding: 2px 0 2px 12px;
 }
+.summary-item-image {
+  margin: 4px 0 0 12px;
+  border-left: 2px solid #c4c2b8;
+  padding-left: 12px;
+}
+.summary-item-image img {
+  max-width: 100%;
+  max-height: 320px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  display: block;
+}
+.summary-item-image.missing::after {
+  content: "(clip missing)";
+  font-style: italic;
+  color: var(--text-dim);
+  font-size: 12px;
+}
 .summary-comment {
   margin-top: 8px;
   padding: 6px 10px;

@@ -4183,9 +4183,26 @@ async function openSummary() {
     itemMeta.textContent = (isWorkspace || path === PASTED_PSEUDO_PATH) && fname
       ? `${fname} · ${loc}`
       : loc;
-    const itemText = document.createElement("blockquote");
-    itemText.textContent = s.text;
-    item.append(itemMeta, itemText);
+    let body;
+    if (s.kind === "image" && s.imagePath) {
+      body = document.createElement("div");
+      body.className = "summary-item-image";
+      const img = document.createElement("img");
+      img.alt = s.text || "image clip";
+      img.loading = "lazy";
+      // Pasted image clips live at _imageOwnerPath; everything else uses
+      // the snippet's _pdfPath as the clip owner.
+      const owner = s._imageOwnerPath || s._pdfPath || state.currentPdfPath;
+      loadClipUrl(s.imagePath, owner).then((url) => {
+        if (url) img.src = url;
+        else body.classList.add("missing");
+      });
+      body.appendChild(img);
+    } else {
+      body = document.createElement("blockquote");
+      body.textContent = s.text;
+    }
+    item.append(itemMeta, body);
     if (s.comment) {
       const c = document.createElement("div");
       c.className = "summary-comment";
