@@ -1596,7 +1596,7 @@ body.dragging-sticker * { cursor: grabbing !important; }
   will-change: opacity;
   transform: translateZ(0);
 }
-.hover-connector.active { opacity: 0.85; }
+.hover-connector.active { opacity: 0.7; }
 
 /* Highlight action menu — opens on right-click / ctrl-click / cmd-click
    on a viewer highlight. */
@@ -1698,31 +1698,21 @@ body.dragging-sticker * { cursor: grabbing !important; }
    carrying the gradient that fades into the card, and a thin sharp core
    for definition. Dialed-back vs the previous pass — the connector is a
    hint, not a spotlight. */
+/* Quiet utilitarian connector — single thin line at the page margin,
+   no glowing channel, no gradient beam. Bracket + core do the work. */
 .hover-connector-bracket {
   stroke: var(--accent);
-  stroke-opacity: 0.7;
-  stroke-width: 1.5;
+  stroke-opacity: 0.45;
+  stroke-width: 1.1;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.hover-connector-halo {
-  stroke: var(--accent);
-  stroke-opacity: 0.10;
-  stroke-width: 14;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  filter: blur(5px);
-}
-.hover-connector-beam {
-  stroke-width: 5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  /* stroke supplied via url(#hover-conn-grad) */
-}
+.hover-connector-halo { display: none; }
+.hover-connector-beam { display: none; }
 .hover-connector-path {
   stroke: var(--accent);
-  stroke-width: 1.2;
-  stroke-opacity: 0.6;
+  stroke-width: 1;
+  stroke-opacity: 0.45;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -1746,16 +1736,16 @@ body.dragging-sticker * { cursor: grabbing !important; }
   stroke-dasharray: 2 6;
 }
 
+/* Single fade-in on activation — no width pulse, no flourish.
+   The .active container's own opacity transition handles most of the
+   reveal; this just guarantees the shapes don't pop on first render. */
 .hover-connector.active .hover-connector-bracket,
-.hover-connector.active .hover-connector-halo,
-.hover-connector.active .hover-connector-beam,
 .hover-connector.active .hover-connector-path {
-  animation: connector-pulse 500ms ease-out;
+  animation: connector-fade 240ms ease-out;
 }
-@keyframes connector-pulse {
-  0%   { opacity: 0; }
-  70%  { opacity: 1; }
-  100% { opacity: 1; }
+@keyframes connector-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 .snippet-page-footer {
   position: absolute;
