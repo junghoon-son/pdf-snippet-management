@@ -1910,8 +1910,10 @@ body.dragging-snippet .group-row:hover {
 #group-overlay[hidden] { display: none; }
 #group-overlay.active {
   opacity: 1;
-  background: rgba(40, 35, 20, 0.45);
-  backdrop-filter: blur(3px);
+  /* Lighter backdrop so saturated folder colors aren't fighting a heavy
+     gray tint. Blur stays for the focus-isolation effect. */
+  background: rgba(40, 35, 20, 0.22);
+  backdrop-filter: blur(4px);
 }
 #group-overlay.closing {
   opacity: 0;
@@ -1939,21 +1941,28 @@ body.dragging-snippet .group-row:hover {
 #group-overlay .bubble .folder-shape rect {
   transition: filter 140ms ease-out, stroke-width 140ms, fill-opacity 140ms;
 }
+/* Solid colors. No translucency — the previous fill-opacity was making
+   everything sit "behind" the backdrop and read as muted. Fully opaque
+   bodies + saturate/brightness for a punchy physical-Post-it look. */
 #group-overlay .bubble .folder-shape rect:first-child { fill-opacity: 1; }
-/* Body: punchy translucent fill so colors read as saturated against the
-   dark blurred backdrop. Pairs with a saturate filter on the whole shape
-   for an "HDR pop" effect. */
-#group-overlay .bubble .folder-shape rect:nth-child(2) { fill-opacity: 0.55; }
+#group-overlay .bubble .folder-shape rect:nth-child(2) { fill-opacity: 1; }
 #group-overlay .bubble .folder-shape {
-  filter: saturate(1.4) brightness(1.08);
+  filter: saturate(1.45) brightness(1.10) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15));
 }
 #group-overlay .bubble text {
-  fill: #0e0e0e;
+  fill: #111;
   font-family: ui-sans-serif, -apple-system, "SF Pro Text", system-ui;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.1px;
   pointer-events: none;
+  /* White halo so text reads against any palette color — paint-order
+     puts the stroke behind the fill so the original glyph shape is
+     preserved. */
+  paint-order: stroke fill;
+  stroke: rgba(255, 255, 255, 0.78);
+  stroke-width: 2.5px;
+  stroke-linejoin: round;
 }
 #group-overlay .bubble.bubble-new text { fill: #4ec9b0; font-size: 18px; font-weight: 400; }
 #group-overlay .bubble.bubble-member .folder-shape rect:nth-child(2),
@@ -1975,7 +1984,7 @@ body.dragging-snippet .group-row:hover {
 }
 #group-overlay .bubble.hot .folder-shape rect:first-child { stroke-width: 2; }
 #group-overlay .bubble.hot .folder-shape rect:nth-child(2) {
-  fill-opacity: 0.78;
+  fill-opacity: 1;
   stroke-width: 3;
 }
 #group-overlay .bubble.hot { transform-origin: center; }
