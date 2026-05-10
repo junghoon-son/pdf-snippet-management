@@ -2355,23 +2355,78 @@ function ensureConnectorSvg() {
   return svg;
 }
 // Highlight-action popover — opened by right-click / ctrl-click / cmd-click
-// on a highlight in the viewer. One action for now (Delete); easy to add
-// "Edit comment", "Open lineage" later.
+// on a highlight in the viewer. Five common actions; matches the right
+// pane's per-card affordances so users don't have to find the card first.
 let _activeHighlightMenu = null;
 function openHighlightActionMenu(clientX, clientY, snippetId) {
   closeHighlightActionMenu();
   const menu = document.createElement("div");
   menu.className = "highlight-action-menu";
+  const snippet = state.snippets.find((s) => s.id === snippetId)
+    || (state.workspace.pastedSnippets || []).find((s) => s.id === snippetId);
 
-  const del = document.createElement("button");
-  del.className = "highlight-action-item destructive";
-  del.textContent = "Delete highlight";
-  del.addEventListener("click", async (ev) => {
-    ev.stopPropagation();
-    closeHighlightActionMenu();
-    await deleteSnippetById(snippetId);
+  const addItem = (label, fn, opts = {}) => {
+    const b = document.createElement("button");
+    b.className = "highlight-action-item" + (opts.destructive ? " destructive" : "");
+    b.textContent = label;
+    b.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      closeHighlightActionMenu();
+      try { await fn(); } catch (err) { console.error("[highlight-action]", label, err); }
+    });
+    menu.appendChild(b);
+    return b;
+  };
+  const addSeparator = () => {
+    const s = document.createElement("div");
+    s.className = "highlight-action-sep";
+    menu.appendChild(s);
+  };
+
+  addItem("Show in list", () => {
+    const card = snippetsListEl.querySelector(`.snippet[data-snippet-id="${snippetId}"]`);
+    if (!card) return;
+    card.scrollIntoView({ behavior: "smooth", block: "center" });
+    card.classList.add("flash");
+    setTimeout(() => card.classList.remove("flash"), 900);
   });
-  menu.appendChild(del);
+
+  addItem("Edit comment", () => {
+    const card = snippetsListEl.querySelector(`.snippet[data-snippet-id="${snippetId}"]`);
+    if (!card) return;
+    card.scrollIntoView({ behavior: "smooth", block: "center" });
+    setTimeout(() => {
+      // Open the existing add-comment affordance if present, else focus textarea.
+      const addBtn = card.querySelector(".add-comment-btn");
+      if (addBtn) addBtn.click();
+      const ta = card.querySelector("textarea");
+      if (ta) ta.focus();
+    }, 280);
+  });
+
+  addSeparator();
+
+  addItem("Copy quote", async () => {
+    if (!snippet) return;
+    if (snippet.kind === "image" && snippet.imagePath) {
+      const owner = snippet._imageOwnerPath || state.currentPdfPath;
+      try { await getStore().copyImageToClipboard(owner, snippet.imagePath); } catch (e) { console.warn(e); }
+    } else {
+      await navigator.clipboard.writeText(snippet.text || "");
+    }
+  });
+
+  addItem("Copy share link", async () => {
+    if (!snippet) return;
+    const url = buildPermalink(snippet, state.source, { includeText: true });
+    await navigator.clipboard.writeText(url);
+  });
+
+  addSeparator();
+
+  addItem("Delete highlight", async () => {
+    await deleteSnippetById(snippetId);
+  }, { destructive: true });
 
   document.body.appendChild(menu);
   // Position near cursor; clamp to viewport

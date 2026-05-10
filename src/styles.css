@@ -1632,6 +1632,11 @@ body.dragging-sticker * { cursor: grabbing !important; }
   background: rgba(204, 68, 68, 0.10);
   color: #c44;
 }
+.highlight-action-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 6px;
+}
 
 /* Direction indicators: small chevrons at pane edges when the linked
    highlight or snippet card is scrolled out of view. Click to scroll
