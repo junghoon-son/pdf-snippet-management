@@ -2054,13 +2054,18 @@ body.dragging-snippet .group-row:hover {
   font-weight: 600;
   letter-spacing: 0.1px;
   pointer-events: none;
-  /* White halo so text reads against any palette color — paint-order
-     puts the stroke behind the fill so the original glyph shape is
-     preserved. */
-  paint-order: stroke fill;
-  stroke: rgba(255, 255, 255, 0.78);
-  stroke-width: 2.5px;
-  stroke-linejoin: round;
+  /* Softer halo via stacked drop-shadows (gaussian-blurred = naturally
+     anti-aliased) instead of a hard SVG stroke. Stroke produces aliased
+     edges where the halo meets the saturated body; drop-shadow blends
+     smoothly. Two stacked shadows give the halo enough thickness to
+     read as a separator over any palette color. */
+  filter:
+    drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.95))
+    drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.85));
+  /* macOS-style sub-pixel-ish AA for the glyph fill */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 #group-overlay .bubble.bubble-new text { fill: #4ec9b0; font-size: 18px; font-weight: 400; }
 #group-overlay .bubble.bubble-member .folder-shape rect:nth-child(2),
