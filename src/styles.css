@@ -1623,12 +1623,13 @@ body.dragging-sticker * { cursor: grabbing !important; }
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-/* Gradient stops — quieter than before. Strong-ish at the doc side,
-   fading to fully transparent into the card so the beam visually
-   absorbs into the card edge instead of touching it with a hard line. */
-.hover-conn-stop-doc  { stop-color: var(--accent); stop-opacity: 0.40; }
-.hover-conn-stop-mid  { stop-color: var(--accent); stop-opacity: 0.18; }
-.hover-conn-stop-card { stop-color: var(--accent); stop-opacity: 0.0; }
+/* Symmetric fade — both ends taper to translucent so neither the
+   document highlight nor the card edge is touched by a hard stroke.
+   Peak in the middle of the channel where the beam should look most
+   solid. */
+.hover-conn-stop-doc  { stop-color: var(--accent); stop-opacity: 0.05; }
+.hover-conn-stop-mid  { stop-color: var(--accent); stop-opacity: 0.55; }
+.hover-conn-stop-card { stop-color: var(--accent); stop-opacity: 0.05; }
 
 /* "Far" mode: vertical span > 240px means the connector is bridging
    regions that aren't next to each other. Drop the halo (looks weird

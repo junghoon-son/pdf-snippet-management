@@ -2187,6 +2187,10 @@ viewerContainer.addEventListener("click", (e) => {
 
 viewerContainer.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
+  // Modifier-clicks (⌘/⌃/⇧/⌥) bypass our press gesture so OS-native
+  // gestures still work — ctrl-click → context menu on macOS,
+  // ⇧-click → range-extend selection, etc.
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
   // Flow doc: <mark.hl> elements still carry data-snippet-id
   const flowMark = e.target.closest?.("mark.hl");
   if (flowMark) {
@@ -2303,7 +2307,7 @@ function ensureConnectorSvg() {
   stop1.setAttribute("offset", "0%");
   stop1.setAttribute("class", "hover-conn-stop-doc");
   const stop2 = document.createElementNS(NS, "stop");
-  stop2.setAttribute("offset", "60%");
+  stop2.setAttribute("offset", "50%");
   stop2.setAttribute("class", "hover-conn-stop-mid");
   const stop3 = document.createElementNS(NS, "stop");
   stop3.setAttribute("offset", "100%");
@@ -2388,12 +2392,22 @@ function updateHoverConnector() {
   grad.setAttribute("y1", cy1);
   grad.setAttribute("x2", x2);
   grad.setAttribute("y2", cy2);
-  // "Far" mode: when the vertical leg is long enough that the connector
-  // is bridging non-adjacent regions, switch to a dashed beam so the
-  // line reads as "elsewhere on the page" rather than insisting it's a
-  // tight neighbor.
+
+  // Distance-based fade. When the highlight and card are within ~one
+  // viewport's vertical span the connector is fully visible. Past that
+  // it ramps down toward zero so the line doesn't insist on a far-away
+  // connection.
   const verticalSpan = Math.abs(cy2 - cy1);
-  svg.classList.toggle("far", verticalSpan > 240);
+  const vh = window.innerHeight || 800;
+  // 0..1 strength: 1 when very close, 0.3 at vh, 0 past 1.5×vh.
+  let strength = 1;
+  if (verticalSpan > vh * 0.5) {
+    const t = Math.max(0, Math.min(1, (verticalSpan - vh * 0.5) / vh));
+    strength = Math.max(0, 1 - t);
+  }
+  svg.style.opacity = strength.toFixed(3);
+  // Past ~one viewport span, switch to dashed for the "elsewhere" hint.
+  svg.classList.toggle("far", verticalSpan > vh * 0.6);
   svg.classList.add("active");
 }
 // Recompute on scroll of either pane while hovering. Throttled via rAF.
