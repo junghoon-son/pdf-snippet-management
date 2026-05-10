@@ -1910,10 +1910,11 @@ body.dragging-snippet .group-row:hover {
 #group-overlay[hidden] { display: none; }
 #group-overlay.active {
   opacity: 1;
-  /* Lighter backdrop so saturated folder colors aren't fighting a heavy
-     gray tint. Blur stays for the focus-isolation effect. */
-  background: rgba(40, 35, 20, 0.22);
-  backdrop-filter: blur(4px);
+  /* Even lighter backdrop — the folders are HDR-bright now and don't
+     need a heavy tint behind them to look distinct. Blur preserves
+     focus-isolation. */
+  background: rgba(40, 35, 20, 0.14);
+  backdrop-filter: blur(5px);
 }
 #group-overlay.closing {
   opacity: 0;
@@ -1941,13 +1942,19 @@ body.dragging-snippet .group-row:hover {
 #group-overlay .bubble .folder-shape rect {
   transition: filter 140ms ease-out, stroke-width 140ms, fill-opacity 140ms;
 }
-/* Solid colors. No translucency — the previous fill-opacity was making
-   everything sit "behind" the backdrop and read as muted. Fully opaque
-   bodies + saturate/brightness for a punchy physical-Post-it look. */
+/* HDR-loud folders. Hard saturate + brightness boost via CSS filter so
+   colors POP off the dark backdrop, even at the cost of fidelity to the
+   palette swatches. Drop-shadow gives weight against the lighter
+   backdrop. */
 #group-overlay .bubble .folder-shape rect:first-child { fill-opacity: 1; }
 #group-overlay .bubble .folder-shape rect:nth-child(2) { fill-opacity: 1; }
 #group-overlay .bubble .folder-shape {
-  filter: saturate(1.45) brightness(1.10) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15));
+  filter:
+    saturate(2.4)
+    brightness(1.35)
+    contrast(1.08)
+    drop-shadow(0 2px 6px rgba(0, 0, 0, 0.20))
+    drop-shadow(0 0 0.5px rgba(255, 255, 255, 0.6));
 }
 #group-overlay .bubble text {
   fill: #111;
@@ -1978,8 +1985,9 @@ body.dragging-snippet .group-row:hover {
 }
 #group-overlay .bubble.hot .folder-shape {
   filter:
-    saturate(1.6) brightness(1.18)
-    drop-shadow(0 0 14px rgba(46, 165, 140, 0.85))
+    saturate(2.8) brightness(1.5) contrast(1.12)
+    drop-shadow(0 3px 8px rgba(0, 0, 0, 0.25))
+    drop-shadow(0 0 16px rgba(46, 165, 140, 0.85))
     drop-shadow(0 0 4px rgba(46, 165, 140, 0.5));
 }
 #group-overlay .bubble.hot .folder-shape rect:first-child { stroke-width: 2; }
