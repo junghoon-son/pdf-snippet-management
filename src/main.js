@@ -2337,8 +2337,14 @@ function ensureConnectorSvg() {
   defs.appendChild(grad);
   svg.appendChild(defs);
 
-  // Three layers stacked: wide soft halo (channel glow) → mid stroke
-  // (the visible beam) → thin bright core (sharp center line).
+  // Bracket: vertical bar with small ticks at the right margin of the
+  // viewer, sized to the highlight's vertical extent — like a "]" pulled
+  // out into the gutter so the connector never crosses document text.
+  const bracket = document.createElementNS(NS, "path");
+  bracket.classList.add("hover-connector-bracket");
+  bracket.setAttribute("fill", "none");
+  // Three layers stacked for the main beam: wide soft halo (channel glow)
+  // → mid stroke (the visible beam) → thin bright core (sharp center line).
   const halo = document.createElementNS(NS, "path");
   halo.classList.add("hover-connector-halo");
   halo.setAttribute("fill", "none");
@@ -2349,7 +2355,7 @@ function ensureConnectorSvg() {
   const core = document.createElementNS(NS, "path");
   core.classList.add("hover-connector-path");
   core.setAttribute("fill", "none");
-  svg.append(halo, beam, core);
+  svg.append(bracket, halo, beam, core);
 
   document.body.appendChild(svg);
   return svg;
@@ -2634,10 +2640,11 @@ function updateHoverConnector() {
 
   if (!hVisible || !cVisible) { hideHoverConnector(); return; }
 
-  // Asymmetric gap: small gap on the doc side so we don't crowd the text,
-  // zero gap on the card side so the connector visibly *touches* the card.
-  const DOC_GAP = 12;
-  const x1 = hRect.right + DOC_GAP;
+  // Pin the doc-side endpoint to the viewer's right margin — never inside
+  // the text. The bracket below labels the highlight's vertical extent
+  // visually so the user still sees what the connector is pointing at.
+  const marginX = viewerVis.right - 6;
+  const x1 = marginX;
   const y1 = hRect.top + hRect.height / 2;
   const x2 = cardRect.left;
   const y2 = cardRect.top + cardRect.height / 2;
@@ -2645,8 +2652,17 @@ function updateHoverConnector() {
   const cy2 = Math.max(listVis.top + 4, Math.min(listVis.bottom - 4, y2));
   const midX = x1 + (x2 - x1) * 0.5;
   const path = `M ${x1} ${cy1} H ${midX} V ${cy2} H ${x2}`;
+  // Bracket (`]` pointing left) at the margin, height = highlight extent.
+  const bracketTop = Math.max(viewerVis.top + 4, hRect.top);
+  const bracketBot = Math.min(viewerVis.bottom - 4, hRect.bottom);
+  const bracketPath = bracketBot > bracketTop + 2
+    ? `M ${marginX - 5} ${bracketTop} L ${marginX} ${bracketTop} L ${marginX} ${bracketBot} L ${marginX - 5} ${bracketBot}`
+    : "";
   const svg = ensureConnectorSvg();
-  for (const p of svg.querySelectorAll("path")) p.setAttribute("d", path);
+  svg.querySelector(".hover-connector-bracket").setAttribute("d", bracketPath);
+  for (const p of svg.querySelectorAll(".hover-connector-halo, .hover-connector-beam, .hover-connector-path")) {
+    p.setAttribute("d", path);
+  }
   const grad = svg.querySelector("#hover-conn-grad");
   grad.setAttribute("x1", x1);
   grad.setAttribute("y1", cy1);

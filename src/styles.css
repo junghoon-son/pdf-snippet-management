@@ -1698,6 +1698,13 @@ body.dragging-sticker * { cursor: grabbing !important; }
    carrying the gradient that fades into the card, and a thin sharp core
    for definition. Dialed-back vs the previous pass — the connector is a
    hint, not a spotlight. */
+.hover-connector-bracket {
+  stroke: var(--accent);
+  stroke-opacity: 0.7;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .hover-connector-halo {
   stroke: var(--accent);
   stroke-opacity: 0.10;
@@ -1739,6 +1746,7 @@ body.dragging-sticker * { cursor: grabbing !important; }
   stroke-dasharray: 2 6;
 }
 
+.hover-connector.active .hover-connector-bracket,
 .hover-connector.active .hover-connector-halo,
 .hover-connector.active .hover-connector-beam,
 .hover-connector.active .hover-connector-path {
