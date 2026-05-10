@@ -2283,6 +2283,8 @@ function updateHoverClasses() {
     li.classList.toggle("hover", li.dataset.snippetId === hoverSnippetId);
   });
   updateHoverConnector();
+  if (hoverSnippetId) startConnectorLoop();
+  else stopConnectorLoop();
 }
 
 // Hover-connector — single Bézier curve from the hovered snippet card to
@@ -2410,19 +2412,30 @@ function updateHoverConnector() {
   svg.classList.toggle("far", verticalSpan > vh * 0.6);
   svg.classList.add("active");
 }
-// Recompute on scroll of either pane while hovering. Throttled via rAF.
-let _connectorRafPending = false;
-function scheduleConnectorUpdate() {
-  if (!hoverSnippetId || _connectorRafPending) return;
-  _connectorRafPending = true;
-  requestAnimationFrame(() => {
-    _connectorRafPending = false;
+// While hover is active, run a per-frame loop that recomputes endpoint
+// rects and redraws the connector path. Cheaper than wiring scroll
+// listeners to every possible scrollable ancestor — any change in screen
+// position gets picked up next frame regardless of source. Loop self-
+// terminates when hover clears.
+let _connectorRafHandle = 0;
+function startConnectorLoop() {
+  if (_connectorRafHandle) return;
+  const tick = () => {
+    if (!hoverSnippetId) {
+      _connectorRafHandle = 0;
+      return;
+    }
     updateHoverConnector();
-  });
+    _connectorRafHandle = requestAnimationFrame(tick);
+  };
+  _connectorRafHandle = requestAnimationFrame(tick);
 }
-viewerScroll.addEventListener("scroll", scheduleConnectorUpdate, { passive: true });
-snippetsListEl.addEventListener("scroll", scheduleConnectorUpdate, { passive: true });
-window.addEventListener("resize", scheduleConnectorUpdate);
+function stopConnectorLoop() {
+  if (_connectorRafHandle) {
+    cancelAnimationFrame(_connectorRafHandle);
+    _connectorRafHandle = 0;
+  }
+}
 
 viewerContainer.addEventListener("mouseup", async () => {
   if (state.source.kind === "pdf") {
