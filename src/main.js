@@ -2490,18 +2490,26 @@ function ensureDirIndicator(side) {
   document.body.appendChild(el);
   return el;
 }
-function updateDirIndicator(side, rect, paneRect, visible, onClick) {
+function updateDirIndicator(side, rect, paneRect, visible, anchorRect, anchorEdge, onClick) {
   const el = ensureDirIndicator(side);
   if (visible) { el.classList.remove("active"); return; }
-  // Determine direction: rect above the pane → "up"; below → "down".
   let dir;
   if (rect.bottom <= paneRect.top) dir = "up";
   else if (rect.top >= paneRect.bottom) dir = "down";
   else { el.classList.remove("active"); return; }
   el.dataset.direction = dir;
-  // Center horizontally over the pane; vertically pin at the relevant edge.
-  const x = (paneRect.left + paneRect.right) / 2;
-  const y = dir === "up" ? paneRect.top + 14 : paneRect.bottom - 14;
+  // Position next to the anchor (the user's attention focus), not the
+  // off-screen target's pane. anchorEdge picks the side of the anchor
+  // rect we sit against.
+  let x, y;
+  if (anchorEdge === "left") {
+    x = anchorRect.left - 18;
+  } else if (anchorEdge === "right") {
+    x = anchorRect.right + 18;
+  } else {
+    x = (anchorRect.left + anchorRect.right) / 2;
+  }
+  y = anchorRect.top + anchorRect.height / 2;
   el.style.left = `${x}px`;
   el.style.top = `${y}px`;
   el.classList.add("active");
@@ -2551,13 +2559,21 @@ function updateHoverConnector() {
     cardRect.right  > listVis.left && cardRect.left < listVis.right;
 
   // Off-screen direction indicators — when an endpoint is scrolled out of
-  // view, show a small clickable arrow at the pane edge pointing toward
-  // it. Click scrolls the target into view.
-  updateDirIndicator("doc", hRect, viewerVis, hVisible, () => {
+  // view, show a small clickable arrow near the *hovered* element pointing
+  // toward where the off-screen target lives. Click scrolls the target
+  // back into view.
+  //
+  // Placement:
+  //   "doc" indicator (highlight off-screen) → next to the card on its
+  //     left edge in the gutter. The user is looking at the card; the
+  //     hint should be next to the card.
+  //   "list" indicator (card off-screen) → next to the highlight on its
+  //     right edge. The user is looking at the highlight.
+  updateDirIndicator("doc", hRect, viewerVis, hVisible, cardRect, "left", () => {
     const snippet = state.snippets.find((s) => s.id === hoverSnippetId);
     if (snippet) previewSnippetInPdf(snippet);
   });
-  updateDirIndicator("list", cardRect, listVis, cVisible, () => {
+  updateDirIndicator("list", cardRect, listVis, cVisible, hRect, "right", () => {
     card.scrollIntoView({ behavior: "smooth", block: "center" });
   });
 
