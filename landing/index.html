@@ -5,96 +5,345 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Marklee — portable annotations for documents</title>
     <meta name="description" content="Marklee is a portable, format-agnostic annotation format for PDF, Markdown, and DOCX. Local-first sidecar JSON, edit-tolerant text anchors, a directed lineage graph between snippets, and the MarkRank centrality algorithm." />
+    <meta property="og:title" content="Marklee — portable annotations for documents" />
+    <meta property="og:description" content="Anchoring algorithm + sidecar JSON + lineage graph. Local-first. PDF, Markdown, DOCX." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://markleeapp.com/" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <div class="bg-mesh" aria-hidden="true"></div>
+
     <header class="hero">
-      <div class="container">
+      <div class="container hero-nav">
         <a class="brand" href="/">
           <span class="brand-dot"></span>
           <span class="brand-name">Marklee</span>
         </a>
         <nav class="nav">
           <a href="#what">What</a>
+          <a href="#how">How</a>
           <a href="#why">Why</a>
           <a href="/spec">Spec</a>
           <a href="https://github.com" rel="noreferrer noopener">GitHub</a>
         </nav>
       </div>
 
-      <div class="container hero-body">
-        <h1>Annotations that travel<br/>with the document.</h1>
-        <p class="lede">
-          A portable, format-agnostic annotation format for PDF, Markdown, and DOCX.
-          Local-first sidecar JSON. Edit-tolerant text anchors. A directed lineage graph
-          between snippets. <strong>MarkRank</strong> centrality over your reading.
-        </p>
-        <div class="cta">
-          <a class="btn primary" href="/download/Marklee_0.1.0_universal.dmg">Download for Mac</a>
-          <a class="btn ghost" href="/spec">Read the spec</a>
+      <div class="container hero-grid">
+        <div class="hero-body">
+          <h1>
+            Annotations that travel<br/>
+            <span class="hero-accent">with the document</span>.
+          </h1>
+          <p class="lede">
+            A portable, format-agnostic annotation format for PDF, Markdown, and DOCX.
+            Local-first sidecar JSON. Edit-tolerant text anchors. A directed lineage graph
+            between snippets. <strong>MarkRank</strong> centrality over your reading.
+          </p>
+          <div class="cta">
+            <a class="btn primary" href="/download/Marklee_0.1.0_universal.dmg">
+              <span class="btn-icon">↓</span>
+              <span>Download for Mac</span>
+            </a>
+            <a class="btn ghost" href="/spec">Read the spec</a>
+          </div>
+          <p class="hint">Universal binary · macOS Intel + Apple Silicon · ~8.5 MB · unsigned dev build</p>
         </div>
-        <p class="hint">Universal binary · macOS Intel + Apple Silicon · 8.5 MB · unsigned dev build</p>
+
+        <!-- Hero animation: SVG demo of the anchoring concept.
+             Document + highlight + snippet card connect via a thin accent line.
+             CSS-driven loop, no JS. Replace with an actual app screenshot
+             or screen recording later — see PLACEHOLDER NOTES at bottom of file. -->
+        <div class="hero-demo" aria-hidden="true">
+          <svg class="hero-demo-svg" viewBox="0 0 360 280" xmlns="http://www.w3.org/2000/svg">
+            <!-- Document panel -->
+            <g class="demo-doc">
+              <rect x="20" y="20" width="180" height="240" rx="6" class="demo-doc-bg"/>
+              <line x1="38" y1="50" x2="180" y2="50" class="demo-line"/>
+              <line x1="38" y1="65" x2="170" y2="65" class="demo-line"/>
+              <line x1="38" y1="80" x2="180" y2="80" class="demo-line"/>
+              <rect x="38" y="98" width="142" height="11" rx="2" class="demo-highlight"/>
+              <line x1="38" y1="125" x2="175" y2="125" class="demo-line"/>
+              <line x1="38" y1="140" x2="180" y2="140" class="demo-line"/>
+              <line x1="38" y1="155" x2="160" y2="155" class="demo-line"/>
+              <line x1="38" y1="180" x2="180" y2="180" class="demo-line"/>
+              <line x1="38" y1="195" x2="172" y2="195" class="demo-line"/>
+              <line x1="38" y1="210" x2="180" y2="210" class="demo-line"/>
+              <line x1="38" y1="225" x2="155" y2="225" class="demo-line"/>
+              <line x1="38" y1="240" x2="178" y2="240" class="demo-line"/>
+            </g>
+
+            <!-- Bracket at margin -->
+            <path class="demo-bracket" d="M 205 96 L 210 96 L 210 113 L 205 113"/>
+
+            <!-- Connector elbow -->
+            <path class="demo-connector" d="M 210 104 H 245 V 145 H 270"/>
+
+            <!-- Snippet card -->
+            <g class="demo-card">
+              <rect x="270" y="120" width="80" height="50" rx="4" class="demo-card-bg"/>
+              <rect x="278" y="113" width="22" height="6" rx="1.5" class="demo-card-tab demo-tab-1"/>
+              <rect x="304" y="113" width="22" height="6" rx="1.5" class="demo-card-tab demo-tab-2"/>
+              <line x1="282" y1="135" x2="338" y2="135" class="demo-card-line"/>
+              <line x1="282" y1="146" x2="338" y2="146" class="demo-card-line"/>
+              <line x1="282" y1="157" x2="320" y2="157" class="demo-card-line"/>
+            </g>
+          </svg>
+        </div>
       </div>
     </header>
 
     <section id="what" class="section">
       <div class="container">
-        <h2>What it is</h2>
+        <div class="section-head">
+          <span class="section-eyebrow">What it is</span>
+          <h2>The anchor layer for documents.</h2>
+          <p class="section-lede">
+            Six things Marklee gives you that a notes app or PDF reader doesn't.
+          </p>
+        </div>
         <div class="grid">
           <div class="card">
+            <div class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5">
+                <rect x="6" y="4" width="14" height="20" rx="1.5"/>
+                <rect x="10" y="8" width="14" height="20" rx="1.5"/>
+              </svg>
+            </div>
             <h3>Portable annotations</h3>
             <p>
-              Annotations live in plain JSON sidecars next to the source file. No server,
-              no account, no proprietary blob. Email someone a <code>paper.pdf</code> and
-              <code>paper.pdf.annot.json</code> — they get your annotations.
+              Plain JSON sidecars next to the source. No server, no account.
+              Email someone <code>paper.pdf</code> + <code>paper.pdf.annot.json</code> —
+              they get your annotations, fully.
             </p>
           </div>
+
           <div class="card">
-            <h3>Edit-tolerant anchors</h3>
+            <div class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M5 16 L11 22 L27 6"/>
+              </svg>
+            </div>
+            <h3>Edit-tolerant anchoring</h3>
             <p>
-              A normative four-tier resolution algorithm finds your highlight even after
-              the source has been edited: exact text + context → exact text only →
-              fuzzy within section → orphaned with badge.
+              A normative four-tier algorithm finds your highlight even after the
+              source has been edited:
+              <code>text + context → exact → fuzzy in section → orphaned</code>.
             </p>
           </div>
+
           <div class="card">
+            <div class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="8" cy="8" r="3"/>
+                <circle cx="24" cy="8" r="3"/>
+                <circle cx="16" cy="22" r="3"/>
+                <line x1="10" y1="10" x2="14" y2="20"/>
+                <line x1="22" y1="10" x2="18" y2="20"/>
+              </svg>
+            </div>
             <h3>Lineage graph</h3>
             <p>
-              Connect snippets with labeled edges — <em>supports</em>, <em>contradicts</em>,
-              <em>elaborates</em>. The graph is first-class data. <strong>MarkRank</strong>,
-              a PageRank variant over the snippet graph, surfaces the most-cited ideas.
+              Connect snippets with labeled edges — <em>supports</em>,
+              <em>contradicts</em>, <em>elaborates</em>. The graph is first-class data.
+              <strong>MarkRank</strong> surfaces the most-cited ideas.
             </p>
           </div>
+
           <div class="card">
+            <div class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M6 16 H22"/>
+                <path d="M22 16 L18 12 M22 16 L18 20"/>
+                <circle cx="26" cy="16" r="3"/>
+              </svg>
+            </div>
             <h3>Permalinks</h3>
             <p>
-              Share a single annotation as a URL. The link carries hash + anchor + optional
-              text/context windows; the receiver opens the source PDF and lands on the right
-              region. Like HTML <code>#:~:text=</code> Text Fragments — but for documents.
+              Share one annotation as a URL. Hash + anchor + optional text/context;
+              the receiver opens the source PDF and lands on the right region.
+              Like HTML <code>#:~:text=</code> Text Fragments — for documents.
             </p>
           </div>
+
           <div class="card">
+            <div class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5">
+                <rect x="4" y="6" width="10" height="20" rx="1.5"/>
+                <rect x="18" y="6" width="10" height="13" rx="1.5"/>
+                <rect x="18" y="22" width="10" height="4" rx="1"/>
+              </svg>
+            </div>
             <h3>Cross-format</h3>
             <p>
-              One snippet schema covers PDF, Markdown, and DOCX. Lineage view mixes a
-              page-3 PDF quote with a §Methods Markdown snippet on the same canvas.
+              One snippet schema covers PDF, Markdown, DOCX, and plain text.
+              Lineage view mixes a page-3 PDF quote with a §Methods Markdown snippet
+              on the same canvas.
             </p>
           </div>
+
           <div class="card">
+            <div class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M9 6 H23 L26 9 V26 H9 Z"/>
+                <path d="M23 6 V9 H26"/>
+                <line x1="13" y1="14" x2="22" y2="14"/>
+                <line x1="13" y1="18" x2="22" y2="18"/>
+                <line x1="13" y1="22" x2="20" y2="22"/>
+              </svg>
+            </div>
             <h3>Open spec</h3>
             <p>
-              Every implementation detail in <a href="/spec">SPEC.md</a> + a JSON Schema
-              you can validate sidecars against in CI. The format is the contract; the
-              tools are interchangeable.
+              Every implementation detail in <a href="/spec">SPEC.md</a> + a JSON
+              Schema you can validate sidecars against in CI. The format is the
+              contract; the tools are interchangeable.
             </p>
           </div>
         </div>
       </div>
     </section>
 
+    <section id="how" class="section alt">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow">How it works</span>
+          <h2>Highlight, anchor, share.</h2>
+          <p class="section-lede">
+            Three views from inside Marklee. Drop your own screenshots into the
+            placeholders below — see the comments in <code>landing/index.html</code>
+            for what to capture and the suggested aspect.
+          </p>
+        </div>
+
+        <!-- ──────────────────────────────────────────────────────────────────
+             SCREENSHOT PLACEHOLDERS — replace each with a real PNG/WebP.
+             Suggested workflow:
+               1. Run the dev app (bun tauri dev) on a high-DPI display.
+               2. Open an annotated paper with several groups + lineage edges.
+               3. Use ⌘⇧4 + space (macOS) to capture each pane cleanly.
+               4. Save into landing/screens/ at 2x resolution; the CSS scales.
+               5. Update the <img src="..."> below.
+
+             Each block has the dimensions we're styling for + what makes a
+             good shot for that section.
+             ────────────────────────────────────────────────────────────── -->
+
+        <div class="how-row">
+          <div class="how-text">
+            <h3>① Capture by selection or drop</h3>
+            <p>
+              Drag-select text in any document to make a snippet. Drag a sticker from
+              the groups panel onto a snippet to tag it. Paste from anywhere — text or
+              image — directly into the workspace.
+            </p>
+          </div>
+          <!-- IDEAL: full Marklee window. Show: a PDF open with 3-4 highlights of
+               different colors, the right pane listing snippet cards with sticker
+               tags, the floating tool dock visible, the sticker-dispenser visible.
+               Aspect: ~16:10. Ideal width: 1600px @ 2x. -->
+          <figure class="how-shot">
+            <div class="how-shot-placeholder" data-aspect="16-10">
+              <span>landing/screens/01-capture.png</span>
+              <small>Whole window — annotated PDF + snippet pane + dock</small>
+            </div>
+          </figure>
+        </div>
+
+        <div class="how-row reverse">
+          <div class="how-text">
+            <h3>② See your reading as a graph</h3>
+            <p>
+              The lineage view turns the snippets into a directed labeled graph —
+              docs on the left, snippets in the middle, groups on the right. Edges
+              you draw between snippets show your reasoning. <strong>MarkRank</strong>
+              ranks them by graph centrality.
+            </p>
+          </div>
+          <!-- IDEAL: the lineage view alone with a populated graph — at least 2
+               source documents, 8+ snippets, a few labeled edges between them.
+               Aspect: ~16:10. -->
+          <figure class="how-shot">
+            <div class="how-shot-placeholder" data-aspect="16-10">
+              <span>landing/screens/02-lineage.png</span>
+              <small>Lineage view — doc → snippet → group columns with edges</small>
+            </div>
+          </figure>
+        </div>
+
+        <div class="how-row">
+          <div class="how-text">
+            <h3>③ Share a single annotation as a URL</h3>
+            <p>
+              Click <em>share</em> on any snippet. The Marklee Permalink format
+              encodes hash + page + anchor + optional text/context. The receiver
+              opens the source and lands on the right region — even if the source
+              has been lightly edited since.
+            </p>
+          </div>
+          <!-- IDEAL: zoomed-in shot of a snippet card with the share button hovered,
+               plus the URL pasted in a chat / browser bar. Or a single-doc card
+               with the permalink URL visible.
+               Aspect: ~4:3 or 16:10. -->
+          <figure class="how-shot">
+            <div class="how-shot-placeholder" data-aspect="16-10">
+              <span>landing/screens/03-permalink.png</span>
+              <small>Snippet card + share button + the URL it generates</small>
+            </div>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section id="format" class="section">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow">The format</span>
+          <h2>JSON, next to the source. That's it.</h2>
+          <p class="section-lede">
+            One sidecar per document. Every snippet, edge, and group lives inside.
+            Self-describing, version-controllable, scriptable.
+          </p>
+        </div>
+        <pre class="code-block"><code>{
+  <span class="k">"markleeVersion"</span>: <span class="s">"0.1"</span>,
+  <span class="k">"source"</span>: {
+    <span class="k">"path"</span>: <span class="s">"paper.pdf"</span>,
+    <span class="k">"kind"</span>: <span class="s">"pdf"</span>,
+    <span class="k">"contentHash"</span>: <span class="s">"sha256:ab12cd34…"</span>
+  },
+  <span class="k">"snippets"</span>: [
+    {
+      <span class="k">"id"</span>: <span class="s">"3f7e…"</span>,
+      <span class="k">"page"</span>: <span class="n">5</span>,
+      <span class="k">"text"</span>: <span class="s">"the agent's objective is to compress time-to-control"</span>,
+      <span class="k">"contextBefore"</span>: <span class="s">"…in a constrained MDP. The "</span>,
+      <span class="k">"contextAfter"</span>: <span class="s">" under a tiered reward calibrated…"</span>,
+      <span class="k">"anchor"</span>: <span class="s">"Methods &gt; Reward shaping"</span>,
+      <span class="k">"comment"</span>: <span class="s">"The whole TTC framing rests on this."</span>,
+      <span class="k">"groups"</span>: [<span class="s">"hypothesis"</span>, <span class="s">"methodology"</span>]
+    }
+  ],
+  <span class="k">"edges"</span>: [
+    { <span class="k">"source"</span>: <span class="s">"3f7e…"</span>, <span class="k">"target"</span>: <span class="s">"a9b2…"</span>, <span class="k">"label"</span>: <span class="s">"supports"</span> }
+  ],
+  <span class="k">"groups"</span>: [
+    { <span class="k">"id"</span>: <span class="s">"hypothesis"</span>, <span class="k">"name"</span>: <span class="s">"Hypothesis"</span> }
+  ]
+}</code></pre>
+      </div>
+    </section>
+
     <section id="why" class="section alt">
       <div class="container">
-        <h2>Why a new format</h2>
+        <div class="section-head">
+          <span class="section-eyebrow">Why a new format</span>
+          <h2>Edit-tolerant anchoring is the gap.</h2>
+          <p class="section-lede">
+            Existing annotation formats either lock you into a server, hard-code
+            byte offsets that break, or stop at one document type. Marklee fills
+            the space between them.
+          </p>
+        </div>
         <div class="compare">
           <table>
             <thead>
@@ -133,6 +382,12 @@
           Built local-first because the data model demands it. Nothing about Marklee
           requires a server, and nothing it does will ever require an account.
         </p>
+        <div class="cta">
+          <a class="btn primary" href="/download/Marklee_0.1.0_universal.dmg">
+            <span class="btn-icon">↓</span><span>Download for Mac</span>
+          </a>
+          <a class="btn ghost" href="/spec">Read the spec</a>
+        </div>
       </div>
     </section>
 
@@ -142,5 +397,41 @@
         <span class="dim">© 2026 · CC&nbsp;BY&nbsp;4.0 spec · MIT-licensed reference implementation</span>
       </div>
     </footer>
+
+    <!--
+      ──────────────────────────────────────────────────────────────────────
+      RECOMMENDED MEDIA TO ADD
+      ──────────────────────────────────────────────────────────────────────
+
+      1. landing/screens/01-capture.png  (16:10, ~1600×1000 @ 2x)
+         Full Marklee window with an annotated PDF, sticker tags visible,
+         floating tool dock visible, snippet pane with several cards.
+
+      2. landing/screens/02-lineage.png  (16:10, ~1600×1000 @ 2x)
+         Lineage view alone — a populated graph with at least 2 source docs,
+         8+ snippets, several labeled edges. Bubblegum or slate theme reads
+         best; cream is lower contrast for screenshots.
+
+      3. landing/screens/03-permalink.png  (16:10, ~1600×1000 @ 2x)
+         Snippet card hover state with share button, plus a screenshot of
+         the URL pasted into iMessage / a chat app for context.
+
+      4. landing/screens/hero.gif (or .mp4) — OPTIONAL ANIMATION
+         5–8 sec loop: highlight a passage in a PDF, snippet card pops in
+         on the right, hover connector traces between them, fade to next
+         frame showing the lineage view, fade back. ~600×400. Keep file
+         size <500KB; use MP4 with autoplay/loop/muted/playsinline if going
+         that route. The CSS-driven SVG hero animation in this file is a
+         lightweight fallback if you don't want to ship a video asset.
+
+      5. og-image.png  (1200×630)
+         Social card. Big "Marklee" wordmark + tagline + sample snippet card
+         visual + accent gradient. Used by Twitter / iMessage / Slack
+         link previews.
+
+      Once those are in place, replace the corresponding placeholder
+      <div class="how-shot-placeholder"> elements with <img src="..." />
+      and add <link rel="preload" as="image" ...> for hero shots.
+    -->
   </body>
 </html>
