@@ -2385,14 +2385,18 @@ function openHighlightActionMenu(clientX, clientY, snippetId) {
   menu.style.left = `${left}px`;
   menu.style.top = `${top}px`;
   _activeHighlightMenu = menu;
+  // Use mousedown (not click) for outside dismissal — click events
+  // after a right-click can fire on the original target and close the
+  // menu prematurely. mousedown fires only on the *next* user press,
+  // not on the release of the right-click that opened the menu.
   setTimeout(() => {
-    document.addEventListener("click", _onHighlightMenuOutside, true);
+    document.addEventListener("mousedown", _onHighlightMenuOutside, true);
     document.addEventListener("keydown", _onHighlightMenuEsc, true);
   }, 0);
 }
 function closeHighlightActionMenu() {
   if (_activeHighlightMenu) { _activeHighlightMenu.remove(); _activeHighlightMenu = null; }
-  document.removeEventListener("click", _onHighlightMenuOutside, true);
+  document.removeEventListener("mousedown", _onHighlightMenuOutside, true);
   document.removeEventListener("keydown", _onHighlightMenuEsc, true);
 }
 function _onHighlightMenuOutside(e) {
@@ -3311,7 +3315,22 @@ function previewSnippetInPdf(s) {
   const wrap = viewerContainer.querySelector(`.page-wrap[data-page="${s.page}"]`);
   if (!wrap) return;
   ensurePageRendered?.(s.page);
-  wrap.scrollIntoView({ behavior: "smooth", block: "center" });
+  // Center on the highlight rect rather than the whole page-wrap, so a
+  // snippet at the top of a long page doesn't get pushed out of view by
+  // scrollIntoView({ block: "center" })'s page-centering behavior.
+  // Use ~25% from the top as the parking position so the highlight has
+  // both UI-clearance above and reading context below.
+  const rect = (s.rects || [])[0];
+  if (rect) {
+    const scrollRect = viewerScroll.getBoundingClientRect();
+    const wrapRect = wrap.getBoundingClientRect();
+    const wrapTopInScroll = wrapRect.top - scrollRect.top + viewerScroll.scrollTop;
+    const highlightY = wrapTopInScroll + rect.top * wrap.offsetHeight;
+    const target = Math.max(0, highlightY - scrollRect.height * 0.25);
+    viewerScroll.scrollTo({ top: target, behavior: "smooth" });
+  } else {
+    wrap.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   pulseSnippet(s.id);
 }
 
