@@ -2640,10 +2640,26 @@ function updateHoverConnector() {
 
   if (!hVisible || !cVisible) { hideHoverConnector(); return; }
 
-  // Pin the doc-side endpoint to the viewer's right margin — never inside
-  // the text. The bracket below labels the highlight's vertical extent
-  // visually so the user still sees what the connector is pointing at.
-  const marginX = viewerVis.right - 6;
+  // Pin the doc-side endpoint just outside the page's right edge — not
+  // glued to the viewer pane edge. Use the rendered page-wrap (PDF) or the
+  // flow-doc article (markdown/docx) right edge plus a comfortable offset
+  // so the bracket sits in the page's natural margin gutter.
+  let pageRight;
+  const snippet = state.snippets.find((s) => s.id === hoverSnippetId)
+    || (state.workspace.pastedSnippets || []).find((s) => s.id === hoverSnippetId);
+  if (snippet && state.source.kind === "pdf") {
+    const pageWrap = viewerContainer.querySelector(`.page-wrap[data-page="${snippet.page}"]`);
+    if (pageWrap) pageRight = pageWrap.getBoundingClientRect().right;
+  }
+  if (pageRight == null) {
+    const article = viewerContainer.querySelector(".flow-doc");
+    if (article) pageRight = article.getBoundingClientRect().right;
+  }
+  if (pageRight == null) pageRight = viewerVis.right - 48; // fallback
+  // 14px past the page edge — about 0.15" — keeps the bracket clearly
+  // separated from text without sliding all the way to the pane edge.
+  // Clamp inside the viewer's visible right edge with a 6px inset.
+  const marginX = Math.min(pageRight + 14, viewerVis.right - 6);
   const x1 = marginX;
   const y1 = hRect.top + hRect.height / 2;
   const x2 = cardRect.left;
