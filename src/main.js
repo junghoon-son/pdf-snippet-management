@@ -2662,8 +2662,14 @@ function updateHoverConnector() {
   const marginX = Math.min(pageRight + 14, viewerVis.right - 6);
   const x1 = marginX;
   const y1 = hRect.top + hRect.height / 2;
-  const x2 = cardRect.left;
-  const y2 = cardRect.top + cardRect.height / 2;
+  // Aim the card-side endpoint at the snippet's actual content (the .text
+  // quote block or .image clip) so the line lands on the meaningful
+  // element, not generic card chrome. Falls back to card edge if no
+  // content element is found.
+  const contentEl = card.querySelector(".text") || card.querySelector(".image") || card;
+  const contentRect = contentEl.getBoundingClientRect();
+  const x2 = contentRect.left;
+  const y2 = contentRect.top + contentRect.height / 2;
   const cy1 = Math.max(viewerVis.top + 4, Math.min(viewerVis.bottom - 4, y1));
   const cy2 = Math.max(listVis.top + 4, Math.min(listVis.bottom - 4, y2));
   const midX = x1 + (x2 - x1) * 0.5;
