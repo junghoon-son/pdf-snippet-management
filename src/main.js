@@ -2185,6 +2185,25 @@ viewerContainer.addEventListener("click", (e) => {
   if (ta) setTimeout(() => ta.focus(), 250);
 });
 
+// Right-click / ctrl-click / cmd-click on a highlight in the viewer opens
+// a small popover with "Delete highlight". Plain left-click still starts
+// the press gesture for drag-to-group.
+viewerContainer.addEventListener("contextmenu", (e) => {
+  let snippetId = null;
+  // Flow docs: hover the <mark.hl> element directly.
+  const flowMark = e.target.closest?.("mark.hl");
+  if (flowMark) snippetId = flowMark.dataset.snippetId;
+  // PDF: hit-test against snippet rects.
+  if (!snippetId && state.source.kind === "pdf") {
+    const hit = hitTestHighlight(e);
+    if (hit) snippetId = hit.id;
+  }
+  if (!snippetId) return; // no highlight under cursor → let the OS menu fire
+  e.preventDefault();
+  e.stopPropagation();
+  openHighlightActionMenu(e.clientX, e.clientY, snippetId);
+});
+
 viewerContainer.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
   // Modifier-clicks (⌘/⌃/⇧/⌥) bypass our press gesture so OS-native
@@ -2335,6 +2354,83 @@ function ensureConnectorSvg() {
   document.body.appendChild(svg);
   return svg;
 }
+// Highlight-action popover — opened by right-click / ctrl-click / cmd-click
+// on a highlight in the viewer. One action for now (Delete); easy to add
+// "Edit comment", "Open lineage" later.
+let _activeHighlightMenu = null;
+function openHighlightActionMenu(clientX, clientY, snippetId) {
+  closeHighlightActionMenu();
+  const menu = document.createElement("div");
+  menu.className = "highlight-action-menu";
+
+  const del = document.createElement("button");
+  del.className = "highlight-action-item destructive";
+  del.textContent = "Delete highlight";
+  del.addEventListener("click", async (ev) => {
+    ev.stopPropagation();
+    closeHighlightActionMenu();
+    await deleteSnippetById(snippetId);
+  });
+  menu.appendChild(del);
+
+  document.body.appendChild(menu);
+  // Position near cursor; clamp to viewport
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  let left = clientX + 4;
+  let top = clientY + 4;
+  if (left + mw > window.innerWidth - 8) left = window.innerWidth - mw - 8;
+  if (top + mh > window.innerHeight - 8) top = clientY - mh - 4;
+  if (left < 8) left = 8;
+  if (top < 8) top = 8;
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+  _activeHighlightMenu = menu;
+  setTimeout(() => {
+    document.addEventListener("click", _onHighlightMenuOutside, true);
+    document.addEventListener("keydown", _onHighlightMenuEsc, true);
+  }, 0);
+}
+function closeHighlightActionMenu() {
+  if (_activeHighlightMenu) { _activeHighlightMenu.remove(); _activeHighlightMenu = null; }
+  document.removeEventListener("click", _onHighlightMenuOutside, true);
+  document.removeEventListener("keydown", _onHighlightMenuEsc, true);
+}
+function _onHighlightMenuOutside(e) {
+  if (!_activeHighlightMenu) return;
+  if (_activeHighlightMenu.contains(e.target)) return;
+  closeHighlightActionMenu();
+}
+function _onHighlightMenuEsc(e) { if (e.key === "Escape") closeHighlightActionMenu(); }
+
+async function deleteSnippetById(snippetId) {
+  // Mirror the in-card delete handler: undoable via ⌘Z.
+  const snippet = state.snippets.find((s) => s.id === snippetId);
+  if (snippet) {
+    const index = state.snippets.indexOf(snippet);
+    state.snippets.splice(index, 1);
+    undoStack.push({ type: "delete", snippet, index });
+    if (snippet.kind === "image" && snippet.imagePath) {
+      try { await getStore().deleteClip(state.currentPdfPath, snippet.imagePath); } catch {}
+      const cacheKey = `${state.currentPdfPath}::${snippet.imagePath}`;
+      const cached = clipUrlCache.get(cacheKey);
+      if (cached) { URL.revokeObjectURL(cached); clipUrlCache.delete(cacheKey); }
+    }
+    await persist();
+    refreshActiveView();
+    applyAllHighlights();
+    return;
+  }
+  // Pasted? (rare for highlights but handle it cleanly)
+  const pasted = (state.workspace?.pastedSnippets || []).find((s) => s.id === snippetId);
+  if (pasted) {
+    const i = state.workspace.pastedSnippets.indexOf(pasted);
+    state.workspace.pastedSnippets.splice(i, 1);
+    undoStack.push({ type: "delete-pasted", snippet: pasted, index: i });
+    saveAllWorkspaces();
+    refreshActiveView();
+  }
+}
+
 async function removeGroupFromSnippet(snippetId, groupId, ownerPath) {
   // Three storage homes for a snippet's groups:
   //   1. Pasted: state.workspace.pastedSnippets (workspace localStorage).

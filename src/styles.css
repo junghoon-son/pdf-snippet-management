@@ -1598,6 +1598,41 @@ body.dragging-sticker * { cursor: grabbing !important; }
 }
 .hover-connector.active { opacity: 0.85; }
 
+/* Highlight action menu — opens on right-click / ctrl-click / cmd-click
+   on a viewer highlight. */
+.highlight-action-menu {
+  position: fixed;
+  z-index: 90;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18), 0 1px 3px rgba(0, 0, 0, 0.08);
+  font-family: inherit;
+}
+.highlight-action-item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.highlight-action-item:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.highlight-action-item.destructive { color: #c44; }
+.highlight-action-item.destructive:hover {
+  background: rgba(204, 68, 68, 0.10);
+  color: #c44;
+}
+
 /* Direction indicators: small chevrons at pane edges when the linked
    highlight or snippet card is scrolled out of view. Click to scroll
    back to it. */
