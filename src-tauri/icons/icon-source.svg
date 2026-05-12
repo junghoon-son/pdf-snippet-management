@@ -61,9 +61,9 @@
     </filter>
   </defs>
 
-  <!-- Backdrop with rounded corners (macOS / iOS treat the icon as a squircle;
-       rounded corners give a graceful look on platforms that don't mask) -->
-  <rect x="0" y="0" width="1024" height="1024" rx="200" ry="200" fill="url(#bg)"/>
+  <!-- No backdrop — fully transparent. The page + tabs float on the dock
+       background. macOS will still mask to a squircle at small sizes. -->
+
 
   <!-- Page body — slight rotation gives the icon liveliness. Centered visually
        leaving room for tabs at the top. -->

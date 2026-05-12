@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 
 const host = process.env.TAURI_DEV_HOST;
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   clearScreen: false,
   server: {
     port: 1420,
@@ -16,6 +16,12 @@ export default defineConfig({
   optimizeDeps: {
     include: ["mammoth"],
   },
+  // Strip console.* and debugger statements from the production bundle
+  // (the .dmg) so we don't ship developer console noise. Dev mode keeps
+  // them — `command` is "serve" during `vite dev`, "build" for `vite build`.
+  esbuild: command === "build"
+    ? { drop: ["console", "debugger"] }
+    : {},
   build: {
     target: "es2022",
     chunkSizeWarningLimit: 1500,
@@ -32,4 +38,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

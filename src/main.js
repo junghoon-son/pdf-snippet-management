@@ -20,6 +20,59 @@ import { TauriStore } from "./storage/tauri-store.js";
 import { FsaStore } from "./storage/fsa-store.js";
 import { computeMarkRank, rankPercentiles } from "./markrank.js";
 import { buildPermalink, parsePermalink } from "./marklee-permalink.js";
+import { runReader } from "./ai/reader.js";
+import { planQuery } from "./ai/planner.js";
+import { extractPdfText, extractFlowText, extractPdfPageImages, extractPdfPageTextContent, findCaptionRectInPageContent } from "./ai/doc-text.js";
+import { resolveQuoteToSnippet } from "./ai/resolver.js";
+import { detectFiguresPerPage, detectFiguresHybrid } from "./ai/figure-detect.js";
+import {
+  isOnnxLayoutEnabled, setOnnxLayoutEnabled,
+  runOnnxLayout,
+} from "./ai/onnx-layout.js";
+import {
+  isDoclingEnabled, setDoclingEnabled,
+  getDoclingPython, setDoclingPython,
+  runDoclingLayout,
+} from "./ai/docling.js";
+import {
+  isOllamaEnabled, setOllamaEnabled,
+  getOllamaEndpoint, setOllamaEndpoint,
+  getOllamaModel, setOllamaModel,
+  checkOllamaStatus,
+  runOllamaLayout,
+  startBundledOllama, waitForOllamaReady,
+  pullOllamaModel, prewarmOllamaModel,
+} from "./ai/ollama-layout.js";
+
+// Fire-and-forget startup of the bundled Ollama sidecar. After it's
+// up AND the layout model is pulled, also prewarm — loads weights
+// into VRAM so the user's first figure query doesn't pay cold-start.
+// Errors at any step are non-fatal; figure detection silently falls
+// back to the in-browser hybrid if Ollama never becomes ready.
+// Ollama auto-start is gated on the Ollama backend being explicitly
+// enabled. ONNX users never see Ollama start, ever.
+(async () => {
+  if (!isOllamaEnabled()) return;
+  const r = await startBundledOllama();
+  if (r.ok) console.log("[ollama] startup:", r.result);
+  else { console.warn("[ollama] startup failed:", r.error); return; }
+  const ready = await waitForOllamaReady(15000);
+  if (!ready) { console.warn("[ollama] never became ready in 15s"); return; }
+  await prewarmOllamaModel();
+})();
+import {
+  hasApiKey,
+} from "./ai/providers.js";
+import {
+  hasConsented, setConsented,
+  getIncludeFigures, setIncludeFigures,
+} from "./ai/anthropic.js";
+import {
+  PROVIDER_IDS, getProviderId, setProviderId, getProviderDef,
+  getProviderHasKey, setProviderApiKey,
+  getProviderModel, setProviderModel,
+  initAllProviderKeys,
+} from "./ai/providers.js";
 import {
   GROUP_TEMPLATES,
   findTemplate,
@@ -33,6 +86,12 @@ const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
 const fsaStore = IS_TAURI ? null : new FsaStore();
 setStore(IS_TAURI ? new TauriStore() : fsaStore);
 document.body.dataset.runtime = IS_TAURI ? "tauri" : "web";
+
+// Hydrate every provider's encrypted-key cache before the rest of the
+// module evaluates — top-level await pauses execution here, so all UI
+// bindings below see the cached keys via the sync hasApiKey() /
+// getApiKey() accessors. Single round-trip; the Tauri command is fast.
+await initAllProviderKeys();
 
 async function saveFile({ suggestedName, mimeType, content }) {
   const isText = typeof content === "string";
@@ -288,11 +347,50 @@ let mapInitialized = false;
 let lineageInitialized = false;
 let rectDraw = null;
 let docLoadToken = 0;
-const GROUP_PALETTE_SLOTS = 8;
+const GROUP_PALETTE_SLOTS = 12;
 const clipUrlCache = new Map();
 state.tool = "select";
 
 const docTitleEl = document.getElementById("doc-title");
+
+// Render the document path as a clickable breadcrumb. Each parent
+// segment reveals that directory in Finder; the filename is the bold
+// last segment (and also reveals the file itself). Home dir collapses
+// to "~" so the trail stays readable.
+function renderDocTitle(path, title, author) {
+  if (!path) { docTitleEl.replaceChildren(); docTitleEl.title = ""; return; }
+  const home = path.match(/^(\/Users\/[^\/]+)\//);
+  const display = home ? "~" + path.slice(home[1].length) : path;
+  const parts = display.split("/").filter(Boolean);
+  const frag = document.createDocumentFragment();
+  let accum = home ? home[1] : "";
+  parts.forEach((seg, i) => {
+    if (seg === "~") {
+      const span = document.createElement("span");
+      span.className = "path-seg path-seg-home";
+      span.textContent = "~";
+      span.title = home[1];
+      span.addEventListener("click", () => revealInFinder(home[1]));
+      frag.appendChild(span);
+    } else {
+      accum += "/" + seg;
+      const sep = document.createElement("span");
+      sep.className = "path-sep";
+      sep.textContent = "/";
+      frag.appendChild(sep);
+      const span = document.createElement("span");
+      span.className = "path-seg";
+      if (i === parts.length - 1) span.classList.add("path-seg-leaf");
+      span.textContent = seg;
+      span.title = accum;
+      const revealPath = accum;
+      span.addEventListener("click", () => revealInFinder(revealPath));
+      frag.appendChild(span);
+    }
+  });
+  docTitleEl.replaceChildren(frag);
+  docTitleEl.title = `${title || ""}${author ? " — " + author : ""}\n${path}`;
+}
 
 const undoStack = [];
 const expandedIds = new Set();
@@ -397,10 +495,17 @@ function flashSaveIndicator(state) {
   }
 }
 
-const VALID_THEMES = ["cream", "slate", "dark", "sepia", "bubblegum"];
+const VALID_THEMES = ["cream", "slate", "sepia", "paper", "forest", "ocean", "bubblegum", "dark", "midnight", "terminal", "steampunk", "popshow", "vapor"];
+const THEME_CATEGORIES = [
+  { label: "Light",   themes: ["cream", "slate", "sepia", "paper", "forest", "ocean", "bubblegum"] },
+  { label: "Dark",    themes: ["dark", "midnight", "terminal", "steampunk"] },
+  { label: "Playful", themes: ["popshow", "vapor"] },
+];
 function applyTheme(name) {
   const theme = VALID_THEMES.includes(name) ? name : "cream";
   document.body.dataset.theme = theme;
+  const family = THEME_CATEGORIES.find((c) => c.themes.includes(theme))?.label.toLowerCase() || "light";
+  document.body.dataset.themeFamily = family;
 }
 function setWorkspaceTheme(name) {
   if (!VALID_THEMES.includes(name)) return;
@@ -751,6 +856,1360 @@ document.getElementById("zoom-out").addEventListener("click", zoomOut);
 document.getElementById("zoom-fit").addEventListener("click", zoomFit);
 document.getElementById("summary-btn").addEventListener("click", openSummary);
 
+document.getElementById("delete-all-btn").addEventListener("click", async () => {
+  if (!state.currentPdfPath) return;
+  const n = state.snippets.length;
+  if (n === 0) {
+    flashButton("delete-all-btn", "nothing to delete");
+    return;
+  }
+  const ok = window.confirm(
+    `Delete all ${n} annotation${n === 1 ? "" : "s"} in this document?\n\n` +
+    `This is undoable with ⌘Z.`
+  );
+  if (!ok) return;
+  // Capture snapshot for undo (single bulk entry — one ⌘Z restores all).
+  const removed = state.snippets.slice();
+  // Clean up image clip files for any rect snippets.
+  for (const s of removed) {
+    if (s.kind === "image" && s.imagePath) {
+      try { await getStore().deleteClip(state.currentPdfPath, s.imagePath); } catch {}
+      const cacheKey = `${state.currentPdfPath}::${s.imagePath}`;
+      const cached = clipUrlCache.get(cacheKey);
+      if (cached) { URL.revokeObjectURL(cached); clipUrlCache.delete(cacheKey); }
+    }
+  }
+  state.snippets = [];
+  // Edges that referenced any of these snippets are now dangling — drop them.
+  const removedIds = new Set(removed.map((s) => s.id));
+  const removedEdges = (state.edges || []).filter((e) => removedIds.has(e.from) || removedIds.has(e.to));
+  state.edges = (state.edges || []).filter((e) => !removedIds.has(e.from) && !removedIds.has(e.to));
+  undoStack.push({ type: "delete-all", snippets: removed, edges: removedEdges });
+  await persist();
+  refreshActiveView();
+  applyAllHighlights();
+  flashButton("delete-all-btn", `${n} deleted`);
+});
+
+// ── AI: semantic-highlight Reader ────────────────────────────────
+// Single-doc query → LLM returns verbatim quotes → suggestion drawer →
+// user accepts to materialize as snippets. Phase 0+1 of the AI plan.
+
+let aiSuggestions = [];        // current run's suggestions (orphan flag set after locate)
+let aiInFlight = false;
+
+// Visual-content keywords. When a query mentions any of these (or a
+// near-typo of any), we run the (slow) figure-detection pipeline.
+// Otherwise text-only — much faster, no GPU load.
+const FIGURE_KEYWORDS = /\b(figure|figures|fig\.?|sub-?figure|panel|panels|chart|charts|graph|graphs|plot|plots|diagram|diagrams|schematic|table|tables|image|images|screenshot|screenshots|illustration|illustrations|infographic|map|maps|drawing|drawings|photo|photos|photograph|picture|pictures|visual|visualization|visualisation|graphic|graphics|snippet|snippets)\b/i;
+
+// Canonical lexicon for fuzzy fallback (typo tolerance). Plural forms
+// are derived automatically; short variants (e.g. "fig") are listed
+// explicitly so the edit-distance threshold doesn't false-positive.
+const FIGURE_LEXICON = [
+  "figure", "subfigure", "panel", "chart", "graph", "plot",
+  "diagram", "schematic", "table", "image", "screenshot",
+  "illustration", "infographic", "drawing", "photo", "photograph",
+  "picture", "visual", "visualization", "graphic", "snippet",
+];
+
+// Damerau-Levenshtein distance — counts insertions, deletions,
+// substitutions, AND adjacent transpositions (so "tabel" ↔ "table"
+// counts as 1 edit, not 2). Word lengths are short enough that the
+// O(n×m) DP cost is negligible.
+function damerauLevenshtein(a, b) {
+  if (a === b) return 0;
+  const la = a.length, lb = b.length;
+  if (!la) return lb;
+  if (!lb) return la;
+  const dp = Array.from({ length: la + 1 }, () => new Array(lb + 1));
+  for (let i = 0; i <= la; i++) dp[i][0] = i;
+  for (let j = 0; j <= lb; j++) dp[0][j] = j;
+  for (let i = 1; i <= la; i++) {
+    for (let j = 1; j <= lb; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + cost
+      );
+      if (i > 1 && j > 1 &&
+          a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        dp[i][j] = Math.min(dp[i][j], dp[i - 2][j - 2] + 1);
+      }
+    }
+  }
+  return dp[la][lb];
+}
+
+function queryNeedsFigures(query) {
+  if (!query) return false;
+  // Fast path — exact word match.
+  if (FIGURE_KEYWORDS.test(query)) return true;
+  // Fuzzy fallback — Damerau-Levenshtein against the lexicon, with
+  // a length-scaled tolerance so 4-letter words allow 1 edit and
+  // longer words allow 2.
+  const words = query.toLowerCase().split(/[^a-z]+/).filter((w) => w.length >= 4);
+  for (const w of words) {
+    for (const term of FIGURE_LEXICON) {
+      const tolerance = Math.min(2, Math.max(1, Math.floor(term.length / 5)));
+      // Tolerance gating: also require the word's length to be within
+      // ±2 of the lexicon term to avoid wildly different words matching
+      // (e.g., "snippet" vs "snip" with distance 3 shouldn't match).
+      if (Math.abs(w.length - term.length) > tolerance + 1) continue;
+      if (damerauLevenshtein(w, term) <= tolerance) return true;
+    }
+  }
+  return false;
+}
+
+// Column-aware bbox clipping. RT-DETR sometimes detects figures wider
+// than the actual figure column (it includes surrounding whitespace
+// from training). Clip each detection's horizontal extent to the
+// dominant text column its caption sits in — captions are always
+// aligned with their figures horizontally, so the caption line's
+// x-range is a reliable bound on the figure's column width.
+//
+// Conservative: only narrows boxes, never widens. Skips detections
+// that don't have enough text near them to compute a column reliably.
+function clipDetectionsToTextColumns(figureDetections, pageTextContent) {
+  if (!Array.isArray(figureDetections) || !pageTextContent) return figureDetections;
+  return figureDetections.map((d) => {
+    const pageContent = pageTextContent.get(d.page);
+    if (!pageContent || !pageContent.ranges) return d;
+    const candidates = (d.candidates || []).map((c) =>
+      clipRectToTextColumn(c, pageContent),
+    );
+    return { ...d, candidates };
+  });
+}
+
+function clipRectToTextColumn(rect, pageContent) {
+  const W = pageContent.width;
+  const H = pageContent.height;
+  if (!W || !H) return rect;
+  const detBottom = rect.top + rect.height;
+  const detLeft = rect.left;
+
+  // Caption text typically lives just BELOW the figure body and starts
+  // at (or very near) the figure's left edge. Find items that match
+  // both: below the detection AND left-aligned with the detection.
+  // This excludes text in adjacent columns that happens to overlap the
+  // detection's x-range.
+  const LEFT_TOLERANCE = 0.05; // 5% of page width
+  const BELOW_MAX = 0.15;      // up to 15% below detection's bottom
+  const items = [];
+  for (const r of pageContent.ranges) {
+    const tx = r.item.transform;
+    const itemH = (r.item.height || Math.abs(tx[3]) || 12) / H;
+    const yTop = 1 - tx[5] / H;
+    if (yTop < detBottom - 0.01) continue;
+    if (yTop > detBottom + BELOW_MAX) continue;
+    const left = tx[4] / W;
+    const right = left + (r.item.width || 0) / W;
+    if (right - left < 0.005) continue;
+    if (Math.abs(left - detLeft) > LEFT_TOLERANCE) continue;
+    items.push({ left, right, yTop, h: itemH });
+  }
+  if (items.length < 2) return rect; // no caption-like text found
+
+  // Caption "Fig. N." line + a few wrapped lines below it. Use the
+  // smallest yTop (closest line below the detection) and walk down,
+  // collecting all items within the same caption block (consecutive
+  // line spacings ~= item height).
+  items.sort((a, b) => a.yTop - b.yTop);
+  const firstLine = items[0];
+  const blockItems = [firstLine];
+  for (let i = 1; i < items.length; i++) {
+    const gap = items[i].yTop - items[i - 1].yTop;
+    // Cap caption block to a few lines: if we hit a line-gap > 3x the
+    // average item height, we've left the caption.
+    if (gap > Math.max(0.03, firstLine.h * 3)) break;
+    blockItems.push(items[i]);
+  }
+
+  // Block's x extent → the figure's column.
+  let colLeft = Infinity, colRight = -Infinity;
+  for (const it of blockItems) {
+    if (it.left < colLeft) colLeft = it.left;
+    if (it.right > colRight) colRight = it.right;
+  }
+  if (!Number.isFinite(colLeft) || !Number.isFinite(colRight)) return rect;
+
+  // Only narrow, never widen. Small padding so we don't clip the
+  // figure body's own extent.
+  const PAD = 0.01;
+  const newLeft = Math.max(rect.left, colLeft - PAD);
+  const newRight = Math.min(rect.left + rect.width, colRight + PAD);
+  if (newRight - newLeft < rect.width * 0.4) return rect; // sanity guard
+  return {
+    ...rect,
+    left: newLeft,
+    width: newRight - newLeft,
+  };
+}
+
+// Geometry helpers used by the image-suggestion resolution step.
+function clampRect(r) {
+  const left   = Math.max(0, Math.min(1, r.left   ?? 0));
+  const top    = Math.max(0, Math.min(1, r.top    ?? 0));
+  const width  = Math.max(0, Math.min(1 - left, r.width  ?? 0));
+  const height = Math.max(0, Math.min(1 - top,  r.height ?? 0));
+  return { left, top, width, height };
+}
+function ensureMinSize(r, min = 0.04) {
+  let { left, top, width, height } = r;
+  if (width < min) {
+    const center = left + width / 2;
+    width = min;
+    left = Math.max(0, Math.min(1 - width, center - width / 2));
+  }
+  if (height < min) {
+    const center = top + height / 2;
+    height = min;
+    top = Math.max(0, Math.min(1 - height, center - height / 2));
+  }
+  return { left, top, width, height };
+}
+function iou(a, b) {
+  const ax2 = a.left + a.width, ay2 = a.top + a.height;
+  const bx2 = b.left + b.width, by2 = b.top + b.height;
+  const ix1 = Math.max(a.left, b.left), iy1 = Math.max(a.top, b.top);
+  const ix2 = Math.min(ax2, bx2), iy2 = Math.min(ay2, by2);
+  const iw = Math.max(0, ix2 - ix1), ih = Math.max(0, iy2 - iy1);
+  const inter = iw * ih;
+  const uni = (a.width * a.height) + (b.width * b.height) - inter;
+  return uni > 0 ? inter / uni : 0;
+}
+function bestOverlap(rect, candidates, minIoU = 0.2) {
+  let best = null, bestScore = 0;
+  for (const c of candidates) {
+    const s = iou(rect, c);
+    if (s > bestScore) { bestScore = s; best = c; }
+  }
+  return bestScore >= minIoU ? best : null;
+}
+
+// Caption-anchor fallback: when the model says "Figure N: …" but no
+// candidate region matches, search the page's rendered textLayer for
+// the caption text and use its bounding rect. Last-resort highlight
+// that at least lands SOMEWHERE relevant on the page.
+function captionAnchorRect(viewerContainer, page, label) {
+  if (!page || !label) return null;
+  const wrap = viewerContainer.querySelector(`.page-wrap[data-page="${page}"]`);
+  if (!wrap) return null;
+  const textLayer = wrap.querySelector(".textLayer");
+  if (!textLayer) return null;
+  // The model's label often starts with "Figure N", "Fig. N", "Table N",
+  // possibly with a colon. Extract a distinctive search head: the
+  // leading capitalized words up to the first 60 characters.
+  const head = label.split(/[.:]/)[0].trim().slice(0, 60);
+  if (head.length < 5) return null;
+  const candidates = [
+    head,
+    head.replace(/^Figure\s+/i, "Fig. "),
+    head.replace(/^Fig\.?\s+/i, "Figure "),
+  ];
+  const flat = textLayer.textContent || "";
+  for (const probe of candidates) {
+    let i = flat.indexOf(probe);
+    if (i === -1) i = flat.toLowerCase().indexOf(probe.toLowerCase());
+    if (i === -1) continue;
+    // Walk text nodes to find the range matching that flat offset.
+    const walker = document.createTreeWalker(textLayer, NodeFilter.SHOW_TEXT);
+    let acc = 0, startNode = null, startOff = 0, endNode = null, endOff = 0;
+    const targetStart = i, targetEnd = i + probe.length;
+    let n;
+    while ((n = walker.nextNode())) {
+      const len = n.nodeValue.length;
+      if (!startNode && acc + len > targetStart) {
+        startNode = n; startOff = targetStart - acc;
+      }
+      if (startNode && acc + len >= targetEnd) {
+        endNode = n; endOff = targetEnd - acc;
+        break;
+      }
+      acc += len;
+    }
+    if (!startNode || !endNode) continue;
+    try {
+      const range = document.createRange();
+      range.setStart(startNode, startOff);
+      range.setEnd(endNode, endOff);
+      const wrapRect = wrap.getBoundingClientRect();
+      const r = range.getBoundingClientRect();
+      return {
+        left:   (r.left - wrapRect.left) / wrapRect.width,
+        top:    (r.top  - wrapRect.top)  / wrapRect.height,
+        width:  r.width / wrapRect.width,
+        height: r.height / wrapRect.height,
+      };
+    } catch {}
+  }
+  return null;
+}
+
+function aiSetStatus(msg, state = "idle") {
+  const el = document.getElementById("ai-ask-status");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.dataset.state = state;
+}
+
+async function aiAsk() {
+  if (aiInFlight) return;
+  const input = document.getElementById("ai-ask-input");
+  const query = (input.value || "").trim();
+  if (!query) return;
+
+  if (!hasApiKey()) {
+    aiSetStatus("Set your Anthropic API key in AI settings.", "error");
+    openAiSettings();
+    return;
+  }
+  if (!hasConsented()) {
+    const ok = window.confirm(
+      "This query will send the full text of the open document to Anthropic.\n\n" +
+      "Tick the consent box in AI settings (or just continue here) to skip this prompt next time."
+    );
+    if (!ok) return;
+    setConsented(true);
+  }
+  if (!state.currentPdfPath) {
+    aiSetStatus("Open a document first.", "error");
+    return;
+  }
+
+  aiInFlight = true;
+  aiSetStatus("Reading document…");
+  document.getElementById("ai-ask-submit").disabled = true;
+
+  try {
+    const kind = state.source.kind || "pdf";
+    let docText;
+    let pageImages = null;
+    let figureDetections = null;
+    let pageTextContent = null;
+    // Two-stage dispatch: a tiny "planner" call classifies the query
+    // into { needsText, needsFigures, figurePages } before any heavy
+    // work runs. The figure detector (ONNX/Ollama/Docling) only fires
+    // when the planner says figures are wanted. Provider-agnostic — same
+    // call works whether the user picks Claude or a local open model.
+    //
+    // The user can force-on figures via the global toggle even when the
+    // planner thinks they aren't needed (gives a manual override).
+    aiSetStatus("Planning…");
+    const plan = await planQuery({
+      query,
+      docTitle: state.source?.title || state.source?.filename || "",
+    });
+    const wantsFigures = plan.needsFigures || getIncludeFigures();
+    const wantsText = plan.needsText;
+    console.log("[ai] plan:", plan, "→ runFigures:", wantsFigures, "runText:", wantsText);
+    if (kind === "pdf") {
+      docText = await extractPdfText(state.pdfDoc);
+      // Always pull per-page positioned text content. Used to resolve
+      // text quotes against pages that haven't been rendered in the
+      // viewer yet (DOM textLayer absent on lazy-load pages), and as
+      // the caption-anchor source for figure suggestions.
+      aiSetStatus("Indexing page text positions…");
+      pageTextContent = await extractPdfPageTextContent(state.pdfDoc);
+      if (wantsFigures) {
+        // Render page images. Resolution depends on which backend will
+        // process them. RT-DETR needs 640 (we render 1024 for resize
+        // quality). Ollama VLM input is 512 (we render 800). Claude
+        // vision uses 1400.
+        const visionRes = isOnnxLayoutEnabled() ? 1024
+                        : isOllamaEnabled() ? 800
+                        : 1400;
+        aiSetStatus(`Rendering ${state.pdfDoc.numPages} page image(s)…`);
+        pageImages = await extractPdfPageImages(state.pdfDoc, { targetWidth: visionRes });
+
+        if (isOnnxLayoutEnabled()) {
+          aiSetStatus(`Running RT-DETR layout on ${pageImages.length} page(s) (first run downloads ~150 MB)…`);
+          try {
+            figureDetections = await runOnnxLayout(
+              pageImages,
+              state.source?.contentHash,
+              (i, total, page) => aiSetStatus(`ONNX layout ${i}/${total} pages…`)
+            );
+            console.log("[ai] onnx detection:", figureDetections);
+          } catch (err) {
+            console.warn("[ai] ONNX failed, falling back:", err);
+            aiSetStatus(`ONNX failed (${err.message || err}); falling back.`, "error");
+            figureDetections = await detectFiguresHybrid(state.pdfDoc, { targetWidth: 800 });
+          }
+        } else if (isOllamaEnabled()) {
+          aiSetStatus(`Asking local Ollama (granite-docling) on ${pageImages.length} page(s)…`);
+          try {
+            figureDetections = await runOllamaLayout(
+              pageImages,
+              state.source?.contentHash,
+              (i, total, page) => aiSetStatus(`Ollama ${i}/${total} pages…`)
+            );
+            console.log("[ai] ollama detection:", figureDetections);
+          } catch (err) {
+            console.warn("[ai] Ollama failed, falling back:", err);
+            aiSetStatus(`Ollama failed (${err.message || err}); falling back.`, "error");
+            figureDetections = await detectFiguresHybrid(state.pdfDoc, { targetWidth: 800 });
+          }
+        } else if (isDoclingEnabled() && state.currentPdfPath) {
+          aiSetStatus("Running Docling layout (may take 10–60s first run)…");
+          try {
+            figureDetections = await runDoclingLayout(state.currentPdfPath);
+            console.log("[ai] docling detection:", figureDetections);
+          } catch (err) {
+            console.warn("[ai] Docling failed, falling back to in-browser detector:", err);
+            aiSetStatus(`Docling failed (${err.message || err}); falling back to built-in detector.`, "error");
+            figureDetections = await detectFiguresHybrid(state.pdfDoc, { targetWidth: 800 });
+          }
+        } else {
+          aiSetStatus(`Detecting figures (PDF XObjects + grid) on ${state.pdfDoc.numPages} page(s)…`);
+          figureDetections = await detectFiguresHybrid(state.pdfDoc, { targetWidth: 800 });
+        }
+      }
+    } else {
+      docText = extractFlowText(state.flowDoc, viewerContainer);
+    }
+    if (!docText) throw new Error("Could not read the document text.");
+
+    const detectedCount = figureDetections
+      ? figureDetections.reduce((n, d) => n + (d.candidates?.length || 0), 0)
+      : 0;
+    // If Ollama-style detection ran but came back empty, that's a
+    // signal something went wrong upstream. Log loudly and ALWAYS
+    // ensure page images go to Claude so it can detect figures itself
+    // from the rendered pages (fallback to vision-only path).
+    if (wantsFigures && figureDetections && detectedCount === 0) {
+      console.warn(
+        "[ai] Layout detector returned 0 candidates across all pages — falling back to Claude vision-only.",
+        figureDetections
+      );
+      // Make sure pageImages is populated for the vision pass.
+      if (!pageImages && state.pdfDoc) {
+        pageImages = await extractPdfPageImages(state.pdfDoc, { targetWidth: 1400 });
+      }
+      // Clear empty detections so the prompt doesn't show an empty
+      // candidate list (which makes Claude think there are NO figures).
+      figureDetections = null;
+    }
+    const visionTag = pageImages ? ` + ${pageImages.length} page image(s)` : "";
+    const detTag = figureDetections ? ` · ${detectedCount} candidate regions` : (wantsFigures ? " · vision-only (no candidates)" : "");
+    const skipTag = "";
+    aiSetStatus(`Asking Claude… (${(docText.length / 1000).toFixed(0)}k chars${visionTag}${detTag}${skipTag})`);
+    const groupNames = (state.groupsMeta || []).map((g) => g.name).filter(Boolean);
+    const { highlights, usage, debugText } = await runReader({
+      query,
+      docText,
+      docTitle: state.source.title || state.source.filename || "",
+      groupNames,
+      pageImages,
+      figureDetections,
+      plan: { wantsText, wantsFigures },
+    });
+
+    // Step 2 — resolve each highlight against the rendered document.
+    // Text → DOM lookup. Image → prefer the model's `figure_id` (maps
+    // to a pre-detected region with pixel-accurate coords); fall back
+    // to the model's free-form rect when figure_id is omitted.
+    const detectionByPage = new Map();
+    if (figureDetections) {
+      for (const d of figureDetections) detectionByPage.set(d.page, d.candidates || []);
+    }
+    console.log("[ai] raw highlights from model:", highlights);
+    console.log("[ai] figure detections by page:", detectionByPage);
+    aiSuggestions = highlights.map((h) => {
+      const isImage = h.kind === "image";
+      let resolved = null;
+      let found = false;
+      if (isImage) {
+        const hintPage = h.page;
+        let resolvedPage = hintPage;
+        let cands = hintPage ? (detectionByPage.get(hintPage) || []) : [];
+
+        // (A) explicit figure_id → look up the candidate on the hinted
+        //     page; if not found, search ALL pages for that ID.
+        const wantId = (h.figure_id || "").toString().trim().toUpperCase();
+        let pick = wantId ? cands.find((c) => c.id === wantId) : null;
+        let source = pick ? "detected" : null;
+        if (wantId && !pick) {
+          for (const [p, list] of detectionByPage) {
+            const hit = list.find((c) => c.id === wantId);
+            if (hit) { pick = hit; resolvedPage = p; cands = list; source = "detected-other-page"; break; }
+          }
+        }
+
+        // (B) model gave a free-form rect — try to snap to a candidate
+        //     on the hinted page (or fall back to model-bbox).
+        if (!pick && h.rect && hintPage) {
+          const modelRect = clampRect(h.rect);
+          const snapped = bestOverlap(modelRect, cands, 0.2);
+          if (snapped) { pick = snapped; source = "snapped"; }
+          else if (modelRect.width > 0 && modelRect.height > 0) {
+            pick = { ...ensureMinSize(modelRect) };
+            source = "model-bbox";
+          }
+        }
+
+        // (C) detected-fallback on the hinted page.
+        if (!pick && hintPage && cands.length) {
+          const largest = cands.slice().sort((a, b) => (b.width * b.height) - (a.width * a.height))[0];
+          pick = largest;
+          source = "detected-fallback";
+        }
+
+        if (pick && resolvedPage) {
+          resolved = {
+            kind: "image",
+            page: resolvedPage,
+            rect: { left: pick.left, top: pick.top, width: pick.width, height: pick.height },
+            label: h.label || `Region p.${resolvedPage}`,
+            source,
+          };
+          found = true;
+        }
+
+        // (D) Caption-anchor — search hinted page FIRST, then ALL pages.
+        //     If the label ("Figure 2A: …") is found on a different
+        //     page than the model claimed, use the page where it
+        //     actually lives. Catches "wrong page" hallucinations.
+        if (!resolved && h.label && pageTextContent) {
+          const order = [];
+          if (hintPage && pageTextContent.has(hintPage)) order.push(hintPage);
+          for (const p of pageTextContent.keys()) if (p !== hintPage) order.push(p);
+          for (const p of order) {
+            const cap = findCaptionRectInPageContent(pageTextContent.get(p), h.label);
+            if (cap) {
+              resolved = {
+                kind: "image",
+                page: p,
+                rect: cap,
+                label: h.label,
+                source: p === hintPage ? "caption-anchor" : "caption-anchor-other-page",
+              };
+              found = true;
+              break;
+            }
+          }
+        }
+      } else {
+        const r = resolveQuoteToSnippet({
+          quote: h.quote,
+          kind: state.source.kind || "pdf",
+          viewerContainer,
+          hintPage: h.page || null,
+          pageTextContent,
+        });
+        if (r) { resolved = r; found = true; }
+      }
+      return {
+        ...h,
+        resolved,
+        found,
+        resolvedPage: resolved?.page ?? h.page ?? null,
+        accepted: false,
+        rejected: false,
+      };
+    });
+
+    // If the model returned 0 highlights but wrote prose, that usually
+    // means it refused or declared nothing matched. Surface its text.
+    if (highlights.length === 0 && debugText) {
+      const snippet = debugText.length > 140 ? debugText.slice(0, 137) + "…" : debugText;
+      aiSetStatus(`0 highlights · model said: "${snippet}"`, "error");
+    } else {
+      aiSetStatus(`${highlights.length} highlights`);
+    }
+    showAiDrawer(query);
+  } catch (err) {
+    console.error("AI ask failed", err);
+    aiSetStatus(err.message || String(err), "error");
+  } finally {
+    aiInFlight = false;
+    document.getElementById("ai-ask-submit").disabled = false;
+  }
+}
+
+function showAiDrawer(query) {
+  const drawer = document.getElementById("ai-drawer");
+  drawer.hidden = false;
+  document.getElementById("ai-drawer-query").textContent = query;
+  renderAiDrawer();
+  paintAiPreviews();
+}
+function hideAiDrawer() {
+  const drawer = document.getElementById("ai-drawer");
+  drawer.hidden = true;
+  aiSuggestions = [];
+  clearAiPreviews();
+  aiSetStatus("");
+}
+
+// Paint all pending suggestions as dashed overlays on the document so
+// the user can SEE where each highlight would land before accepting.
+// Cleared when the drawer closes or all suggestions are handled.
+function paintAiPreviews() {
+  clearAiPreviews();
+  const pending = aiSuggestions.filter((s) => !s.accepted && !s.rejected && s.resolved);
+  if (!pending.length) return;
+  if (state.source.kind === "pdf") {
+    const byPage = new Map();
+    for (const sug of pending) {
+      const page = sug.resolved.page;
+      if (!page) continue;
+      if (!byPage.has(page)) byPage.set(page, []);
+      // Image kind has a single rect; text kind has rects[].
+      if (sug.resolved.kind === "image" && sug.resolved.rect) {
+        byPage.get(page).push({ rect: sug.resolved.rect, sug, type: "image" });
+      } else if (sug.resolved.rects && sug.resolved.rects.length) {
+        for (const r of sug.resolved.rects) byPage.get(page).push({ rect: r, sug, type: "text" });
+      }
+    }
+    for (const [page, items] of byPage) {
+      const wrap = viewerContainer.querySelector(`.page-wrap[data-page="${page}"]`);
+      if (!wrap) continue;
+      let layer = wrap.querySelector(".ai-preview-layer");
+      if (!layer) {
+        layer = document.createElement("div");
+        layer.className = "ai-preview-layer";
+        wrap.appendChild(layer);
+      }
+      layer.innerHTML = "";
+      for (const it of items) {
+        const div = document.createElement("div");
+        div.className = `ai-preview-rect ai-preview-${it.type}`;
+        div.dataset.sugQuote = (it.sug.quote || it.sug.label || "").slice(0, 60);
+        const idAttr = aiSuggestions.indexOf(it.sug);
+        div.dataset.sugIdx = String(idAttr);
+        div.style.left = (it.rect.left * 100) + "%";
+        div.style.top = (it.rect.top * 100) + "%";
+        div.style.width = (it.rect.width * 100) + "%";
+        div.style.height = (it.rect.height * 100) + "%";
+        div.title = it.sug.reason || it.sug.quote || it.sug.label || "";
+        // Image rects are editable: drag body to move, drag handles to
+        // resize. Text rects stay fixed (they're derived from string
+        // match positions; editing wouldn't make sense).
+        if (it.type === "image") {
+          attachImageRectEditing(div, wrap, it.sug);
+        } else {
+          div.addEventListener("click", () => focusDrawerCard(idAttr));
+        }
+        layer.appendChild(div);
+      }
+    }
+  }
+  // Flow docs (Markdown / TXT / DOCX): wrap each pending suggestion's
+  // resolved text range in <mark class="ai-preview-text"> so the user
+  // sees previews directly on the rendered article.
+  else {
+    paintFlowAiPreviews(pending);
+  }
+}
+
+function paintFlowAiPreviews(pending) {
+  const article = viewerContainer.querySelector(".flow-doc");
+  if (!article) return;
+  for (const sug of pending) {
+    const r = sug.resolved;
+    if (!r || typeof r.flowPos !== "number" || !r.text) continue;
+    const start = r.flowPos;
+    const end = start + r.text.length;
+    const range = rangeAtFlatOffsetInArticle(article, start, end);
+    if (!range) continue;
+    const mark = document.createElement("mark");
+    mark.className = "ai-preview-text";
+    mark.dataset.sugIdx = String(aiSuggestions.indexOf(sug));
+    mark.title = sug.reason || sug.quote || "";
+    try {
+      range.surroundContents(mark);
+    } catch {
+      // Range crosses an element boundary — extract & wrap instead.
+      try {
+        const frag = range.extractContents();
+        mark.appendChild(frag);
+        range.insertNode(mark);
+      } catch (err) {
+        console.warn("[ai] flow preview wrap failed", err);
+        continue;
+      }
+    }
+    mark.addEventListener("click", () => focusDrawerCard(mark.dataset.sugIdx));
+  }
+}
+
+function rangeAtFlatOffsetInArticle(article, start, end) {
+  const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, {
+    acceptNode(n) {
+      if (!n.nodeValue) return NodeFilter.FILTER_REJECT;
+      const tag = n.parentNode?.nodeName;
+      if (tag === "SCRIPT" || tag === "STYLE") return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  let acc = 0;
+  let startNode = null, startOff = 0, endNode = null, endOff = 0;
+  let n;
+  while ((n = walker.nextNode())) {
+    const len = n.nodeValue.length;
+    if (!startNode && acc + len > start) {
+      startNode = n;
+      startOff = start - acc;
+    }
+    if (startNode && acc + len >= end) {
+      endNode = n;
+      endOff = end - acc;
+      break;
+    }
+    acc += len;
+  }
+  if (!startNode || !endNode) return null;
+  try {
+    const r = document.createRange();
+    r.setStart(startNode, startOff);
+    r.setEnd(endNode, endOff);
+    return r;
+  } catch {
+    return null;
+  }
+}
+
+function clearAiPreviews() {
+  for (const layer of viewerContainer.querySelectorAll(".ai-preview-layer")) {
+    layer.remove();
+  }
+  // Unwrap flow-doc preview marks and merge adjacent text nodes.
+  const article = viewerContainer.querySelector(".flow-doc");
+  if (article) {
+    for (const m of article.querySelectorAll("mark.ai-preview-text")) {
+      const parent = m.parentNode;
+      if (!parent) continue;
+      parent.replaceChild(document.createTextNode(m.textContent), m);
+      parent.normalize();
+    }
+  }
+}
+
+// Fuzzy-match a proposed group name against existing groups; if no
+// reasonable match exists, create a new group with the proposed name.
+// Returns the group id (existing or newly created).
+//
+// Matching ladder:
+//   1. exact case-insensitive
+//   2. simple lemma match (singular/plural, common suffixes)
+//   3. substring containment (proposed contains existing, or vice versa)
+//   4. otherwise create a new group with a fresh palette slot
+function resolveOrCreateGroup(proposed) {
+  if (!proposed) return null;
+  const name = proposed.trim();
+  if (!name) return null;
+  const groups = state.groupsMeta || (state.groupsMeta = []);
+  const norm = (s) => (s || "").toLowerCase().trim();
+  const stem = (s) => norm(s).replace(/(?:ies|es|s|y|ology|ologies)$/, "");
+  const target = norm(name);
+  const targetStem = stem(name);
+
+  // (1) exact
+  let hit = groups.find((g) => norm(g.name) === target);
+  if (hit) return hit.id;
+  // (2) stem
+  hit = groups.find((g) => stem(g.name) === targetStem && targetStem.length >= 4);
+  if (hit) return hit.id;
+  // (3) substring (short names only — avoid "Cost" matching "Costs and limitations")
+  if (target.length >= 4 && target.length <= 18) {
+    hit = groups.find((g) => {
+      const n = norm(g.name);
+      if (!n) return false;
+      return n.includes(target) || target.includes(n);
+    });
+    if (hit) return hit.id;
+  }
+  // (4) create new
+  const id = crypto.randomUUID();
+  const slot = nextPaletteIndex();
+  groups.push({ id, name, paletteSlot: slot });
+  saveAllWorkspaces();
+  renderGroups();
+  return id;
+}
+
+function focusDrawerCard(idx) {
+  const card = document.querySelector(`#ai-drawer-list .ai-suggestion[data-sug-idx="${idx}"]`);
+  if (!card) return;
+  card.scrollIntoView({ behavior: "smooth", block: "center" });
+  card.classList.add("flash");
+  setTimeout(() => card.classList.remove("flash"), 700);
+}
+
+// Attach drag-to-move and corner-drag-to-resize behavior to an image
+// preview rect so the user can adjust the AI's bounding box before
+// accepting. Updates sug.resolved.rect on every gesture; the suggestion
+// card displays a small "edited" indicator after the first change.
+function attachImageRectEditing(rectEl, wrap, sug) {
+  const handleDirs = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+  for (const dir of handleDirs) {
+    const h = document.createElement("div");
+    h.className = `ai-preview-handle ai-preview-handle-${dir}`;
+    h.dataset.dir = dir;
+    h.addEventListener("pointerdown", (e) => startResize(e, rectEl, wrap, sug, dir));
+    rectEl.appendChild(h);
+  }
+  rectEl.addEventListener("pointerdown", (e) => {
+    if (e.target.classList.contains("ai-preview-handle")) return;
+    if (e.detail === 2) {
+      // Double-click: focus drawer card. Single-click drags.
+      focusDrawerCard(rectEl.dataset.sugIdx);
+      return;
+    }
+    startMove(e, rectEl, wrap, sug);
+  });
+}
+
+function startMove(e, rectEl, wrap, sug) {
+  e.preventDefault();
+  e.stopPropagation();
+  const wrapRect = wrap.getBoundingClientRect();
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const orig = { ...sug.resolved.rect };
+  rectEl.setPointerCapture?.(e.pointerId);
+  const onMove = (ev) => {
+    const dx = (ev.clientX - startX) / wrapRect.width;
+    const dy = (ev.clientY - startY) / wrapRect.height;
+    const nextLeft = Math.max(0, Math.min(1 - orig.width, orig.left + dx));
+    const nextTop  = Math.max(0, Math.min(1 - orig.height, orig.top + dy));
+    sug.resolved.rect = { ...orig, left: nextLeft, top: nextTop };
+    sug.resolved.source = (sug.resolved.source || "") + (sug.resolved.source?.endsWith("-edited") ? "" : "-edited");
+    rectEl.style.left = (nextLeft * 100) + "%";
+    rectEl.style.top  = (nextTop * 100)  + "%";
+  };
+  const onUp = (ev) => {
+    rectEl.releasePointerCapture?.(ev.pointerId);
+    rectEl.removeEventListener("pointermove", onMove);
+    rectEl.removeEventListener("pointerup", onUp);
+    renderAiDrawer();
+  };
+  rectEl.addEventListener("pointermove", onMove);
+  rectEl.addEventListener("pointerup", onUp);
+}
+
+function startResize(e, rectEl, wrap, sug, dir) {
+  e.preventDefault();
+  e.stopPropagation();
+  const wrapRect = wrap.getBoundingClientRect();
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const orig = { ...sug.resolved.rect };
+  const handle = e.currentTarget;
+  handle.setPointerCapture?.(e.pointerId);
+  const MIN = 0.02;
+  const onMove = (ev) => {
+    const dx = (ev.clientX - startX) / wrapRect.width;
+    const dy = (ev.clientY - startY) / wrapRect.height;
+    let { left, top, width, height } = orig;
+    // Each direction adjusts a different combination of edges.
+    if (dir.includes("e")) width  = Math.max(MIN, Math.min(1 - left, orig.width + dx));
+    if (dir.includes("s")) height = Math.max(MIN, Math.min(1 - top,  orig.height + dy));
+    if (dir.includes("w")) {
+      const newLeft = Math.max(0, Math.min(orig.left + orig.width - MIN, orig.left + dx));
+      width = orig.width + (orig.left - newLeft);
+      left = newLeft;
+    }
+    if (dir.includes("n")) {
+      const newTop = Math.max(0, Math.min(orig.top + orig.height - MIN, orig.top + dy));
+      height = orig.height + (orig.top - newTop);
+      top = newTop;
+    }
+    sug.resolved.rect = { left, top, width, height };
+    sug.resolved.source = (sug.resolved.source || "") + (sug.resolved.source?.endsWith("-edited") ? "" : "-edited");
+    rectEl.style.left   = (left * 100) + "%";
+    rectEl.style.top    = (top * 100)  + "%";
+    rectEl.style.width  = (width * 100)  + "%";
+    rectEl.style.height = (height * 100) + "%";
+  };
+  const onUp = (ev) => {
+    handle.releasePointerCapture?.(ev.pointerId);
+    handle.removeEventListener("pointermove", onMove);
+    handle.removeEventListener("pointerup", onUp);
+    renderAiDrawer();
+  };
+  handle.addEventListener("pointermove", onMove);
+  handle.addEventListener("pointerup", onUp);
+}
+
+function renderAiDrawer() {
+  const list = document.getElementById("ai-drawer-list");
+  list.innerHTML = "";
+  const pending = aiSuggestions.filter((s) => !s.accepted && !s.rejected);
+  document.getElementById("ai-drawer-count").textContent =
+    `${pending.length} pending · ${aiSuggestions.filter((s) => s.accepted).length} accepted`;
+  for (const sug of aiSuggestions) {
+    if (sug.accepted || sug.rejected) continue;
+    const li = document.createElement("li");
+    li.className = "ai-suggestion";
+    li.dataset.sugIdx = String(aiSuggestions.indexOf(sug));
+    if (!sug.found) li.classList.add("orphan");
+    // Hovering the card emphasizes the preview rect on the document.
+    li.addEventListener("mouseenter", () => {
+      viewerContainer.querySelectorAll(`.ai-preview-rect[data-sug-idx="${li.dataset.sugIdx}"]`)
+        .forEach((r) => r.classList.add("hot"));
+    });
+    li.addEventListener("mouseleave", () => {
+      viewerContainer.querySelectorAll(`.ai-preview-rect.hot`)
+        .forEach((r) => r.classList.remove("hot"));
+    });
+    // Clicking anywhere on the card (except buttons) scrolls the
+    // viewer to the suggestion's preview rect.
+    li.addEventListener("click", (e) => {
+      if (e.target.closest("button")) return;
+      const rect = viewerContainer.querySelector(`.ai-preview-rect[data-sug-idx="${li.dataset.sugIdx}"]`);
+      if (rect) {
+        rect.scrollIntoView({ behavior: "smooth", block: "center" });
+        rect.classList.add("pulse");
+        setTimeout(() => rect.classList.remove("pulse"), 800);
+      }
+    });
+
+    if (sug.kind === "image") {
+      const head = document.createElement("div");
+      head.className = "ai-suggestion-quote ai-suggestion-figure";
+      const src = sug.resolved?.source;
+      const tag = src ? ` (${src})` : sug.found ? "" : " ⚠ no rect";
+      head.textContent = `🖼 ${sug.label || `Figure on p.${sug.page}`}${tag}`;
+      li.appendChild(head);
+    } else {
+      const quote = document.createElement("div");
+      quote.className = "ai-suggestion-quote";
+      quote.textContent = `"${sug.quote || ""}"`;
+      li.appendChild(quote);
+    }
+
+    if (sug.reason) {
+      const reason = document.createElement("div");
+      reason.className = "ai-suggestion-reason";
+      reason.textContent = sug.reason;
+      li.appendChild(reason);
+    }
+
+    const meta = document.createElement("div");
+    meta.className = "ai-suggestion-meta";
+    if (sug.confidence) {
+      const c = document.createElement("span");
+      c.className = "ai-suggestion-conf";
+      c.dataset.conf = sug.confidence;
+      c.textContent = sug.confidence;
+      meta.appendChild(c);
+    }
+    if (sug.resolvedPage) {
+      const p = document.createElement("span");
+      p.className = "ai-suggestion-page";
+      p.textContent = `p.${sug.resolvedPage}`;
+      meta.appendChild(p);
+    }
+    if (sug.group_hint) {
+      const g = document.createElement("span");
+      g.className = "ai-suggestion-group";
+      g.textContent = sug.group_hint;
+      meta.appendChild(g);
+    }
+    if (!sug.found) {
+      const o = document.createElement("span");
+      o.className = "ai-suggestion-page";
+      o.style.background = "rgba(217,119,87,0.15)";
+      o.style.color = "#d97757";
+      o.textContent = "no match";
+      o.title = "Quote not found verbatim in the document — accepting will still save the snippet but it won't paint on the page.";
+      meta.appendChild(o);
+    }
+    li.appendChild(meta);
+
+    const actions = document.createElement("div");
+    actions.className = "ai-suggestion-actions";
+    const acc = document.createElement("button");
+    acc.className = "ai-suggestion-accept";
+    acc.textContent = "✓ accept";
+    acc.addEventListener("click", () => acceptAiSuggestion(sug));
+    const rej = document.createElement("button");
+    rej.className = "ai-suggestion-reject";
+    rej.textContent = "✕ reject";
+    rej.addEventListener("click", () => rejectAiSuggestion(sug));
+    actions.append(acc, rej);
+    li.appendChild(actions);
+
+    list.appendChild(li);
+  }
+  if (pending.length === 0) {
+    const done = document.createElement("li");
+    done.style.padding = "12px";
+    done.style.color = "var(--pane-fg-dim)";
+    done.style.fontSize = "11.5px";
+    done.style.textAlign = "center";
+    done.textContent = aiSuggestions.length
+      ? `All ${aiSuggestions.length} suggestions handled.`
+      : "No suggestions.";
+    list.appendChild(done);
+  }
+}
+
+async function acceptAiSuggestion(sug) {
+  sug.accepted = true;
+  // Group hint → existing group (fuzzy-matched) or auto-create a new one.
+  let groupIds = [];
+  if (sug.group_hint) {
+    const id = resolveOrCreateGroup(sug.group_hint);
+    if (id) groupIds = [id];
+  }
+
+  if (sug.kind === "image") {
+    const r = sug.resolved?.rect;
+    const page = sug.resolved?.page || sug.page;
+    const label = sug.resolved?.label || sug.label || `Region p.${page || 1}`;
+
+    // Happy path: we have a real rect on a real page → render the clip.
+    if (r && page && state.pdfDoc) {
+      const id = crypto.randomUUID();
+      try {
+        const pngBytes = await renderRegionPng(state.pdfDoc, page, r, 2);
+        const imagePath = await getStore().writeClip(state.currentPdfPath, id, pngBytes);
+        const snippet = {
+          id,
+          kind: "image",
+          page,
+          text: label,
+          rects: [r],
+          imagePath,
+          comment: sug.reason || "",
+          created: new Date().toISOString(),
+          groups: groupIds,
+          meta: { source: "ai" },
+        };
+        state.snippets.push(snippet);
+        undoStack.push({ type: "add", id: snippet.id });
+        await persist();
+        refreshActiveView();
+        applyAllHighlights();
+        renderAiDrawer();
+        aiSetStatus(`Accepted: ${label}`);
+        return;
+      } catch (err) {
+        console.error("[ai] image clip render/save failed; degrading to text snippet", err);
+        aiSetStatus(`Image clip failed — marked at page top: ${err.message || err}`, "error");
+        // fall through to degraded text snippet
+      }
+    } else {
+      console.warn("[ai] image suggestion missing rect or page; ghost marker on page", {
+        hasRect: !!r, hasPage: !!page, sug,
+      });
+      aiSetStatus(`No usable rect from model — placed ghost marker on page ${page || 1}.`);
+    }
+    // Degraded path: no rect or render failed → store as a text snippet
+    // describing the figure. User can locate manually with the R tool.
+    const tSnippet = {
+      id: crypto.randomUUID(),
+      kind: "text",
+      page: page || 1,
+      text: label,
+      rects: [],
+      comment: sug.reason || "",
+      created: new Date().toISOString(),
+      groups: groupIds,
+      meta: { source: "ai", origin: "image-fallback" },
+    };
+    state.snippets.push(tSnippet);
+    undoStack.push({ type: "add", id: tSnippet.id });
+    persist();
+    refreshActiveView();
+    applyAllHighlights();
+    renderAiDrawer();
+    paintAiPreviews();
+    return;
+  }
+
+  // Text suggestion: spread the resolver's canonical spec output.
+  const base = sug.resolved || {
+    text: sug.quote,
+    page: sug.page || 1,
+    rects: [],
+    kind: "text",
+    textNormalized: (sug.quote || "").replace(/\s+/g, " ").trim(),
+  };
+  const snippet = {
+    ...base,
+    id: crypto.randomUUID(),
+    comment: sug.reason || "",
+    created: new Date().toISOString(),
+    groups: groupIds,
+    meta: { source: "ai" },
+  };
+  state.snippets.push(snippet);
+  undoStack.push({ type: "add", id: snippet.id });
+  persist();
+  refreshActiveView();
+  applyAllHighlights();
+  renderAiDrawer();
+  paintAiPreviews();
+  aiSetStatus(sug.resolved ? "Accepted" : "Accepted — ghost marker (locator failed; refine manually).");
+}
+function rejectAiSuggestion(sug) {
+  sug.rejected = true;
+  renderAiDrawer();
+  paintAiPreviews();
+}
+
+// AI is treated as a premium add-on — surfaces are hidden by default
+// so the snippets pane reads clean. Click the AI toggle (✨) in the
+// header to expand; click again to collapse. State persists.
+const AI_EXPANDED_KEY = "marklee-ai-expanded";
+function isAiExpanded() {
+  try { return localStorage.getItem(AI_EXPANDED_KEY) === "1"; } catch { return false; }
+}
+function setAiExpanded(v) {
+  try { localStorage.setItem(AI_EXPANDED_KEY, v ? "1" : "0"); } catch {}
+  applyAiExpandedState();
+}
+function applyAiExpandedState() {
+  const on = isAiExpanded();
+  document.body.classList.toggle("ai-expanded", on);
+  const btn = document.getElementById("ai-toggle-btn");
+  if (btn) btn.setAttribute("aria-pressed", on ? "true" : "false");
+  // Collapsing also hides any open drawer + clears its preview overlays
+  if (!on) {
+    const drawer = document.getElementById("ai-drawer");
+    if (drawer && !drawer.hidden) hideAiDrawer();
+  } else {
+    // Focus the ask input when expanding so the user can type immediately.
+    setTimeout(() => document.getElementById("ai-ask-input")?.focus(), 50);
+  }
+}
+applyAiExpandedState();
+document.getElementById("ai-toggle-btn").addEventListener("click", () => {
+  setAiExpanded(!isAiExpanded());
+});
+
+document.getElementById("ai-ask-submit").addEventListener("click", aiAsk);
+document.getElementById("ai-ask-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    aiAsk();
+  } else if (e.key === "Escape") {
+    e.target.blur();
+  }
+});
+document.getElementById("ai-drawer-close").addEventListener("click", hideAiDrawer);
+document.getElementById("ai-drawer-accept-all").addEventListener("click", () => {
+  for (const s of aiSuggestions) {
+    if (!s.accepted && !s.rejected) acceptAiSuggestion(s);
+  }
+});
+document.getElementById("ai-drawer-reject-all").addEventListener("click", () => {
+  for (const s of aiSuggestions) {
+    if (!s.accepted && !s.rejected) s.rejected = true;
+  }
+  renderAiDrawer();
+});
+
+// ── AI settings modal ────────────────────────────────────────────
+function rebuildAiModelDropdown(providerId) {
+  const def = getProviderDef(providerId);
+  const sel = document.getElementById("ai-settings-model");
+  sel.innerHTML = "";
+  for (const m of def.models) {
+    const opt = document.createElement("option");
+    opt.value = m.id;
+    opt.textContent = m.label;
+    sel.appendChild(opt);
+  }
+  sel.value = getProviderModel(providerId) || def.defaultModel;
+}
+function updateAiKeyFieldForProvider(providerId) {
+  const def = getProviderDef(providerId);
+  const keyEl = document.getElementById("ai-settings-key");
+  const stateEl = document.getElementById("ai-settings-key-state");
+  const hintEl = document.getElementById("ai-settings-key-hint");
+  keyEl.placeholder = def.keyPlaceholder;
+  keyEl.value = getProviderHasKey(providerId) ? "•".repeat(20) : "";
+  keyEl.dataset.touched = "";
+  stateEl.textContent = getProviderHasKey(providerId) ? "— stored" : "— not set";
+  hintEl.innerHTML = `Get a key at <code>${def.keyHint}</code>.`;
+}
+function openAiSettings() {
+  const m = document.getElementById("ai-settings-modal");
+  m.hidden = false;
+  const provId = getProviderId();
+  document.getElementById("ai-settings-provider").value = provId;
+  rebuildAiModelDropdown(provId);
+  updateAiKeyFieldForProvider(provId);
+  document.getElementById("ai-settings-consent").checked = hasConsented();
+  document.getElementById("ai-settings-figures").checked = getIncludeFigures();
+  const doclingOn = isDoclingEnabled();
+  document.getElementById("ai-settings-docling").checked = doclingOn;
+  document.getElementById("ai-settings-docling-python").value = getDoclingPython();
+  document.getElementById("ai-settings-docling-python-row").hidden = !doclingOn;
+  document.getElementById("ai-settings-onnx").checked = isOnnxLayoutEnabled();
+  const ollamaOn = isOllamaEnabled();
+  document.getElementById("ai-settings-ollama").checked = ollamaOn;
+  document.getElementById("ai-settings-ollama-endpoint").value = getOllamaEndpoint();
+  document.getElementById("ai-settings-ollama-model").value = getOllamaModel();
+  document.getElementById("ai-settings-ollama-row").hidden = !ollamaOn;
+  refreshOllamaStatusBadge();
+  setTimeout(() => document.getElementById("ai-settings-key").focus(), 0);
+}
+function closeAiSettings() {
+  document.getElementById("ai-settings-modal").hidden = true;
+}
+document.getElementById("ai-settings-btn").addEventListener("click", openAiSettings);
+document.getElementById("ai-settings-close").addEventListener("click", closeAiSettings);
+document.getElementById("ai-settings-modal").querySelector(".modal-backdrop").addEventListener("click", closeAiSettings);
+document.getElementById("ai-settings-key").addEventListener("input", (e) => {
+  e.target.dataset.touched = "1";
+});
+document.getElementById("ai-settings-provider").addEventListener("change", (e) => {
+  // Switching the dropdown previews that provider's models + key state
+  // but doesn't persist until Save. To keep things simple we DO persist
+  // the provider choice immediately so the model dropdown reflects it.
+  const id = e.target.value;
+  setProviderId(id);
+  rebuildAiModelDropdown(id);
+  updateAiKeyFieldForProvider(id);
+});
+document.getElementById("ai-settings-save").addEventListener("click", async () => {
+  const provId = document.getElementById("ai-settings-provider").value;
+  setProviderId(provId);
+  const keyEl = document.getElementById("ai-settings-key");
+  if (keyEl.dataset.touched === "1") {
+    const v = keyEl.value.trim();
+    if (v) {
+      try { await setProviderApiKey(provId, v); }
+      catch (err) { aiSetStatus("Failed to save API key: " + (err.message || err), "error"); return; }
+    }
+  }
+  setProviderModel(provId, document.getElementById("ai-settings-model").value);
+  setConsented(document.getElementById("ai-settings-consent").checked);
+  setIncludeFigures(document.getElementById("ai-settings-figures").checked);
+  setOnnxLayoutEnabled(document.getElementById("ai-settings-onnx").checked);
+  const ollamaOnNow = document.getElementById("ai-settings-ollama").checked;
+  const ollamaOnBefore = isOllamaEnabled();
+  setOllamaEnabled(ollamaOnNow);
+  setOllamaEndpoint(document.getElementById("ai-settings-ollama-endpoint").value.trim());
+  setOllamaModel(document.getElementById("ai-settings-ollama-model").value.trim());
+  // If the user just turned Ollama ON, kick off a prewarm so the next
+  // figure query doesn't pay cold-start. Fire-and-forget.
+  if (ollamaOnNow && !ollamaOnBefore) {
+    (async () => {
+      await startBundledOllama();
+      await waitForOllamaReady(15000);
+      await prewarmOllamaModel();
+    })();
+  }
+  setDoclingEnabled(document.getElementById("ai-settings-docling").checked);
+  setDoclingPython(document.getElementById("ai-settings-docling-python").value.trim());
+  closeAiSettings();
+  if (!hasApiKey()) aiSetStatus("No API key set for the selected provider.", "error");
+  else aiSetStatus("Settings saved.");
+});
+document.getElementById("ai-settings-clear").addEventListener("click", async () => {
+  const provId = document.getElementById("ai-settings-provider").value;
+  try { await setProviderApiKey(provId, ""); }
+  catch (err) { aiSetStatus("Failed to clear API key: " + (err.message || err), "error"); }
+  document.getElementById("ai-settings-key").value = "";
+  document.getElementById("ai-settings-key").dataset.touched = "1";
+  document.getElementById("ai-settings-key-state").textContent = "— not set";
+});
+document.getElementById("ai-settings-docling").addEventListener("change", (e) => {
+  document.getElementById("ai-settings-docling-python-row").hidden = !e.target.checked;
+});
+document.getElementById("ai-settings-ollama").addEventListener("change", (e) => {
+  document.getElementById("ai-settings-ollama-row").hidden = !e.target.checked;
+  if (e.target.checked) {
+    document.getElementById("ai-settings-onnx").checked = false;
+    refreshOllamaStatusBadge();
+  }
+});
+document.getElementById("ai-settings-onnx").addEventListener("change", (e) => {
+  if (e.target.checked) {
+    document.getElementById("ai-settings-ollama").checked = false;
+    document.getElementById("ai-settings-ollama-row").hidden = true;
+  }
+});
+document.getElementById("ai-settings-pull-model").addEventListener("click", async () => {
+  const btn = document.getElementById("ai-settings-pull-model");
+  const helpEl = document.getElementById("ai-settings-pull-help");
+  const statusEl = document.getElementById("ai-settings-ollama-status");
+  const origHelp = helpEl.innerHTML;
+  const model = document.getElementById("ai-settings-ollama-model").value.trim() || getOllamaModel();
+  await startBundledOllama();
+  const ready = await waitForOllamaReady(10000);
+  if (!ready) {
+    statusEl.textContent = "— Ollama failed to start";
+    statusEl.className = "ai-field-note ai-status-bad";
+    return;
+  }
+  const prevText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Pulling…";
+  helpEl.innerHTML = `<span class="ai-status-warn">Streaming progress…</span>`;
+  try {
+    await pullOllamaModel(model, (p) => {
+      const status = p.status || "";
+      const completed = p.completed != null ? `${(p.completed / 1e6).toFixed(1)} MB` : "";
+      const total = p.total != null ? `${(p.total / 1e6).toFixed(0)} MB` : "";
+      const pct = p.total ? Math.round(((p.completed || 0) / p.total) * 100) : null;
+      btn.textContent = pct != null
+        ? `Pulling… ${pct}%`
+        : `Pulling… ${status}`;
+      helpEl.innerHTML = `<span class="ai-status-warn">${status} ${completed}${total ? ` / ${total}` : ""}</span>`;
+    });
+    btn.textContent = "✓ Pulled — ready";
+    statusEl.textContent = `— ready (${model})`;
+    statusEl.className = "ai-field-note ai-status-good";
+    helpEl.innerHTML = `<span class="ai-status-good">✓ Model ready. You can run figure queries now.</span>`;
+    // Keep success state visible until the user takes another action.
+    btn.disabled = false;
+  } catch (err) {
+    const message = err.message || String(err);
+    console.error("[ollama-pull] FAILED:", err);
+    btn.textContent = "Retry pull";
+    btn.disabled = false;
+    statusEl.textContent = `— pull failed`;
+    statusEl.className = "ai-field-note ai-status-bad";
+    helpEl.innerHTML = `<span class="ai-status-bad">✕ ${message}</span><br><small style="color:var(--text-dim)">Check the dev console for full event log (⌘⌥I → Console → filter "[ollama-pull]").</small>`;
+  }
+  // Don't restore origHelp/prevText automatically — let the user see
+  // the result until they retry or change the model name.
+  void origHelp; void prevText;
+});
+document.getElementById("ai-settings-ollama-endpoint").addEventListener("blur", refreshOllamaStatusBadge);
+document.getElementById("ai-settings-ollama-model").addEventListener("blur", refreshOllamaStatusBadge);
+
+async function refreshOllamaStatusBadge() {
+  const el = document.getElementById("ai-settings-ollama-status");
+  if (!el) return;
+  // Snapshot the live endpoint/model so check uses the un-saved values.
+  const epEl = document.getElementById("ai-settings-ollama-endpoint");
+  const mdEl = document.getElementById("ai-settings-ollama-model");
+  const ep = epEl?.value.trim() || getOllamaEndpoint();
+  const md = mdEl?.value.trim() || getOllamaModel();
+  el.textContent = "— checking…";
+  el.className = "ai-field-note";
+  // Temporarily set so checkOllamaStatus reads the current input.
+  const prevEp = getOllamaEndpoint();
+  const prevMd = getOllamaModel();
+  setOllamaEndpoint(ep);
+  setOllamaModel(md);
+  const status = await checkOllamaStatus();
+  setOllamaEndpoint(prevEp);
+  setOllamaModel(prevMd);
+  if (!status.available) {
+    el.textContent = `— Ollama not running at ${ep}`;
+    el.classList.add("ai-status-bad");
+  } else if (!status.hasModel) {
+    el.textContent = `— Ollama up; run: ollama pull ${md}`;
+    el.classList.add("ai-status-warn");
+  } else {
+    el.textContent = `— ready (${md})`;
+    el.classList.add("ai-status-good");
+  }
+}
+
 function toggleMaximizePane() {
   document.body.classList.toggle("pane-max");
   setTimeout(() => {
@@ -763,12 +2222,85 @@ function toggleMaximizePane() {
 }
 document.getElementById("maximize-btn").addEventListener("click", toggleMaximizePane);
 
-document.getElementById("theme-btn").addEventListener("click", () => {
+const THEME_LABELS = {
+  cream:     { label: "Cream",     swatch: "#2ea58c" },
+  slate:     { label: "Slate",     swatch: "#2563b3" },
+  dark:      { label: "Dark",      swatch: "#4ec9b0" },
+  sepia:     { label: "Sepia",     swatch: "#b85c2a" },
+  bubblegum: { label: "Bubblegum", swatch: "#ff3b8a" },
+  popshow:   { label: "Popshow",   swatch: "#ff2d8a" },
+  forest:    { label: "Forest",    swatch: "#4d8a5a" },
+  ocean:     { label: "Ocean",     swatch: "#1f7a96" },
+  midnight:  { label: "Midnight",  swatch: "#7c9fff" },
+  terminal:  { label: "Terminal",  swatch: "#4dff88" },
+  paper:     { label: "Paper",     swatch: "#c92128" },
+  steampunk: { label: "Steampunk", swatch: "#c98a3a" },
+  vapor:     { label: "Vapor",     swatch: "#a78bfa" },
+};
+
+function buildThemeMenu() {
+  const menu = document.getElementById("theme-menu");
   const cur = state.workspace.theme || "cream";
-  const i = VALID_THEMES.indexOf(cur);
-  const next = VALID_THEMES[(i + 1) % VALID_THEMES.length];
-  setWorkspaceTheme(next);
-  flashButton("theme-btn", next);
+  menu.innerHTML = "";
+  for (const cat of THEME_CATEGORIES) {
+    const head = document.createElement("div");
+    head.className = "theme-menu-category";
+    head.textContent = cat.label;
+    menu.appendChild(head);
+    for (const t of cat.themes) {
+      const meta = THEME_LABELS[t] || { label: t, swatch: "#888" };
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "theme-menu-item";
+      item.role = "menuitemradio";
+      item.dataset.theme = t;
+      if (t === cur) item.classList.add("active");
+      item.innerHTML = `<span class="theme-swatch" style="background:${meta.swatch}"></span><span>${meta.label}</span>`;
+      item.addEventListener("click", () => {
+        setWorkspaceTheme(t);
+        closeThemeMenu();
+      });
+      menu.appendChild(item);
+    }
+  }
+}
+function openThemeMenu() {
+  buildThemeMenu();
+  const menu = document.getElementById("theme-menu");
+  const btn = document.getElementById("theme-btn");
+  menu.hidden = false;
+  btn.setAttribute("aria-expanded", "true");
+  // Position below + right-aligned to the button.
+  const r = btn.getBoundingClientRect();
+  menu.style.top = `${r.bottom + 4}px`;
+  menu.style.right = `${window.innerWidth - r.right}px`;
+  setTimeout(() => {
+    document.addEventListener("mousedown", themeMenuOutsideClick);
+    document.addEventListener("keydown", themeMenuKeydown);
+  }, 0);
+}
+function closeThemeMenu() {
+  const menu = document.getElementById("theme-menu");
+  if (menu.hidden) return;
+  menu.hidden = true;
+  document.getElementById("theme-btn").setAttribute("aria-expanded", "false");
+  document.removeEventListener("mousedown", themeMenuOutsideClick);
+  document.removeEventListener("keydown", themeMenuKeydown);
+}
+function themeMenuOutsideClick(e) {
+  const menu = document.getElementById("theme-menu");
+  const btn = document.getElementById("theme-btn");
+  if (menu.contains(e.target) || btn.contains(e.target)) return;
+  closeThemeMenu();
+}
+function themeMenuKeydown(e) {
+  if (e.key === "Escape") { e.preventDefault(); closeThemeMenu(); }
+}
+
+document.getElementById("theme-btn").addEventListener("click", () => {
+  const menu = document.getElementById("theme-menu");
+  if (menu.hidden) openThemeMenu();
+  else closeThemeMenu();
 });
 
 function toggleSidebar() {
@@ -784,6 +2316,34 @@ try {
     document.body.classList.add("sidebar-collapsed");
   }
 } catch {}
+
+// VSCode-style collapsible sidebar sections. Click the section header
+// (anywhere except inline buttons/inputs) to toggle. State persists.
+const SIDEBAR_SECTION_KEY = "pdf-annotator-sidebar-sections-collapsed";
+function getCollapsedSections() {
+  try { return new Set(JSON.parse(localStorage.getItem(SIDEBAR_SECTION_KEY) || "[]")); }
+  catch { return new Set(); }
+}
+function persistCollapsedSections(set) {
+  try { localStorage.setItem(SIDEBAR_SECTION_KEY, JSON.stringify([...set])); } catch {}
+}
+(() => {
+  const collapsed = getCollapsedSections();
+  for (const sec of document.querySelectorAll("#sidebar .sidebar-section")) {
+    if (collapsed.has(sec.id)) sec.classList.add("collapsed");
+    const header = sec.querySelector(":scope > .sidebar-section-header");
+    if (!header) continue;
+    header.addEventListener("click", (e) => {
+      // Inline buttons/inputs in the header keep their own behavior.
+      if (e.target.closest("button, input")) return;
+      sec.classList.toggle("collapsed");
+      const set = getCollapsedSections();
+      if (sec.classList.contains("collapsed")) set.add(sec.id);
+      else set.delete(sec.id);
+      persistCollapsedSections(set);
+    });
+  }
+})();
 
 document.getElementById("help-btn").addEventListener("click", (e) => {
   e.stopPropagation();
@@ -845,6 +2405,8 @@ document.getElementById("edge-label-input").addEventListener("keydown", (e) => {
   if (e.key === "Enter") { e.preventDefault(); saveEdgeLabel(); }
 });
 
+// Capture-phase listener so we beat the webview's built-in Cmd+F /
+// Cmd+- / Cmd+= zoom handlers (WKWebView grabs these before bubble phase).
 document.addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey) {
     if (e.key === "=" || e.key === "+") { e.preventDefault(); zoomIn(); }
@@ -872,7 +2434,7 @@ document.addEventListener("keydown", (e) => {
     }
     else if (e.key === "f" || e.key === "F") {
       e.preventDefault();
-      openLocalSearch();
+      openFindInDoc();
     }
     return;
   }
@@ -890,7 +2452,7 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "r" || e.key === "R") {
     if (state.source.kind === "pdf") setTool("rect");
   }
-});
+}, { capture: true });
 
 const LOCAL_SEARCH_KEY = "pdf-annotator-local-search";
 let localSearchQuery = "";
@@ -920,7 +2482,141 @@ function closeLocalSearch() { clearLocalSearch(); }
     try { localStorage.setItem(LOCAL_SEARCH_KEY, localSearchQuery); } catch {}
     refreshActiveView();
   });
-  document.getElementById("local-search-clear")?.addEventListener("click", clearLocalSearch);
+})();
+
+// ── Find in document (⌘F) ─────────────────────────────────────────
+let findHits = [];
+let findCurrent = -1;
+
+function openFindInDoc() {
+  const bar = document.getElementById("find-bar");
+  const input = document.getElementById("find-input");
+  bar.hidden = false;
+  input.focus();
+  input.select();
+}
+function closeFindInDoc() {
+  const bar = document.getElementById("find-bar");
+  bar.hidden = true;
+  clearFindHighlights();
+  findHits = [];
+  findCurrent = -1;
+  updateFindCount();
+}
+function clearFindHighlights() {
+  for (const m of viewerContainer.querySelectorAll("mark.find-hit")) {
+    const parent = m.parentNode;
+    if (!parent) continue;
+    parent.replaceChild(document.createTextNode(m.textContent), m);
+    parent.normalize();
+  }
+}
+function updateFindCount() {
+  const el = document.getElementById("find-count");
+  if (!el) return;
+  if (findHits.length === 0) {
+    el.textContent = document.getElementById("find-input").value ? "no matches" : "0 / 0";
+  } else {
+    el.textContent = `${findCurrent + 1} / ${findHits.length}`;
+  }
+  document.getElementById("find-prev").disabled = findHits.length === 0;
+  document.getElementById("find-next").disabled = findHits.length === 0;
+}
+function runFindInDoc(query) {
+  clearFindHighlights();
+  findHits = [];
+  findCurrent = -1;
+  if (!query) { updateFindCount(); return; }
+  const q = query.toLowerCase();
+  // For PDF, the textLayer wraps each text run in a <span>. For flow docs
+  // (md/txt/docx), the article has nested elements. In both cases we walk
+  // text nodes, find substring matches, and wrap them in <mark>.
+  const walker = document.createTreeWalker(
+    viewerContainer,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode(n) {
+        if (!n.nodeValue || !n.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+        // Skip text inside existing find marks (we cleared them above) and
+        // inside <script>/<style>.
+        const p = n.parentNode;
+        if (!p) return NodeFilter.FILTER_REJECT;
+        const tag = p.nodeName;
+        if (tag === "SCRIPT" || tag === "STYLE") return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    }
+  );
+  const nodes = [];
+  let n;
+  while ((n = walker.nextNode())) nodes.push(n);
+  for (const node of nodes) {
+    const lower = node.nodeValue.toLowerCase();
+    let i = 0;
+    let lastEnd = 0;
+    const frag = document.createDocumentFragment();
+    let any = false;
+    while ((i = lower.indexOf(q, lastEnd)) !== -1) {
+      any = true;
+      if (i > lastEnd) frag.appendChild(document.createTextNode(node.nodeValue.slice(lastEnd, i)));
+      const mark = document.createElement("mark");
+      mark.className = "find-hit";
+      mark.textContent = node.nodeValue.slice(i, i + q.length);
+      frag.appendChild(mark);
+      findHits.push(mark);
+      lastEnd = i + q.length;
+    }
+    if (any) {
+      if (lastEnd < node.nodeValue.length) frag.appendChild(document.createTextNode(node.nodeValue.slice(lastEnd)));
+      node.parentNode.replaceChild(frag, node);
+    }
+  }
+  if (findHits.length > 0) {
+    findCurrent = 0;
+    activateCurrentFindHit();
+  }
+  updateFindCount();
+}
+function activateCurrentFindHit() {
+  for (const m of findHits) m.classList.remove("find-hit-current");
+  const cur = findHits[findCurrent];
+  if (!cur) return;
+  cur.classList.add("find-hit-current");
+  cur.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+function nextFindHit() {
+  if (findHits.length === 0) return;
+  findCurrent = (findCurrent + 1) % findHits.length;
+  activateCurrentFindHit();
+  updateFindCount();
+}
+function prevFindHit() {
+  if (findHits.length === 0) return;
+  findCurrent = (findCurrent - 1 + findHits.length) % findHits.length;
+  activateCurrentFindHit();
+  updateFindCount();
+}
+
+(() => {
+  const input = document.getElementById("find-input");
+  let debounce = 0;
+  input.addEventListener("input", () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => runFindInDoc(input.value), 100);
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (e.shiftKey) prevFindHit();
+      else nextFindHit();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      closeFindInDoc();
+    }
+  });
+  document.getElementById("find-next").addEventListener("click", nextFindHit);
+  document.getElementById("find-prev").addEventListener("click", prevFindHit);
+  document.getElementById("find-close").addEventListener("click", closeFindInDoc);
 })();
 
 function snippetMatchesLocal(s) {
@@ -965,6 +2661,12 @@ async function undo() {
     if (!Array.isArray(state.workspace.pastedSnippets)) state.workspace.pastedSnippets = [];
     const arr = state.workspace.pastedSnippets;
     arr.splice(Math.min(action.index, arr.length), 0, action.snippet);
+  } else if (action.type === "delete-all") {
+    state.snippets = action.snippets.slice();
+    if (action.edges?.length) {
+      if (!Array.isArray(state.edges)) state.edges = [];
+      state.edges.push(...action.edges);
+    }
   }
   saveAllWorkspaces();
   await persist();
@@ -1092,14 +2794,19 @@ function renderClipped() {
     icon.textContent = s.kind === "image" ? "🖼" : "📋";
     const label = document.createElement("span");
     label.className = "clipped-label";
-    if (s.kind === "image") {
-      label.textContent = "Image clip";
-    } else {
-      const text = (s.text || "").replace(/\s+/g, " ").trim();
-      label.textContent = text.length > 60 ? text.slice(0, 59) + "…" : text;
-    }
-    li.append(icon, label);
-    li.title = s.kind === "image" ? "Pasted image" : (s.text || "");
+    label.textContent = clippedLabelFor(s);
+    const renameBtn = document.createElement("button");
+    renameBtn.className = "clipped-rename";
+    renameBtn.title = "Rename";
+    renameBtn.textContent = "✎";
+    renameBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      startRenameClipped(li, s);
+    });
+    li.append(icon, label, renameBtn);
+    li.title = s.kind === "image"
+      ? (s.name ? `${s.name} — pasted image` : "Pasted image")
+      : (s.name ? `${s.name} — ${s.text || ""}` : (s.text || ""));
     li.addEventListener("click", () => {
       const card = snippetsListEl.querySelector(`.snippet[data-snippet-id="${s.id}"]`);
       if (card) {
@@ -1108,8 +2815,52 @@ function renderClipped() {
         setTimeout(() => card.classList.remove("flash"), 900);
       }
     });
+    li.addEventListener("dblclick", (e) => {
+      // Don't hijack a dblclick on the rename button itself.
+      if (e.target.closest(".clipped-rename")) return;
+      e.preventDefault();
+      startRenameClipped(li, s);
+    });
     list.appendChild(li);
   }
+}
+
+function clippedLabelFor(s) {
+  if (s.name) return s.name;
+  if (s.kind === "image") return "Image clip";
+  const text = (s.text || "").replace(/\s+/g, " ").trim();
+  return text.length > 60 ? text.slice(0, 59) + "…" : text;
+}
+
+function startRenameClipped(li, s) {
+  const label = li.querySelector(".clipped-label");
+  if (!label || label.querySelector("input")) return;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "clipped-rename-input";
+  input.value = s.name || "";
+  input.placeholder = s.kind === "image" ? "Image clip" : "Untitled clip";
+  label.replaceChildren(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = (commit) => {
+    if (done) return;
+    done = true;
+    if (commit) {
+      const v = input.value.trim();
+      s.name = v || undefined;
+      persist();
+      saveAllWorkspaces();
+    }
+    renderClipped();
+    renderSnippets();
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); finish(true); }
+    else if (e.key === "Escape") { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener("blur", () => finish(true));
 }
 
 document.getElementById("clear-recents").addEventListener("click", () => {
@@ -1523,9 +3274,11 @@ async function importGroups() {
 function flashButton(id, text) {
   const btn = document.getElementById(id);
   if (!btn) return;
-  const prev = btn.textContent;
+  // Preserve innerHTML, not textContent — icon buttons hold inline SVGs
+  // whose textContent is "", so restoring textContent destroys the icon.
+  const prev = btn.innerHTML;
   btn.textContent = text;
-  setTimeout(() => { btn.textContent = prev; }, 1100);
+  setTimeout(() => { btn.innerHTML = prev; }, 1100);
 }
 
 const DEFAULT_GROUP = { id: "__notes__", name: "Notes" };
@@ -1669,8 +3422,7 @@ async function loadAnyDocument(path) {
   saveAllWorkspaces();
   if (myToken !== docLoadToken) return;
 
-  docTitleEl.textContent = state.source.title;
-  docTitleEl.title = `${state.source.title}${state.source.author ? " — " + state.source.author : ""}\n${path}`;
+  renderDocTitle(path, state.source.title, state.source.author);
 
   if (kind === "pdf") {
     const fit = await fitWidthScale(state.pdfDoc, viewerScroll.clientWidth - FIT_PADDING);
@@ -1899,6 +3651,8 @@ async function setScale(next) {
   saveZoomForDoc(clamped);
   await renderPages(state.pdfDoc, viewerContainer, state.scale);
   applyAllHighlights();
+  // PDF re-render replaces page-wraps; re-paint AI preview overlays.
+  paintAiPreviews();
   syncHorizontalOverflow();
 }
 
@@ -1955,7 +3709,7 @@ viewerScroll.addEventListener("wheel", (e) => {
   if (!e.ctrlKey) return;
   if (state.source.kind === "pdf" && state.pdfDoc) {
     handlePdfPinch(e);
-  } else if (state.flowDoc && (state.source.kind === "markdown" || state.source.kind === "docx")) {
+  } else if (state.flowDoc && (state.source.kind === "markdown" || state.source.kind === "docx" || state.source.kind === "text")) {
     handleFlowPinch(e);
   }
 }, { passive: false });
@@ -2659,30 +4413,31 @@ function updateHoverConnector() {
   // 14px past the page edge — about 0.15" — keeps the bracket clearly
   // separated from text without sliding all the way to the pane edge.
   // Clamp inside the viewer's visible right edge with a 6px inset.
-  const marginX = Math.min(pageRight + 14, viewerVis.right - 6);
-  const x1 = marginX;
+  // Sit ~4px inside the page edge so the bracket visually overlaps the
+  // document — reads as anchored to the page, not floating in the
+  // marginalia gutter. Clamp to the visible viewer right edge.
+  const marginX = Math.min(pageRight - 4, viewerVis.right - 6);
+  // Connector starts ~10px right of the bracket so the halo's blur
+  // doesn't bleed back over the bracket / page surface.
+  const x1 = marginX + 10;
   const y1 = hRect.top + hRect.height / 2;
-  // Aim the card-side endpoint at the snippet's actual content (the .text
-  // quote block or .image clip) so the line lands on the meaningful
-  // element, not generic card chrome. Falls back to card edge if no
-  // content element is found.
-  const contentEl = card.querySelector(".text") || card.querySelector(".image") || card;
-  const contentRect = contentEl.getBoundingClientRect();
-  const x2 = contentRect.left;
-  const y2 = contentRect.top + contentRect.height / 2;
+  // Land on the card's left border (not its inner content) so the
+  // connector reads as "this card" rather than "this paragraph".
+  const x2 = cardRect.left;
+  const y2 = cardRect.top + cardRect.height / 2;
   const cy1 = Math.max(viewerVis.top + 4, Math.min(viewerVis.bottom - 4, y1));
   const cy2 = Math.max(listVis.top + 4, Math.min(listVis.bottom - 4, y2));
-  // Single Bézier curve from bracket-end to card content. Avoids the
-  // orthogonal elbow's vertical segment running parallel to the resize
-  // handle / pane border (double-thin-line clutter problem). Horizontal
-  // tangents at both ends keep it reading like a smooth pull-off.
-  const dx = Math.max(40, (x2 - x1) * 0.55);
-  const path = `M ${x1} ${cy1} C ${x1 + dx} ${cy1}, ${x2 - dx} ${cy2}, ${x2} ${cy2}`;
-  // Bracket (`]` pointing left) at the margin, height = highlight extent.
+  // Orthogonal elbow — H out, V across, H in. Thick stroke so it reads
+  // as a deliberate highlighter pull rather than chrome.
+  const midX = x1 + (x2 - x1) * 0.5;
+  const path = `M ${x1} ${cy1} H ${midX} V ${cy2} H ${x2}`;
+  // Highlighter swipe at the margin: a single thick vertical line spanning
+  // the highlight extent. No `[` tick marks — just the bar itself, like a
+  // marker stripe down the page edge.
   const bracketTop = Math.max(viewerVis.top + 4, hRect.top);
   const bracketBot = Math.min(viewerVis.bottom - 4, hRect.bottom);
   const bracketPath = bracketBot > bracketTop + 2
-    ? `M ${marginX - 5} ${bracketTop} L ${marginX} ${bracketTop} L ${marginX} ${bracketBot} L ${marginX - 5} ${bracketBot}`
+    ? `M ${marginX} ${bracketTop} L ${marginX} ${bracketBot}`
     : "";
   const svg = ensureConnectorSvg();
   svg.querySelector(".hover-connector-bracket").setAttribute("d", bracketPath);
@@ -2759,7 +4514,7 @@ viewerContainer.addEventListener("mouseup", async () => {
     window.getSelection().removeAllRanges();
     return;
   }
-  if (state.source.kind === "markdown" || state.source.kind === "docx") {
+  if (state.source.kind === "markdown" || state.source.kind === "docx" || state.source.kind === "text") {
     const cap = FlowView.getSelectionFlowSnippet(viewerContainer);
     if (!cap) return;
     const text = normalizeText(cap.text);
@@ -3009,8 +4764,14 @@ async function renderSnippets() {
     if (s.kind === "image") {
       text = document.createElement("div");
       text.className = "image";
+      if (s.name) {
+        const title = document.createElement("div");
+        title.className = "clip-title";
+        title.textContent = s.name;
+        text.appendChild(title);
+      }
       const img = document.createElement("img");
-      img.alt = s.text || `clip p.${s.page}`;
+      img.alt = s.name || s.text || `clip p.${s.page}`;
       img.loading = "lazy";
       // Pasted image clips live at _imageOwnerPath, not the pseudo source.
       const clipOwnerPath = s._imageOwnerPath || ownerPath;
@@ -3028,7 +4789,18 @@ async function renderSnippets() {
     } else {
       text = document.createElement("div");
       text.className = "text";
-      text.textContent = s.text;
+      if (s.name) {
+        const title = document.createElement("div");
+        title.className = "clip-title";
+        title.textContent = s.name;
+        text.appendChild(title);
+        const quote = document.createElement("span");
+        quote.className = "clip-quote";
+        quote.textContent = s.text;
+        text.appendChild(quote);
+      } else {
+        text.textContent = s.text;
+      }
       text.title = "Click to jump to page · ⌥-click to expand/collapse";
       text.addEventListener("click", (e) => {
         if (e.altKey) {
@@ -3421,7 +5193,7 @@ function darkenColor(c) {
 }
 
 function previewSnippetInPdf(s) {
-  if (state.source.kind === "markdown" || state.source.kind === "docx") {
+  if (state.source.kind === "markdown" || state.source.kind === "docx" || state.source.kind === "text") {
     FlowView.previewFlowSnippet(viewerContainer, s);
     return;
   }
@@ -3458,7 +5230,7 @@ function applyAllHighlights() {
   });
   if (state.source.kind === "pdf") {
     applyHighlights(viewerContainer, visible);
-  } else if (state.source.kind === "markdown" || state.source.kind === "docx") {
+  } else if (state.source.kind === "markdown" || state.source.kind === "docx" || state.source.kind === "text") {
     FlowView.applyFlowHighlights(viewerContainer, visible);
   }
 }
@@ -4397,6 +6169,65 @@ function setupPanelResize() {
   }
   attachResize(document.getElementById("resize-left"), "sidebar", +1);
   attachResize(document.getElementById("resize-right"), "snippets", -1);
+  setupAiDrawerResize();
+}
+
+// Vertical drag handle between the AI suggestions pane and the snippets
+// list. Persists height as a percentage of #snippets-pane so it stays
+// proportional across window resizes. Collapse button stows the body of
+// the AI drawer leaving just the header visible.
+function setupAiDrawerResize() {
+  const drawer = document.getElementById("ai-drawer");
+  const handle = document.getElementById("ai-drawer-resize");
+  const pane = document.getElementById("snippets-pane");
+  const collapseBtn = document.getElementById("ai-drawer-collapse");
+  if (!drawer || !handle || !pane) return;
+
+  const HEIGHT_KEY = "marklee-ai-drawer-h";
+  const COLLAPSED_KEY = "marklee-ai-drawer-collapsed";
+
+  // Restore saved height.
+  try {
+    const saved = localStorage.getItem(HEIGHT_KEY);
+    if (saved) drawer.style.setProperty("height", saved);
+    if (localStorage.getItem(COLLAPSED_KEY) === "1") drawer.classList.add("collapsed");
+  } catch {}
+
+  handle.addEventListener("mousedown", (e) => {
+    if (drawer.classList.contains("collapsed")) return;
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = drawer.getBoundingClientRect().height;
+    const paneH = pane.getBoundingClientRect().height;
+    document.body.classList.add("resizing-v");
+    handle.classList.add("active");
+    function onMove(ev) {
+      const delta = ev.clientY - startY;
+      const next = Math.max(64, Math.min(paneH - 120, startH + delta));
+      drawer.style.height = `${next}px`;
+    }
+    function onUp() {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.classList.remove("resizing-v");
+      handle.classList.remove("active");
+      try { localStorage.setItem(HEIGHT_KEY, drawer.style.height); } catch {}
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  });
+
+  if (collapseBtn) {
+    collapseBtn.addEventListener("click", () => {
+      drawer.classList.toggle("collapsed");
+      try {
+        localStorage.setItem(
+          COLLAPSED_KEY,
+          drawer.classList.contains("collapsed") ? "1" : "0",
+        );
+      } catch {}
+    });
+  }
 }
 
 function attachResize(handle, side, sign) {

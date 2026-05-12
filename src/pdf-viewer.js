@@ -222,9 +222,22 @@ const _pageHashes = new Map();
 function bucketByPage(snippets) {
   _pageBuckets.clear();
   for (const s of snippets) {
+    if (!s.page) continue;
     if (!_pageBuckets.has(s.page)) _pageBuckets.set(s.page, []);
     const arr = _pageBuckets.get(s.page);
-    for (const r of s.rects || []) arr.push({ rect: r, snippet: s });
+    const rects = s.rects || [];
+    if (rects.length > 0) {
+      for (const r of rects) arr.push({ rect: r, snippet: s });
+    } else {
+      // No resolved rect: synthesize a thin marker strip at the top of
+      // the page so the snippet always renders. `ghost` triggers the
+      // dashed/low-opacity treatment in paintHighlightCanvas.
+      arr.push({
+        rect: { left: 0.04, top: 0.02, width: 0.92, height: 0.025 },
+        snippet: s,
+        ghost: true,
+      });
+    }
   }
 }
 
@@ -234,8 +247,9 @@ function hashItems(items, hoverId) {
   for (const it of items) {
     const r = it.rect;
     const hot = it.snippet.id === hoverId ? "h" : "n";
+    const g = it.ghost ? "g" : "-";
     parts.push(
-      `${it.snippet.id}:${it.snippet.kind || "t"}:${hot}:` +
+      `${it.snippet.id}:${it.snippet.kind || "t"}:${hot}:${g}:` +
       `${r.left.toFixed(4)},${r.top.toFixed(4)},${r.width.toFixed(4)},${r.height.toFixed(4)}`,
     );
   }
@@ -316,16 +330,43 @@ function paintHighlightCanvas(canvas, items) {
     placed.push(item);
   }
 
-  for (const { rect, snippet } of placed) {
+  const dpr = window.devicePixelRatio || 1;
+  for (const item of placed) {
+    const { rect, snippet, ghost } = item;
     if (snippet.kind === "image") continue;
-    ctx.fillStyle = snippet.id === _hoverSnippetId ? HL_HOVER_FILL : HL_FILL;
+    const hot = snippet.id === _hoverSnippetId;
+    if (ghost) {
+      // Unresolved text snippet: thin dashed marker strip + faint fill,
+      // so user can see *something* on the page even when the locator
+      // couldn't find the quote. Clearly distinguishable from a real
+      // text highlight.
+      ctx.save();
+      ctx.globalAlpha = hot ? 0.85 : 0.55;
+      ctx.fillStyle = HL_FILL;
+      ctx.fillRect(rect.left * W, rect.top * H, rect.width * W, rect.height * H);
+      ctx.strokeStyle = hot ? HL_IMAGE_HOVER_STROKE : HL_IMAGE_STROKE;
+      ctx.lineWidth = 1.25 * dpr;
+      ctx.setLineDash([4 * dpr, 3 * dpr]);
+      ctx.strokeRect(
+        rect.left * W + ctx.lineWidth / 2,
+        rect.top * H + ctx.lineWidth / 2,
+        Math.max(0, rect.width * W - ctx.lineWidth),
+        Math.max(0, rect.height * H - ctx.lineWidth),
+      );
+      ctx.setLineDash([]);
+      ctx.restore();
+      continue;
+    }
+    ctx.fillStyle = hot ? HL_HOVER_FILL : HL_FILL;
     ctx.fillRect(rect.left * W, rect.top * H, rect.width * W, rect.height * H);
   }
 
-  const dpr = window.devicePixelRatio || 1;
-  for (const { rect, snippet } of placed) {
+  for (const item of placed) {
+    const { rect, snippet, ghost } = item;
     if (snippet.kind !== "image") continue;
     const hot = snippet.id === _hoverSnippetId;
+    ctx.save();
+    if (ghost) ctx.globalAlpha = 0.55;
     ctx.strokeStyle = hot ? HL_IMAGE_HOVER_STROKE : HL_IMAGE_STROKE;
     ctx.lineWidth = (hot ? 2.5 : 1.5) * dpr;
     ctx.setLineDash([6 * dpr, 4 * dpr]);
@@ -336,5 +377,6 @@ function paintHighlightCanvas(canvas, items) {
       Math.max(0, rect.height * H - ctx.lineWidth),
     );
     ctx.setLineDash([]);
+    ctx.restore();
   }
 }

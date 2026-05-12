@@ -16,7 +16,26 @@ tauri-build = { version = "=2.5.6", features = [] }
 tauri = { version = "=2.10.3", features = [] }
 tauri-plugin-dialog = "=2.7.0"
 tauri-plugin-fs = "=2.5.0"
+tauri-plugin-shell = "=2.3.5"
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.149"
 arboard = "=3.6.1"
-image = { version = "=0.25.10", default-features = false, features = ["png"] }
+image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg"] }
+# RT-DETR layout detector via ONNX Runtime. download-binaries fetches
+# precompiled ORT so users don't need anything system-installed.
+ort = { version = "=2.0.0-rc.10", features = ["download-binaries"] }
+ndarray = "=0.16.1"
+# First-run model download.
+ureq = "=2.12.1"
+dirs = "=5.0.1"
+base64 = "=0.22.1"
+# Secret-at-rest encryption for API keys. We derive an AES-256 key
+# from a machine-stable identifier (IOPlatformUUID on macOS, falling
+# back to a per-install random UUID) so the secrets file is useless
+# if copied to another machine. Casual exfiltration / Time Machine
+# snapshots / accidental upload of the app-data dir all become
+# non-issues; a determined local attacker with code execution can
+# still derive the key, but that's a much higher bar than plaintext.
+aes-gcm = "=0.10.3"
+sha2 = "=0.10.9"
+getrandom = "=0.2.16"

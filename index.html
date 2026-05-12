@@ -7,38 +7,51 @@
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
-    <div id="workspace-tabs">
+    <div id="workspace-tabs" data-tauri-drag-region>
+      <div id="ws-traffic-spacer" data-tauri-drag-region></div>
       <div id="ws-tabs-list"></div>
       <button id="ws-tab-add" title="New workspace">+</button>
-      <button id="theme-btn" title="Cycle theme (T)">◐</button>
+      <button id="theme-btn" title="Theme" aria-haspopup="true" aria-expanded="false">◐</button>
+      <div id="theme-menu" hidden role="menu" aria-label="Theme"></div>
     </div>
     <div id="app">
       <aside id="sidebar">
-        <button id="sidebar-collapse" title="Collapse sidebar (⌘B)" aria-label="Collapse sidebar"></button>
-        <div class="sidebar-actions">
-          <button id="open-file">+ file</button>
-          <button id="open-folder">+ folder</button>
+        <div class="sidebar-toolbar">
+          <button id="open-file" class="toolbar-btn" title="Open file">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 2H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V6"/><path d="M9 2v4h4"/></svg>
+            <span>File</span>
+          </button>
+          <button id="open-folder" class="toolbar-btn" title="Open folder">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 5a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5Z"/></svg>
+            <span>Folder</span>
+          </button>
+          <div class="toolbar-spacer"></div>
+          <button id="sidebar-collapse" class="toolbar-btn icon-btn" title="Collapse sidebar (⌘B)" aria-label="Collapse sidebar"></button>
         </div>
         <div class="sidebar-section" id="workspace-section">
           <div class="sidebar-section-header">
             <span>Workspace</span>
             <button id="clear-workspace" title="Clear workspace">clear</button>
           </div>
-          <ul id="file-list"></ul>
-        </div>
-        <div class="sidebar-section" id="clipped-section">
-          <div class="sidebar-section-header">
-            <span>Clipped</span>
-            <span id="clipped-count" class="sidebar-section-count"></span>
+          <div class="sidebar-section-body">
+            <ul id="file-list"></ul>
+            <div class="sidebar-subsection" id="clipped-section">
+              <div class="sidebar-subsection-header">
+                <span>Clipped</span>
+                <span id="clipped-count" class="sidebar-section-count"></span>
+              </div>
+              <ul id="clipped-list"></ul>
+            </div>
           </div>
-          <ul id="clipped-list"></ul>
         </div>
         <div class="sidebar-section" id="recents-section" hidden>
           <div class="sidebar-section-header">
             <span>Recent</span>
             <button id="clear-recents" title="Clear recents">clear</button>
           </div>
-          <ul id="recents-list"></ul>
+          <div class="sidebar-section-body">
+            <ul id="recents-list"></ul>
+          </div>
         </div>
       </aside>
       <div class="resize-handle" id="resize-left" data-side="sidebar"></div>
@@ -56,6 +69,13 @@
           <div id="viewer-empty">Open a PDF or Markdown file to begin.</div>
           <div id="viewer-container"></div>
         </div>
+        <div id="find-bar" hidden>
+          <input id="find-input" placeholder="Find in document…" autocomplete="off" />
+          <span id="find-count">0 / 0</span>
+          <button id="find-prev" title="Previous match (⇧⏎)" aria-label="Previous">↑</button>
+          <button id="find-next" title="Next match (⏎)" aria-label="Next">↓</button>
+          <button id="find-close" title="Close (Esc)" aria-label="Close">×</button>
+        </div>
         <div id="floating-tool-dock" class="tool-dock" data-pdf-only>
           <button class="tool-dock-btn tool-btn active" data-tool="select" title="Select text (T)" aria-label="Select text">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
@@ -72,9 +92,8 @@
       <div class="resize-handle" id="resize-right" data-side="snippets"></div>
       <aside id="snippets-pane">
         <div id="local-search">
-          <input id="local-search-input" placeholder="filter snippets…  ⌘F to focus · Esc to clear" />
+          <input id="local-search-input" placeholder="filter snippets…  Esc to clear" />
           <span id="local-search-count"></span>
-          <button id="local-search-clear" title="Clear filter">×</button>
         </div>
         <div class="snippets-header">
           <div class="header-tabs">
@@ -92,9 +111,39 @@
             </div>
             <button id="help-btn" title="How to group + shortcuts">?</button>
             <button id="summary-btn" title="Show summary" data-short="sum">summary</button>
+            <button id="ai-toggle-btn" title="Ask AI (premium)" aria-pressed="false">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.39 6.36L21 11l-6.61 2.64L12 20l-2.39-6.36L3 11l6.61-2.64L12 2z"/></svg>
+              <span class="ai-toggle-label">AI</span>
+              <span class="ai-toggle-plus" title="Premium">＋</span>
+            </button>
+            <button id="ai-settings-btn" title="AI settings">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
+            <button id="delete-all-btn" title="Delete all annotations in this document">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+            </button>
             <button id="maximize-btn" title="Expand panel to full window (⌘⇧M)">⛶</button>
           </div>
         </div>
+        <div id="ai-ask-bar">
+          <input id="ai-ask-input" placeholder="Ask about this document…   ⌘↵ to send" autocomplete="off" />
+          <button id="ai-ask-submit" title="Ask">↵</button>
+          <span id="ai-ask-status"></span>
+        </div>
+        <div id="ai-drawer" hidden>
+          <div id="ai-drawer-header">
+            <button id="ai-drawer-collapse" title="Collapse / expand AI pane">▾</button>
+            <span id="ai-drawer-query"></span>
+            <span class="ai-drawer-sep"></span>
+            <span id="ai-drawer-count"></span>
+            <span class="toolbar-spacer"></span>
+            <button id="ai-drawer-accept-all" title="Accept all">✓ all</button>
+            <button id="ai-drawer-reject-all" title="Reject all">✕ all</button>
+            <button id="ai-drawer-close" title="Close suggestions (Esc)">×</button>
+          </div>
+          <ul id="ai-drawer-list"></ul>
+        </div>
+        <div class="resize-handle-h" id="ai-drawer-resize" title="Drag to resize AI pane"></div>
         <div id="view-stack">
           <ul id="snippets-list"></ul>
           <div id="map-view" hidden>
@@ -191,8 +240,14 @@
               <button class="seg-btn active" data-format="rich">rich</button>
               <button class="seg-btn" data-format="plain">plain</button>
             </div>
-            <button id="summary-copy">copy all</button>
-            <button id="summary-export">export html</button>
+            <button id="summary-copy" class="icon-text-btn" title="Copy all to clipboard">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span>copy all</span>
+            </button>
+            <button id="summary-export" class="icon-text-btn" title="Export as HTML">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <span>export html</span>
+            </button>
             <button id="summary-close" title="Close (Esc)">×</button>
           </div>
         </header>
@@ -229,6 +284,79 @@
           <button id="ws-import-cancel">cancel</button>
           <button id="ws-import-confirm">import selected</button>
         </footer>
+      </div>
+    </div>
+    <div id="ai-settings-modal" hidden>
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <header class="modal-header">
+          <div class="modal-title">
+            <h2>AI settings</h2>
+            <span class="ws-import-meta">Bring your own API key. The key stays in this app — not sent anywhere except the provider you select.</span>
+          </div>
+          <button id="ai-settings-close" title="Close (Esc)">×</button>
+        </header>
+        <div class="modal-body">
+          <label class="ai-field">
+            <span>Provider</span>
+            <select id="ai-settings-provider">
+              <option value="anthropic">Anthropic Claude</option>
+              <option value="openai">OpenAI</option>
+            </select>
+          </label>
+          <label class="ai-field">
+            <span>API key <em id="ai-settings-key-state">— not set</em></span>
+            <input id="ai-settings-key" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false" />
+          </label>
+          <label class="ai-field">
+            <span>Model</span>
+            <select id="ai-settings-model"></select>
+          </label>
+          <label class="ai-field ai-field-row">
+            <input id="ai-settings-consent" type="checkbox" />
+            <span>I understand each query sends the full document text to the selected provider.</span>
+          </label>
+          <label class="ai-field ai-field-row">
+            <input id="ai-settings-figures" type="checkbox" />
+            <span>Include figures (vision pass — renders each PDF page as an image, ~50% extra cost).</span>
+          </label>
+          <fieldset class="ai-fieldset">
+            <legend>Layout detector</legend>
+            <label class="ai-field ai-field-row">
+              <input id="ai-settings-onnx" type="checkbox" />
+              <span>
+                Use <strong>RT-DETR (ONNX)</strong> for figure / table detection — fast, Rust-native, no Python.
+                <em class="ai-field-note">First run downloads ~150&nbsp;MB (Kreuzberg/layout-models, Apache-2.0).</em>
+              </span>
+            </label>
+            <!-- Hidden legacy detector controls. The DOM elements stay so
+                 main.js can populate/read them without null errors; the
+                 wrapper hides them from users. Re-show by removing the
+                 hidden attribute if you ever want to expose Ollama or
+                 Docling as a layout backend again. -->
+            <div hidden aria-hidden="true">
+              <input id="ai-settings-ollama" type="checkbox" />
+              <em id="ai-settings-ollama-status"></em>
+              <div id="ai-settings-ollama-row" hidden>
+                <button id="ai-settings-pull-model" type="button"></button>
+                <span id="ai-settings-pull-help"></span>
+                <input id="ai-settings-ollama-endpoint" type="text" />
+                <input id="ai-settings-ollama-model" type="text" />
+              </div>
+              <input id="ai-settings-docling" type="checkbox" />
+              <div id="ai-settings-docling-python-row" hidden>
+                <input id="ai-settings-docling-python" type="text" />
+              </div>
+            </div>
+          </fieldset>
+          <div class="ai-settings-actions">
+            <button id="ai-settings-save" class="primary">Save</button>
+            <button id="ai-settings-clear" title="Forget the stored key for the current provider">Clear key</button>
+          </div>
+          <p class="ai-settings-note" id="ai-settings-key-hint">
+            Get a key at <code>console.anthropic.com</code> → API Keys.
+          </p>
+        </div>
       </div>
     </div>
     <script type="module" src="/src/main.js"></script>

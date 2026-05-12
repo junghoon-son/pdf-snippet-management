@@ -455,6 +455,223 @@ a:hover { color: var(--accent); }
 .code-block .n { color: #5b8def; }   /* numbers */
 
 /* COMPARE TABLE */
+/* Use-case section — illustrative SVG + scenario text. */
+.usecases {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  gap: 22px;
+}
+.usecase {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0 24px 24px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+}
+.usecase:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+.usecase-art {
+  display: block;
+  width: 100%;
+  height: 130px;
+  margin: 14px 0 16px;
+}
+.usecase h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  letter-spacing: -0.005em;
+  color: var(--fg);
+  font-weight: 600;
+}
+.usecase p {
+  margin: 0;
+  color: var(--fg-dim);
+  line-height: 1.55;
+  font-size: 14px;
+}
+.usecase em {
+  font-style: normal;
+  color: var(--accent-deep);
+  font-weight: 500;
+}
+/* SVG primitives for the illustrations. */
+.uc-doc { fill: #fdfbf4; stroke: var(--border); stroke-width: 1; }
+.uc-line { stroke: #c9c3b1; stroke-width: 1.6; stroke-linecap: round; }
+.uc-hl    { stroke: none; }
+.uc-hl-a  { fill: rgba(255, 215, 90, 0.55); }
+.uc-hl-b  { fill: rgba(255, 130, 170, 0.55); }
+.uc-hl-c  { fill: rgba(120, 200, 250, 0.55); }
+.uc-hl-d  { fill: rgba(180, 230, 130, 0.55); }
+.uc-link  { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 3 4; opacity: 0.65; }
+.uc-folder { fill: var(--accent); opacity: 0.85; }
+.uc-folder-a { fill: var(--accent); }
+.uc-folder-label { font: 600 10px ui-sans-serif, system-ui; fill: #fff; text-anchor: middle; }
+.uc-margin { font: 700 18px ui-sans-serif, system-ui; fill: var(--accent-deep); text-anchor: middle; }
+.uc-node { fill: color-mix(in srgb, var(--accent) 25%, transparent); stroke: var(--accent); stroke-width: 1.5; }
+.uc-node-strong { fill: var(--accent); }
+.uc-edge { stroke: var(--border); stroke-width: 1.5; }
+.uc-edge-strong { stroke: var(--accent); stroke-width: 2; }
+.uc-edge-label { font: 500 9px ui-sans-serif, system-ui; fill: var(--fg-dim); text-anchor: middle; }
+.uc-tag { font: 600 8.5px ui-monospace, monospace; fill: var(--fg-dim); text-anchor: middle; letter-spacing: 0.5px; }
+.uc-pill { fill: var(--accent); opacity: 0.92; }
+.uc-pill-label { font: 600 11px ui-sans-serif, system-ui; fill: #fff; text-anchor: middle; }
+.uc-share { fill: color-mix(in srgb, var(--accent) 18%, transparent); stroke: var(--accent); stroke-width: 1.2; }
+.uc-share-label { font: 700 12px ui-sans-serif, system-ui; fill: var(--accent-deep); text-anchor: middle; }
+
+/* "The whole point" — Khaby-Lame-energy section. Sits just under the
+   hero and frames the core value (location lives WITH the answer) with
+   a few question/answer pairs and a finger-pointing arrow. */
+.point-section { padding: 56px 0 24px; }
+.point-card {
+  background: color-mix(in srgb, var(--accent) 7%, var(--card-bg));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 14px;
+  padding: 30px 38px 32px;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+}
+.point-eyebrow {
+  font-size: 11px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--accent-deep);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.point-h2 {
+  margin: 0 0 12px;
+  font-size: 30px;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+  font-weight: 700;
+  line-height: 1.15;
+}
+.point-arrow {
+  display: inline-block;
+  color: var(--accent);
+  font-weight: 800;
+  margin-left: 4px;
+  animation: point-wag 1.6s ease-in-out infinite;
+}
+@keyframes point-wag {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  50%      { transform: translateX(-6px) rotate(-4deg); }
+}
+.point-lede {
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--fg-dim);
+  margin: 0 0 22px;
+  max-width: 760px;
+}
+.point-lede em { color: var(--accent-deep); font-style: italic; font-weight: 500; }
+.point-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 22px;
+}
+.point-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 14px;
+  position: relative;
+}
+.point-bubble {
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.point-bubble-q {
+  background: var(--panel-2, #ece8dc);
+  color: var(--fg-dim);
+  border-bottom-left-radius: 4px;
+  font-style: italic;
+}
+.point-bubble-a {
+  background: var(--accent);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+  font-weight: 500;
+}
+.point-bubble-a strong { font-weight: 700; }
+.point-footnote {
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--fg);
+  margin: 0;
+  max-width: 720px;
+  padding-top: 18px;
+  border-top: 1px dashed color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.point-footnote em { color: var(--accent-deep); font-style: italic; font-weight: 600; }
+
+@media (max-width: 720px) {
+  .point-row { grid-template-columns: 1fr; }
+  .point-row::after { display: none; }
+  .point-card { padding: 22px 22px 24px; }
+  .point-h2 { font-size: 24px; }
+}
+
+/* "How it compares" section — vs-cards. */
+.vs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 22px;
+}
+.vs-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 22px 24px 24px;
+  box-shadow: var(--shadow-sm);
+  transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+}
+.vs-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+.vs-card h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+  letter-spacing: -0.005em;
+  color: var(--fg);
+  font-weight: 600;
+}
+.vs-frame {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--fg);
+}
+.vs-frame strong { color: var(--accent-deep); }
+.vs-frame em { font-style: italic; color: var(--fg-dim); }
+.vs-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--fg-dim);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.vs-list li {
+  margin: 6px 0;
+}
+.vs-list strong { color: var(--fg); font-weight: 600; }
+.vs-list em { font-style: italic; color: var(--accent-deep); }
+
 .compare {
   background: var(--card-bg);
   border: 1px solid var(--border);
@@ -522,4 +739,219 @@ a:hover { color: var(--accent); }
   .nav { gap: 14px; font-size: 13px; }
   .compare th, .compare td { padding: 9px 10px; font-size: 13px; }
   .code-block { padding: 16px 18px; font-size: 12px; }
+}
+
+/* ── BETA ribbon ───────────────────────────────────────────────────────
+   Fixed top-right corner ribbon. Hyperlinks to #status so curious users
+   land on the v0.1-working-draft caveat. Hidden on narrow viewports
+   where it'd overlap the brand. */
+.beta-ribbon {
+  position: fixed;
+  top: 22px;
+  right: -54px;
+  width: 200px;
+  padding: 7px 0;
+  background: linear-gradient(120deg, var(--accent) 20%, var(--pink) 90%);
+  color: #fff;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2.5px;
+  text-decoration: none;
+  transform: rotate(45deg);
+  box-shadow: 0 4px 14px rgba(60, 50, 30, 0.25), 0 0 0 1px rgba(255,255,255,0.15) inset;
+  z-index: 100;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+.beta-ribbon:hover {
+  transform: rotate(45deg) translateY(-1px);
+  box-shadow: 0 6px 18px rgba(60, 50, 30, 0.30), 0 0 0 1px rgba(255,255,255,0.25) inset;
+  color: #fff;
+}
+.beta-ribbon-text {
+  display: inline-block;
+  text-shadow: 0 1px 1px rgba(0,0,0,0.18);
+}
+@media (max-width: 640px) {
+  .beta-ribbon { display: none; }
+}
+
+/* ── Theme showcase: mini-UI mocks ──────────────────────────────────── */
+.theme-group-h {
+  margin: 28px 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+.theme-group-h:first-of-type { margin-top: 18px; }
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+.theme-card {
+  margin: 0;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+.theme-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); }
+.theme-card figcaption {
+  padding: 8px 14px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  letter-spacing: 0.2px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+/* The mock itself — all surfaces use --t-* tokens injected inline. */
+.theme-mock {
+  background: var(--t-bg);
+  color: var(--t-fg);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.theme-mock-bar {
+  background: var(--t-panel);
+  border-bottom: 1px solid var(--t-border);
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.theme-mock-dots { display: inline-flex; gap: 4px; }
+.theme-mock-dots i {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: color-mix(in srgb, var(--t-fg) 25%, var(--t-panel));
+  display: inline-block;
+}
+.theme-mock-dots i:first-child { background: color-mix(in srgb, var(--t-accent) 70%, var(--t-panel)); }
+.theme-mock-title {
+  font-size: 10.5px;
+  color: var(--t-fg-dim);
+  letter-spacing: 0.3px;
+}
+.theme-mock-body { padding: 12px 14px 14px; }
+.theme-mock-body p {
+  margin: 0 0 10px;
+  color: var(--t-fg);
+}
+.theme-mock-body mark {
+  background: var(--t-hl);
+  color: var(--t-fg);
+  padding: 1px 3px;
+  border-radius: 2px;
+}
+.theme-mock-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.theme-mock-pills span {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--t-accent) 18%, var(--t-panel));
+  color: var(--t-accent);
+  border: 1px solid color-mix(in srgb, var(--t-accent) 35%, transparent);
+  letter-spacing: 0.2px;
+}
+
+/* ── Compact "vs." rows ──────────────────────────────────────────────── */
+.vs-rows {
+  list-style: none;
+  padding: 0;
+  margin: 24px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.vs-rows li {
+  background: var(--card-bg);
+  padding: 14px 18px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--fg-dim);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+.vs-row-label {
+  display: inline-block;
+  min-width: 130px;
+  font-weight: 600;
+  color: var(--fg);
+  font-size: 13.5px;
+}
+.vs-row-label::before {
+  content: "vs. ";
+  color: var(--fg-faint);
+  font-weight: 400;
+}
+.vs-row-tag {
+  font-weight: 600;
+  color: var(--accent-deep);
+  margin-right: 2px;
+}
+@media (max-width: 640px) {
+  .vs-rows li { flex-direction: column; gap: 2px; padding: 12px 14px; }
+  .vs-row-label { min-width: 0; }
+}
+
+/* ── "Why this matters" / audit case ───────────────────────────────── */
+.audit-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 30px 34px 32px;
+  box-shadow: var(--shadow-sm);
+}
+.audit-h2 {
+  font-size: 30px;
+  line-height: 1.15;
+  margin: 6px 0 14px;
+  letter-spacing: -0.5px;
+}
+.audit-lede {
+  font-size: 17px;
+  line-height: 1.55;
+  color: var(--fg);
+  margin: 0 0 14px;
+}
+.audit-lede strong { color: var(--accent-deep); }
+.audit-body {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--fg-dim);
+  margin: 0 0 18px;
+}
+.audit-uses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.audit-uses span {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-alt));
+  color: var(--accent-deep);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  letter-spacing: 0.2px;
+  font-weight: 500;
+}
+@media (max-width: 640px) {
+  .audit-card { padding: 22px 22px 24px; }
+  .audit-h2 { font-size: 24px; }
+  .audit-lede { font-size: 15px; }
 }

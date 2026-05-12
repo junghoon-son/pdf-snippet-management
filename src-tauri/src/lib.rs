@@ -3,6 +3,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::Emitter;
+use tauri_plugin_shell::ShellExt;
+use tauri_plugin_shell::process::CommandEvent;
+use std::sync::Mutex;
+use base64::Engine as _;
+
+mod layout;
+mod secrets;
+use layout::LayoutEngine;
 
 #[derive(Serialize, Deserialize, Clone)]
 struct Snippet {
@@ -298,6 +306,161 @@ fn reveal_in_finder(path: String) -> Result<(), String> {
     Ok(())
 }
 
+// Tracks the spawned Ollama child process so we can stop it on shutdown.
+// We use a Mutex-wrapped Option so the lifecycle is explicit and we can
+// gracefully refuse a double-spawn.
+#[derive(Default)]
+struct OllamaState {
+    pid: Mutex<Option<u32>>,
+}
+
+// Start the bundled Ollama server as a child process. Returns the
+// process ID once stdout/stderr show the server is listening. If a
+// process is already running (either ours or the user's external
+// install), this returns Ok immediately without spawning a new one.
+#[tauri::command]
+async fn start_bundled_ollama(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, OllamaState>,
+) -> Result<String, String> {
+    // First, check if an Ollama server is already responding on 11434.
+    // If so, no need to spawn — reuse whatever's already there.
+    if probe_ollama().await {
+        return Ok("external-running".to_string());
+    }
+    // Guard against double-spawn.
+    if state.pid.lock().map(|g| g.is_some()).unwrap_or(false) {
+        return Ok("already-spawned".to_string());
+    }
+    let sidecar = app
+        .shell()
+        .sidecar("ollama")
+        .map_err(|e| format!("sidecar lookup failed: {}", e))?
+        .args(["serve"])
+        // Allow 4 concurrent requests so Marklee can pipeline pages.
+        .env("OLLAMA_NUM_PARALLEL", "4")
+        // Keep the model resident in VRAM between calls (5 min idle).
+        .env("OLLAMA_KEEP_ALIVE", "5m")
+        // Bind to localhost only — never expose outside this machine.
+        .env("OLLAMA_HOST", "127.0.0.1:11434");
+    let (mut rx, child) = sidecar
+        .spawn()
+        .map_err(|e| format!("ollama spawn failed: {}", e))?;
+    let pid = child.pid();
+    if let Ok(mut guard) = state.pid.lock() {
+        *guard = Some(pid);
+    }
+    // Forward stdout/stderr to the dev console so users can diagnose
+    // model-pull progress and load errors.
+    tauri::async_runtime::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stdout(line) => {
+                    println!("[ollama-stdout] {}", String::from_utf8_lossy(&line).trim());
+                }
+                CommandEvent::Stderr(line) => {
+                    eprintln!("[ollama-stderr] {}", String::from_utf8_lossy(&line).trim());
+                }
+                CommandEvent::Terminated(payload) => {
+                    eprintln!("[ollama] terminated: {:?}", payload);
+                }
+                _ => {}
+            }
+        }
+    });
+    Ok(format!("spawned-{}", pid))
+}
+
+async fn probe_ollama() -> bool {
+    // No reqwest dep — use a one-shot TCP connect to 127.0.0.1:11434.
+    use std::net::{SocketAddr, TcpStream};
+    use std::time::Duration;
+    let addr: SocketAddr = "127.0.0.1:11434".parse().unwrap();
+    TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
+}
+
+// Best-effort stop. Tauri's child handle owns kill semantics; if we
+// don't have a PID we just nop. Uses the system kill/taskkill rather
+// than pulling in libc/nix.
+#[tauri::command]
+fn stop_bundled_ollama(state: tauri::State<'_, OllamaState>) -> Result<(), String> {
+    if let Ok(mut guard) = state.pid.lock() {
+        if let Some(pid) = guard.take() {
+            #[cfg(unix)]
+            {
+                let _ = std::process::Command::new("kill")
+                    .args(["-TERM", &pid.to_string()])
+                    .output();
+            }
+            #[cfg(windows)]
+            {
+                let _ = std::process::Command::new("taskkill")
+                    .args(["/PID", &pid.to_string(), "/F"])
+                    .output();
+            }
+        }
+    }
+    Ok(())
+}
+
+// Run the bundled ONNX layout detector (RT-DETR) on a page image
+// (PNG, base64-encoded). First call lazily downloads the model file
+// (~150 MB) to ~/Library/Application Support/Marklee/models and
+// builds an ort::Session; subsequent calls reuse it.
+#[tauri::command]
+fn detect_page_layout(
+    image_base64: String,
+    engine: tauri::State<LayoutEngine>,
+) -> Result<Vec<layout::DetectionBox>, String> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(image_base64.as_bytes())
+        .map_err(|e| format!("base64 decode failed: {}", e))?;
+    engine.detect(&bytes)
+}
+
+// Run the bundled Docling layout-detection script on a PDF. Spawns
+// python3 with scripts/docling_detect.py and returns the JSON output
+// as a string. JS-side wrappers parse the result and surface errors.
+//
+// Script resolution: looks for `scripts/docling_detect.py` relative to
+// the current working dir AND its parent (covers dev mode where cwd
+// may be either the project root or `src-tauri/`). Production bundling
+// would need to switch to `tauri::path::resource_dir`.
+#[tauri::command]
+fn run_docling_layout(
+    pdf_path: String,
+    python: Option<String>,
+) -> Result<String, String> {
+    if !Path::new(&pdf_path).exists() {
+        return Err(format!("PDF not found: {}", pdf_path));
+    }
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let candidates = [
+        cwd.join("scripts/docling_detect.py"),
+        cwd.join("../scripts/docling_detect.py"),
+        cwd.parent().unwrap_or(Path::new(".")).join("scripts/docling_detect.py"),
+    ];
+    let script = candidates
+        .iter()
+        .find(|p| p.exists())
+        .ok_or_else(|| format!(
+            "Docling script not found near {}. Looked in {:?}",
+            cwd.display(), candidates,
+        ))?;
+
+    let py = python.unwrap_or_else(|| "python3".to_string());
+    let out = std::process::Command::new(&py)
+        .arg(script)
+        .arg(&pdf_path)
+        .output()
+        .map_err(|e| format!("failed to spawn {}: {}", py, e))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        return Err(stderr.trim().to_string());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
 #[tauri::command]
 fn clipboard_doc_path() -> Result<String, String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
@@ -465,6 +628,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_shell::init())
+        .manage(OllamaState::default())
+        .manage(LayoutEngine::new())
         .setup(|app| {
             let menu = build_app_menu(app.handle())?;
             app.set_menu(menu)?;
@@ -489,7 +655,14 @@ pub fn run() {
             write_global_groups,
             copy_image_to_clipboard,
             clipboard_doc_path,
-            reveal_in_finder
+            reveal_in_finder,
+            run_docling_layout,
+            start_bundled_ollama,
+            stop_bundled_ollama,
+            detect_page_layout,
+            secrets::set_provider_key,
+            secrets::get_provider_key,
+            secrets::clear_provider_key
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

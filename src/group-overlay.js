@@ -8,14 +8,14 @@ import {
 } from "d3-force";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-const PILL_HEIGHT = 38;
-const PILL_PAD_X = 18;
-const PILL_MIN_W = 70;
-const PILL_MAX_W = 200;
-const CHAR_W = 7;
-const NEW_RADIUS = 30;
-const HIT_PADDING = 6;
-const CURSOR_PULL_RADIUS = 220;
+const PILL_HEIGHT = 52;
+const PILL_PAD_X = 22;
+const PILL_MIN_W = 96;
+const PILL_MAX_W = 240;
+const CHAR_W = 8;
+const NEW_RADIUS = 40;
+const HIT_PADDING = 8;
+const CURSOR_PULL_RADIUS = 260;
 
 function pillWidth(label) {
   const len = (label || "").length;

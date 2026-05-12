@@ -6,6 +6,9 @@ dist/
 # Tauri / Rust
 src-tauri/target/
 src-tauri/gen/
+# Ollama sidecar binary (76 MB, no longer bundled — re-fetched on
+# demand by scripts/fetch-ollama.sh if anyone re-enables that backend).
+src-tauri/binaries/
 
 # Per-PDF artifacts (never commit user data)
 *.pdf

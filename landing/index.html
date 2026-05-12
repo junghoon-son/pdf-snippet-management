@@ -14,6 +14,10 @@
   <body>
     <div class="bg-mesh" aria-hidden="true"></div>
 
+    <a class="beta-ribbon" href="#status" aria-label="Beta — v0.1 working draft">
+      <span class="beta-ribbon-text">BETA</span>
+    </a>
+
     <header class="hero">
       <div class="container hero-nav">
         <a class="brand" href="/">
@@ -23,9 +27,10 @@
         <nav class="nav">
           <a href="#what">What</a>
           <a href="#how">How</a>
+          <a href="#uses">Uses</a>
           <a href="#why">Why</a>
+          <a href="#themes">Themes</a>
           <a href="/spec">Spec</a>
-          <a href="https://github.com" rel="noreferrer noopener">GitHub</a>
         </nav>
       </div>
 
@@ -41,13 +46,13 @@
             between snippets. <strong>MarkRank</strong> centrality over your reading.
           </p>
           <div class="cta">
-            <a class="btn primary" href="/download/Marklee_0.1.0_universal.dmg">
+            <a class="btn primary" href="/download/Marklee_0.1.0_aarch64.dmg">
               <span class="btn-icon">↓</span>
               <span>Download for Mac</span>
             </a>
             <a class="btn ghost" href="/spec">Read the spec</a>
           </div>
-          <p class="hint">Universal binary · macOS Intel + Apple Silicon · ~8.5 MB · unsigned dev build</p>
+          <p class="hint">macOS Apple Silicon · ~13 MB · unsigned dev build</p>
         </div>
 
         <!-- Hero animation: SVG demo of the anchoring concept.
@@ -93,13 +98,67 @@
       </div>
     </header>
 
+    <section id="point" class="section point-section">
+      <div class="container">
+        <div class="point-card">
+          <div class="point-eyebrow">The whole point</div>
+          <h2 class="point-h2">Look — there it is. <span class="point-arrow" aria-hidden="true">←</span></h2>
+          <p class="point-lede">
+            Every other tool gives you the answer and leaves you to find where it came from.
+            Marklee gives you the answer <em>and points at the passage in the source.</em>
+          </p>
+          <div class="point-grid">
+            <div class="point-row">
+              <div class="point-bubble point-bubble-q">"Wait, where did the paper say that?"</div>
+              <div class="point-bubble point-bubble-a">Marklee: <strong>← right there.</strong> p.3, paragraph 2.</div>
+            </div>
+            <div class="point-row">
+              <div class="point-bubble point-bubble-q">"Can you find the figure I'm thinking of?"</div>
+              <div class="point-bubble point-bubble-a">Marklee: <strong>← right there.</strong> Click the snippet, it scrolls.</div>
+            </div>
+            <div class="point-row">
+              <div class="point-bubble point-bubble-q">"What was that quote from last week?"</div>
+              <div class="point-bubble point-bubble-a">Marklee: <strong>← right there.</strong> The link opens the source and lands on it.</div>
+            </div>
+          </div>
+          <p class="point-footnote">
+            The location is part of the data. Not in your head. Not in a separate vault note.
+            Not lost to a vector database search. <em>On the page.</em>
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="audit" class="section">
+      <div class="container small">
+        <div class="audit-card">
+          <span class="section-eyebrow">Why this matters</span>
+          <h2 class="audit-h2">Prove it. Don't paraphrase it.</h2>
+          <p class="audit-lede">
+            In the age of AI extractors, the answer is cheap — <strong>provenance is what costs you</strong>. For compliance review, audit work, legal due diligence, scientific review, contract redlining: being wrong has a consequence. You don't want a summary. You want a summary you can verify <em>in the actual document</em>.
+          </p>
+          <p class="audit-body">
+            Marklee snippets are excerpts of the real text and the real pixels. Summaries cite them by reference, not paraphrase. Every claim links back to a page coordinate, an image clip, a quoted passage you can re-open in the source. The document stays the source of truth; the annotation layer stays auditable.
+          </p>
+          <div class="audit-uses">
+            <span>compliance review</span>
+            <span>audit trails</span>
+            <span>legal due diligence</span>
+            <span>contract redlining</span>
+            <span>scientific review</span>
+            <span>policy analysis</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section id="what" class="section">
       <div class="container">
         <div class="section-head">
           <span class="section-eyebrow">What it is</span>
           <h2>The anchor layer for documents.</h2>
           <p class="section-lede">
-            Six things Marklee gives you that a notes app or PDF reader doesn't.
+            Seven things Marklee gives you that a notes app or PDF reader doesn't.
           </p>
         </div>
         <div class="grid">
@@ -179,6 +238,25 @@
               One snippet schema covers PDF, Markdown, DOCX, and plain text.
               Lineage view mixes a page-3 PDF quote with a §Methods Markdown snippet
               on the same canvas.
+            </p>
+          </div>
+
+          <div class="card">
+            <div class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5">
+                <rect x="4" y="6" width="24" height="16" rx="1.5"/>
+                <rect x="7" y="9" width="7" height="10" rx="0.5"/>
+                <line x1="17" y1="11" x2="25" y2="11"/>
+                <line x1="17" y1="14" x2="25" y2="14"/>
+                <line x1="17" y1="17" x2="22" y2="17"/>
+                <path d="M8 26 L12 22 L16 25 L24 18 L28 22"/>
+              </svg>
+            </div>
+            <h3>Bundled figure detector</h3>
+            <p>
+              An Apache-2.0 RT-DETR ONNX model ships with the app — figure and table
+              bounding boxes resolve in Rust on CPU. No Python, no API key, no cloud.
+              Hooks in as the backend for the "find the figure I'm thinking of" flow.
             </p>
           </div>
 
@@ -341,6 +419,130 @@
       </div>
     </section>
 
+    <section id="uses" class="section">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow">Where it shines</span>
+          <h2>Five reading workflows that get easier.</h2>
+          <p class="section-lede">
+            Marklee was built for situations where annotations need to live with the
+            file, survive edits, and link to other ideas — not be locked inside a
+            proprietary reader.
+          </p>
+        </div>
+        <div class="usecases">
+
+          <article class="usecase">
+            <svg class="usecase-art" viewBox="0 0 200 130" aria-hidden="true">
+              <rect x="10"  y="14" width="38" height="50" rx="3" class="uc-doc"/>
+              <rect x="56"  y="14" width="38" height="50" rx="3" class="uc-doc"/>
+              <rect x="102" y="14" width="38" height="50" rx="3" class="uc-doc"/>
+              <rect x="148" y="14" width="38" height="50" rx="3" class="uc-doc"/>
+              <rect x="14"  y="28" width="30" height="6" rx="1" class="uc-hl uc-hl-a"/>
+              <rect x="60"  y="40" width="30" height="6" rx="1" class="uc-hl uc-hl-a"/>
+              <rect x="106" y="34" width="30" height="6" rx="1" class="uc-hl uc-hl-b"/>
+              <rect x="152" y="46" width="30" height="6" rx="1" class="uc-hl uc-hl-a"/>
+              <path d="M 30 90 Q 100 75 170 90" class="uc-link"/>
+              <circle cx="100" cy="108" r="14" class="uc-folder uc-folder-a"/>
+              <text x="100" y="112" class="uc-folder-label">methods</text>
+            </svg>
+            <h3>Literature review</h3>
+            <p>
+              Pull together quotes from twelve PDFs into a single workspace. Drag
+              snippets from each into themed folders — <em>methods</em>,
+              <em>limitations</em>, <em>open questions</em>. MarkRank surfaces the
+              ideas the corpus references most.
+            </p>
+          </article>
+
+          <article class="usecase">
+            <svg class="usecase-art" viewBox="0 0 200 130" aria-hidden="true">
+              <rect x="40" y="12" width="120" height="106" rx="4" class="uc-doc"/>
+              <line x1="50" y1="28" x2="150" y2="28" class="uc-line"/>
+              <line x1="50" y1="40" x2="150" y2="40" class="uc-line"/>
+              <rect x="50" y="50" width="100" height="9" rx="1" class="uc-hl uc-hl-c"/>
+              <line x1="50" y1="68" x2="150" y2="68" class="uc-line"/>
+              <line x1="50" y1="80" x2="135" y2="80" class="uc-line"/>
+              <rect x="50" y="90" width="80" height="9" rx="1" class="uc-hl uc-hl-c"/>
+              <line x1="50" y1="108" x2="150" y2="108" class="uc-line"/>
+              <text x="170" y="58" class="uc-margin">!</text>
+              <text x="170" y="98" class="uc-margin">?</text>
+            </svg>
+            <h3>Contract review</h3>
+            <p>
+              Anchor concerns to specific clauses with the exact quoted text plus
+              context window. When the counterparty edits the surrounding language,
+              your comments still resolve — the four-tier algorithm finds them.
+            </p>
+          </article>
+
+          <article class="usecase">
+            <svg class="usecase-art" viewBox="0 0 200 130" aria-hidden="true">
+              <circle cx="40"  cy="36" r="14" class="uc-node"/>
+              <circle cx="160" cy="36" r="14" class="uc-node"/>
+              <circle cx="40"  cy="100" r="14" class="uc-node"/>
+              <circle cx="160" cy="100" r="14" class="uc-node uc-node-strong"/>
+              <line x1="54" y1="36"  x2="146" y2="36"  class="uc-edge"/>
+              <line x1="40" y1="50"  x2="40"  y2="86"  class="uc-edge"/>
+              <line x1="54" y1="100" x2="146" y2="100" class="uc-edge uc-edge-strong"/>
+              <line x1="160" y1="50" x2="160" y2="86"  class="uc-edge uc-edge-strong"/>
+              <text x="100" y="32"  class="uc-edge-label">supports</text>
+              <text x="100" y="116" class="uc-edge-label">contradicts</text>
+            </svg>
+            <h3>Research synthesis</h3>
+            <p>
+              Connect a quote in paper A to a counter-claim in paper B with a
+              labeled edge — <em>supports</em>, <em>contradicts</em>,
+              <em>elaborates</em>. The lineage view shows your evolving argument as a
+              graph, not a flat list.
+            </p>
+          </article>
+
+          <article class="usecase">
+            <svg class="usecase-art" viewBox="0 0 200 130" aria-hidden="true">
+              <rect x="14"  y="20" width="32" height="44" rx="2" class="uc-doc"/>
+              <rect x="58"  y="20" width="32" height="44" rx="2" class="uc-doc"/>
+              <rect x="102" y="20" width="32" height="44" rx="2" class="uc-doc"/>
+              <rect x="146" y="20" width="32" height="44" rx="2" class="uc-doc"/>
+              <text x="30"  y="78" class="uc-tag">PDF</text>
+              <text x="74"  y="78" class="uc-tag">MD</text>
+              <text x="118" y="78" class="uc-tag">DOCX</text>
+              <text x="162" y="78" class="uc-tag">TXT</text>
+              <rect x="42" y="96" width="116" height="22" rx="11" class="uc-pill"/>
+              <text x="100" y="111" class="uc-pill-label">one workspace</text>
+            </svg>
+            <h3>Mixed-format research</h3>
+            <p>
+              A workspace that mixes PDF papers, Markdown notes, a DOCX policy
+              memo, and plain-text scratch files — all annotated with the same
+              snippet schema. Cross-document lineage works regardless of source kind.
+            </p>
+          </article>
+
+          <article class="usecase">
+            <svg class="usecase-art" viewBox="0 0 200 130" aria-hidden="true">
+              <rect x="40" y="14" width="120" height="100" rx="4" class="uc-doc"/>
+              <line x1="50" y1="30" x2="150" y2="30" class="uc-line"/>
+              <line x1="50" y1="42" x2="150" y2="42" class="uc-line"/>
+              <line x1="50" y1="54" x2="150" y2="54" class="uc-line"/>
+              <rect x="50" y="64" width="100" height="9" rx="1" class="uc-hl uc-hl-d"/>
+              <line x1="50" y1="82" x2="150" y2="82" class="uc-line"/>
+              <line x1="50" y1="94" x2="135" y2="94" class="uc-line"/>
+              <path d="M 165 68 L 195 68 L 195 80 L 188 80 L 188 84 L 184 80 L 165 80 Z" class="uc-share"/>
+              <text x="180" y="76" class="uc-share-label">↗</text>
+            </svg>
+            <h3>Shareable citations</h3>
+            <p>
+              Right-click any highlight → <em>copy share link</em>. The URL encodes
+              the document hash plus the anchor; the recipient opens the same source
+              and lands on the exact passage. No server, no account, no expiry.
+            </p>
+          </article>
+
+        </div>
+      </div>
+    </section>
+
     <section id="why" class="section alt">
       <div class="container">
         <div class="section-head">
@@ -368,30 +570,93 @@
               <tr><th scope="row">PDF + Markdown + DOCX</th><td class="yes">✓</td><td class="par">~</td><td class="no">PDF only</td><td class="par">HTML mostly</td><td class="par">PDF + HTML</td></tr>
               <tr><th scope="row">Sidecar / portable</th><td class="yes">✓</td><td class="no">server</td><td class="yes">XML</td><td class="no">server</td><td class="no">cloud-only</td></tr>
               <tr><th scope="row">Edit-tolerant anchors</th><td class="yes">4-tier</td><td class="par">partial</td><td class="no">byte offset</td><td class="yes">TextQuote</td><td class="par">unknown</td></tr>
-              <tr><th scope="row">Labeled-edge graph</th><td class="yes">✓</td><td class="no"></td><td class="no"></td><td class="par">replies only</td><td class="no"></td></tr>
+              <tr><th scope="row">Snippet-level graph</th><td class="yes">labeled edges</td><td class="no"></td><td class="no"></td><td class="par">replies only</td><td class="no"></td></tr>
               <tr><th scope="row">Per-annotation permalink</th><td class="yes">defined</td><td class="yes">URI</td><td class="par">page-only</td><td class="yes"></td><td class="no"></td></tr>
               <tr><th scope="row">Centrality algorithm</th><td class="yes">MarkRank</td><td class="no"></td><td class="no"></td><td class="no"></td><td class="no"></td></tr>
+              <tr><th scope="row">Anchors stay with source</th><td class="yes">✓</td><td class="par">URI</td><td class="yes">embedded</td><td class="yes">server-side</td><td class="par">app-side</td></tr>
             </tbody>
           </table>
         </div>
       </div>
     </section>
 
-    <section class="section">
+    <section id="vs" class="section">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow">How it compares</span>
+          <h2>Different layer of the stack.</h2>
+        </div>
+
+        <ul class="vs-rows">
+          <li><span class="vs-row-label">Obsidian</span><span class="vs-row-tag">Vault vs. source.</span> Obsidian holds notes you wrote; Marklee marks the source someone else wrote.</li>
+          <li><span class="vs-row-label">Hypothesis</span><span class="vs-row-tag">Server vs. file.</span> A JSON sidecar next to the document — no account, no cloud round-trip.</li>
+          <li><span class="vs-row-label">Web Clippers</span><span class="vs-row-tag">Copy vs. anchor.</span> Clippers stash text in a vault; Marklee re-resolves against the live source.</li>
+          <li><span class="vs-row-label">Document AI</span><span class="vs-row-tag">Extraction vs. curation.</span> Marklee ships a bundled RT-DETR detector — but the product is what humans marked, not what a parser found.</li>
+          <li><span class="vs-row-label">Adobe / Preview</span><span class="vs-row-tag">Embedded vs. sidecar.</span> Source stays byte-identical; annotations travel as a sibling JSON.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="themes" class="section alt">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow">Themes</span>
+          <h2>Read in your color.</h2>
+          <p class="section-lede">
+            Thirteen themes ship with the app — switch any time from the toolbar.
+          </p>
+        </div>
+
+        <h3 class="theme-group-h">Light &amp; warm</h3>
+        <div class="theme-grid">
+          <figure class="theme-card" style="--t-bg:#f5f2ea;--t-panel:#ece8dc;--t-accent:#2ea58c;--t-fg:#2a2a2a;--t-fg-dim:#6e6e6e;--t-border:#cfc8b6;--t-card:#fbf9f1;--t-hl:rgba(255,215,90,0.55);"><div class="theme-mock"><div class="theme-mock-bar"><span class="theme-mock-dots"><i></i><i></i><i></i></span><span class="theme-mock-title">paper.pdf</span></div><div class="theme-mock-body"><p>Marklee anchors <mark>survive source edits</mark> by re-resolving the text on open.</p><div class="theme-mock-pills"><span>methods</span><span>findings</span></div></div></div><figcaption>Cream</figcaption></figure>
+          <figure class="theme-card" style="--t-bg:#ffffff;--t-panel:#f5f5f5;--t-accent:#c92128;--t-fg:#111111;--t-fg-dim:#666666;--t-border:#e1e1e1;--t-card:#ffffff;--t-hl:rgba(255,210,80,0.55);"><div class="theme-mock"><div class="theme-mock-bar"><span class="theme-mock-dots"><i></i><i></i><i></i></span><span class="theme-mock-title">paper.pdf</span></div><div class="theme-mock-body"><p>Marklee anchors <mark>survive source edits</mark> by re-resolving the text on open.</p><div class="theme-mock-pills"><span>methods</span><span>findings</span></div></div></div><figcaption>Paper</figcaption></figure>
+          <figure class="theme-card" style="--t-bg:#f5ecd8;--t-panel:#ecdfc4;--t-accent:#b85c2a;--t-fg:#3a2a18;--t-fg-dim:#7a5a32;--t-border:#d8c8a8;--t-card:#fbf2dd;--t-hl:rgba(232,170,80,0.55);"><div class="theme-mock"><div class="theme-mock-bar"><span class="theme-mock-dots"><i></i><i></i><i></i></span><span class="theme-mock-title">paper.pdf</span></div><div class="theme-mock-body"><p>Marklee anchors <mark>survive source edits</mark> by re-resolving the text on open.</p><div class="theme-mock-pills"><span>methods</span><span>findings</span></div></div></div><figcaption>Sepia</figcaption></figure>
+        </div>
+
+        <h3 class="theme-group-h">Light &amp; cool</h3>
+        <div class="theme-grid">
+          <figure class="theme-card" style="--t-bg:#f3f4f6;--t-panel:#e5e7eb;--t-accent:#2563b3;--t-fg:#1f242b;--t-fg-dim:#5b6470;--t-border:#d1d5db;--t-card:#ffffff;--t-hl:rgba(96,160,255,0.40);"><div class="theme-mock"><div class="theme-mock-bar"><span class="theme-mock-dots"><i></i><i></i><i></i></span><span class="theme-mock-title">paper.pdf</span></div><div class="theme-mock-body"><p>Marklee anchors <mark>survive source edits</mark> by re-resolving the text on open.</p><div class="theme-mock-pills"><span>methods</span><span>findings</span></div></div></div><figcaption>Slate</figcaption></figure>
+          <figure class="theme-card" style="--t-bg:#e9f2f5;--t-panel:#cfdfe5;--t-accent:#1f7a96;--t-fg:#1c2e36;--t-fg-dim:#506a76;--t-border:#bfd1d8;--t-card:#f3f8fa;--t-hl:rgba(102,193,220,0.50);"><div class="theme-mock"><div class="theme-mock-bar"><span class="theme-mock-dots"><i></i><i></i><i></i></span><span class="theme-mock-title">paper.pdf</span></div><div class="theme-mock-body"><p>Marklee anchors <mark>survive source edits</mark> by re-resolving the text on open.</p><div class="theme-mock-pills"><span>methods</span><span>findings</span></div></div></div><figcaption>Ocean</figcaption></figure>
+          <figure class="theme-card" style="--t-bg:#ecf1e7;--t-panel:#d8e3cf;--t-accent:#4d8a5a;--t-fg:#2a3326;--t-fg-dim:#5a6651;--t-border:#c4d3b8;--t-card:#f3f6ee;--t-hl:rgba(150,200,120,0.50);"><div class="theme-mock"><div class="theme-mock-bar"><span class="theme-mock-dots"><i></i><i></i><i></i></span><span class="theme-mock-title">paper.pdf</span></div><div class="theme-mock-body"><p>Marklee anchors <mark>survive source edits</mark> by re-resolving the text on open.</p><div class="theme-mock-pills"><span>methods</span><span>findings</span></div></div></div><figcaption>Forest</figcaption></figure>
+        </div>
+
+        <h3 class="theme-group-h">Playful</h3>
+        <div class="theme-grid">
+          <figure class="theme-card" style="--t-bg:#fef3f7;--t-panel:#fbe1ee;--t-accent:#ff3b8a;--t-fg:#3d1d4a;--t-fg-dim:#7a4060;--t-border:#f0c4d8;--t-card:#fff5fa;--t-hl:rgba(255,120,180,0.45);"><div class="theme-mock"><div class="theme-mock-bar"><span class="theme-mock-dots"><i></i><i></i><i></i></span><span class="theme-mock-title">paper.pdf</span></div><div class="theme-mock-body"><p>Marklee anchors <mark>survive source edits</mark> by re-resolving the text on open.</p><div class="theme-mock-pills"><span>methods</span><span>findings</span></div></div></div><figcaption>Bubblegum</figcaption></figure>
+          <figure class="theme-card" style="--t-bg:#ffeaf2;--t-panel:#ffd6e3;--t-accent:#ff2d8a;--t-fg:#1a1a1a;--t-fg-dim:#5d404f;--t-border:#f5b8d0;--t-card:#fff2f7;--t-hl:rgba(255,130,180,0.45);"><div class="theme-mock"><div class="theme-mock-bar"><span class="theme-mock-dots"><i></i><i></i><i></i></span><span class="theme-mock-title">paper.pdf</span></div><div class="theme-mock-body"><p>Marklee anchors <mark>survive source edits</mark> by re-resolving the text on open.</p><div class="theme-mock-pills"><span>methods</span><span>findings</span></div></div></div><figcaption>Popshow</figcaption></figure>
+          <figure class="theme-card" style="--t-bg:#f0e8ff;--t-panel:#e6d8ff;--t-accent:#c43d8b;--t-fg:#2a1a4a;--t-fg-dim:#6a4f8a;--t-border:#d5c2f0;--t-card:#f7f0ff;--t-hl:rgba(196,140,255,0.45);"><div class="theme-mock"><div class="theme-mock-bar"><span class="theme-mock-dots"><i></i><i></i><i></i></span><span class="theme-mock-title">paper.pdf</span></div><div class="theme-mock-body"><p>Marklee anchors <mark>survive source edits</mark> by re-resolving the text on open.</p><div class="theme-mock-pills"><span>methods</span><span>findings</span></div></div></div><figcaption>Vapor</figcaption></figure>
+        </div>
+
+        <h3 class="theme-group-h">Dark</h3>
+        <div class="theme-grid">
+          <figure class="theme-card theme-card-dark" style="--t-bg:#1c1c1e;--t-panel:#252528;--t-accent:#4ec9b0;--t-fg:#ecebe6;--t-fg-dim:#9a9a96;--t-border:#3a3a3c;--t-card:#2a2a2c;--t-hl:rgba(78,201,176,0.35);"><div class="theme-mock"><div class="theme-mock-bar"><span class="theme-mock-dots"><i></i><i></i><i></i></span><span class="theme-mock-title">paper.pdf</span></div><div class="theme-mock-body"><p>Marklee anchors <mark>survive source edits</mark> by re-resolving the text on open.</p><div class="theme-mock-pills"><span>methods</span><span>findings</span></div></div></div><figcaption>Dark</figcaption></figure>
+          <figure class="theme-card theme-card-dark" style="--t-bg:#0f1424;--t-panel:#181f33;--t-accent:#7c9fff;--t-fg:#e0e5f0;--t-fg-dim:#8a96b0;--t-border:#2a3450;--t-card:#1c2438;--t-hl:rgba(124,159,255,0.30);"><div class="theme-mock"><div class="theme-mock-bar"><span class="theme-mock-dots"><i></i><i></i><i></i></span><span class="theme-mock-title">paper.pdf</span></div><div class="theme-mock-body"><p>Marklee anchors <mark>survive source edits</mark> by re-resolving the text on open.</p><div class="theme-mock-pills"><span>methods</span><span>findings</span></div></div></div><figcaption>Midnight</figcaption></figure>
+          <figure class="theme-card theme-card-dark" style="--t-bg:#0a0e0a;--t-panel:#0f1410;--t-accent:#4dff88;--t-fg:#d8efd8;--t-fg-dim:#7da080;--t-border:#1f3024;--t-card:#0f1812;--t-hl:rgba(77,255,136,0.25);"><div class="theme-mock"><div class="theme-mock-bar"><span class="theme-mock-dots"><i></i><i></i><i></i></span><span class="theme-mock-title">paper.pdf</span></div><div class="theme-mock-body"><p>Marklee anchors <mark>survive source edits</mark> by re-resolving the text on open.</p><div class="theme-mock-pills"><span>methods</span><span>findings</span></div></div></div><figcaption>Terminal</figcaption></figure>
+          <figure class="theme-card theme-card-dark" style="--t-bg:#1a130d;--t-panel:#221a12;--t-accent:#d4923a;--t-fg:#e8d4a8;--t-fg-dim:#a08768;--t-border:#3a2a1c;--t-card:#241a10;--t-hl:rgba(212,146,58,0.35);"><div class="theme-mock"><div class="theme-mock-bar"><span class="theme-mock-dots"><i></i><i></i><i></i></span><span class="theme-mock-title">paper.pdf</span></div><div class="theme-mock-body"><p>Marklee anchors <mark>survive source edits</mark> by re-resolving the text on open.</p><div class="theme-mock-pills"><span>methods</span><span>findings</span></div></div></div><figcaption>Steampunk</figcaption></figure>
+        </div>
+      </div>
+    </section>
+
+    <section id="status" class="section">
       <div class="container small">
         <h2>Status</h2>
         <p>
           v0.1, working draft. Spec stable enough to write tools against;
           format may change incompatibly until 1.0. Reference implementation is the
-          desktop app on this page. The web build (browser-mode + permalink bootstrap)
+          desktop app on this page — including a bundled RT-DETR ONNX figure detector
+          (Apache-2.0) so figure / table capture works out of the box, with no Python
+          or cloud dependency. The web build (browser-mode + permalink bootstrap)
           and Chrome extension are next.
         </p>
         <p>
           Built local-first because the data model demands it. Nothing about Marklee
-          requires a server, and nothing it does will ever require an account.
+          requires a server, and nothing it does will ever require an account. AI
+          features (Claude / OpenAI for "find me the passage about X") are opt-in,
+          BYO-key, and collapsed away by default — non-users never see the surface.
         </p>
         <div class="cta">
-          <a class="btn primary" href="/download/Marklee_0.1.0_universal.dmg">
+          <a class="btn primary" href="/download/Marklee_0.1.0_aarch64.dmg">
             <span class="btn-icon">↓</span><span>Download for Mac</span>
           </a>
           <a class="btn ghost" href="/spec">Read the spec</a>
