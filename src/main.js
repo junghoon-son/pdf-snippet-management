@@ -325,6 +325,10 @@ const state = {
   mapScope: "doc",
   summaryScope: "doc",
   summaryFormat: "rich",
+  summaryImageSize: (() => {
+    try { return localStorage.getItem("marklee-summary-img-size") || "compact"; }
+    catch { return "compact"; }
+  })(),
   snippetSort: (() => {
     try { return localStorage.getItem("pdf-annotator-snippet-sort") || "order"; }
     catch { return "order"; }
@@ -1226,7 +1230,7 @@ async function aiAsk() {
         pageImages = await extractPdfPageImages(state.pdfDoc, { targetWidth: visionRes });
 
         if (isOnnxLayoutEnabled()) {
-          aiSetStatus(`Running RT-DETR layout on ${pageImages.length} page(s) (first run downloads ~150 MB)…`);
+          aiSetStatus(`Running RT-DETR v2 layout on ${pageImages.length} page(s) (first run downloads ~171 MB)…`);
           try {
             figureDetections = await runOnnxLayout(
               pageImages,
@@ -2363,6 +2367,9 @@ document.querySelectorAll("#summary-scope .seg-btn").forEach((b) => {
 });
 document.querySelectorAll("#summary-format .seg-btn").forEach((b) => {
   b.addEventListener("click", () => setSummaryFormat(b.dataset.format));
+});
+document.querySelectorAll("#summary-image-size .seg-btn").forEach((b) => {
+  b.addEventListener("click", () => setSummaryImageSize(b.dataset.imgSize));
 });
 document.querySelector("#summary-modal .modal-backdrop").addEventListener("click", closeSummary);
 
@@ -6299,8 +6306,22 @@ function setSummaryFormat(fmt) {
   });
 }
 
+function setSummaryImageSize(size) {
+  if (size !== "compact" && size !== "full") return;
+  state.summaryImageSize = size;
+  try { localStorage.setItem("marklee-summary-img-size", size); } catch {}
+  document.querySelectorAll("#summary-image-size .seg-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.imgSize === size);
+  });
+  document.getElementById("summary-modal").dataset.imgSize = size;
+}
+
 async function openSummary() {
   const modal = document.getElementById("summary-modal");
+  modal.dataset.imgSize = state.summaryImageSize || "compact";
+  document.querySelectorAll("#summary-image-size .seg-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.imgSize === modal.dataset.imgSize);
+  });
   const titleEl = document.getElementById("summary-title");
   const metaEl = document.getElementById("summary-meta");
   const contentEl = document.getElementById("summary-content");
@@ -6382,16 +6403,25 @@ async function openSummary() {
     return item;
   };
 
-  for (const [gid, members] of sections) {
+  // Iterate groups in groupsMeta order so reordering the left-panel
+  // list (which mutates groupsMeta) re-orders the summary sections.
+  const groupsMeta = state.groupsMeta || [];
+  const orderedGids = groupsMeta
+    .map((g) => g.id)
+    .filter((gid) => sections.has(gid));
+
+  for (const gid of orderedGids) {
+    const members = sections.get(gid);
     const groupHeader = document.createElement("div");
     groupHeader.className = "summary-group-header";
     groupHeader.style.color = groupColor(gid);
     groupHeader.textContent = `● ${groupName(gid)} (${members.length})`;
+    groupHeader.dataset.gid = gid;
     contentEl.appendChild(groupHeader);
     for (const s of members) contentEl.appendChild(renderItem(s, gid));
   }
   if (ungrouped.length > 0) {
-    if (sections.size > 0) {
+    if (orderedGids.length > 0) {
       const h = document.createElement("div");
       h.className = "summary-group-header";
       h.style.color = "#6e6e6e";
@@ -6401,7 +6431,152 @@ async function openSummary() {
     for (const s of ungrouped) contentEl.appendChild(renderItem(s, null));
   }
 
+  renderSummaryGroupsPanel(orderedGids, sections, ungrouped.length);
+
   modal.hidden = false;
+}
+
+// Left side panel of the summary modal: lists each group that has
+// snippets, in groupsMeta order, with a drag handle so the user can
+// reorder. Dropping a group reorders groupsMeta in place, then we
+// re-open the summary so the content area follows the new order.
+function renderSummaryGroupsPanel(orderedGids, sections, ungroupedCount) {
+  const oldList = document.getElementById("summary-groups-list");
+  if (!oldList) return;
+  // Replace the <ul> entirely so any stale event listeners (e.g.,
+  // from a previous Vite hot-reload of this module) die with the old
+  // element. wireSummaryGroupDrag then attaches a fresh set to the
+  // new <ul>.
+  const list = document.createElement("ul");
+  list.id = "summary-groups-list";
+  oldList.replaceWith(list);
+  const moveGroup = (gid, delta) => {
+    const meta = state.groupsMeta || [];
+    const i = meta.findIndex((g) => g.id === gid);
+    const j = i + delta;
+    if (i === -1 || j < 0 || j >= meta.length) return;
+    const [moved] = meta.splice(i, 1);
+    meta.splice(j, 0, moved);
+    saveWorkspace();
+    openSummary();
+  };
+
+  for (let idx = 0; idx < orderedGids.length; idx++) {
+    const gid = orderedGids[idx];
+    const li = document.createElement("li");
+    li.className = "summary-group-pill";
+    li.draggable = true;
+    li.dataset.gid = gid;
+    li.style.setProperty("--g-color", groupColor(gid));
+    const dot = document.createElement("span");
+    dot.className = "summary-group-pill-dot";
+    const name = document.createElement("span");
+    name.className = "summary-group-pill-name";
+    name.textContent = groupName(gid);
+    const count = document.createElement("span");
+    count.className = "summary-group-pill-count";
+    count.textContent = sections.get(gid).length;
+    // Up/down arrows — guaranteed-working reorder fallback that
+    // doesn't depend on HTML5 drag-and-drop semantics. Hidden until
+    // the pill is hovered (handled in CSS).
+    const arrows = document.createElement("span");
+    arrows.className = "summary-group-pill-arrows";
+    const up = document.createElement("button");
+    up.type = "button";
+    up.className = "summary-group-pill-arrow";
+    up.title = "Move up";
+    up.textContent = "▲";
+    up.disabled = idx === 0;
+    up.addEventListener("click", (e) => { e.stopPropagation(); moveGroup(gid, -1); });
+    const dn = document.createElement("button");
+    dn.type = "button";
+    dn.className = "summary-group-pill-arrow";
+    dn.title = "Move down";
+    dn.textContent = "▼";
+    dn.disabled = idx === orderedGids.length - 1;
+    dn.addEventListener("click", (e) => { e.stopPropagation(); moveGroup(gid, 1); });
+    arrows.append(up, dn);
+    li.append(dot, name, count, arrows);
+    li.addEventListener("click", () => {
+      const header = document.querySelector(`#summary-content .summary-group-header[data-gid="${gid}"]`);
+      header?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    list.appendChild(li);
+  }
+  if (ungroupedCount > 0) {
+    const li = document.createElement("li");
+    li.className = "summary-group-pill summary-group-pill-unfiled";
+    const name = document.createElement("span");
+    name.className = "summary-group-pill-name";
+    name.textContent = "unfiled";
+    const count = document.createElement("span");
+    count.className = "summary-group-pill-count";
+    count.textContent = ungroupedCount;
+    li.append(name, count);
+    list.appendChild(li);
+  }
+  wireSummaryGroupDrag(list);
+}
+
+// Drag state lives at module scope so handlers attached to a fresh
+// <ul> can read it across drag sessions.
+let _summaryDragGid = null;
+
+function wireSummaryGroupDrag(list) {
+  list.addEventListener("dragstart", (e) => {
+    const li = e.target.closest(".summary-group-pill");
+    if (!li || !li.dataset.gid) {
+      e.preventDefault();
+      return;
+    }
+    _summaryDragGid = li.dataset.gid;
+    li.classList.add("dragging");
+    // WebKit refuses to start a drag without dataTransfer.setData().
+    // Use a custom MIME (NOT text/plain) so this drag is invisible to
+    // the snippet→group drop handlers on .group-row elements in the
+    // Groups panel — they check for text/plain and would otherwise
+    // try to treat our group-id as a snippet-id.
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("application/x-marklee-summary-group", li.dataset.gid);
+  });
+
+  list.addEventListener("dragend", () => {
+    list.querySelectorAll(".dragging, .drag-over").forEach((el) =>
+      el.classList.remove("dragging", "drag-over"));
+    _summaryDragGid = null;
+  });
+
+  list.addEventListener("dragover", (e) => {
+    if (!_summaryDragGid) return;
+    // preventDefault BEFORE the same-pill guard so we always declare
+    // the list as a valid drop target — otherwise WebKit cancels the
+    // drag the moment the cursor leaves the source pill.
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const over = e.target.closest(".summary-group-pill");
+    list.querySelectorAll(".drag-over").forEach((el) => el.classList.remove("drag-over"));
+    if (over && over.dataset.gid && over.dataset.gid !== _summaryDragGid) {
+      over.classList.add("drag-over");
+    }
+  });
+
+  list.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    if (!_summaryDragGid) return;
+    const over = e.target.closest(".summary-group-pill");
+    if (!over || !over.dataset.gid || over.dataset.gid === _summaryDragGid) return;
+    const targetGid = over.dataset.gid;
+    const draggingGid = _summaryDragGid;
+    _summaryDragGid = null;
+    const meta = state.groupsMeta || [];
+    const fromIdx = meta.findIndex((g) => g.id === draggingGid);
+    const toIdx = meta.findIndex((g) => g.id === targetGid);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const [moved] = meta.splice(fromIdx, 1);
+    meta.splice(toIdx, 0, moved);
+    saveWorkspace();
+    openSummary();
+  });
 }
 
 function closeSummary() {

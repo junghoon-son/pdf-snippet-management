@@ -240,6 +240,10 @@
               <button class="seg-btn active" data-format="rich">rich</button>
               <button class="seg-btn" data-format="plain">plain</button>
             </div>
+            <div class="seg-toggle" id="summary-image-size" title="Image thumbnail size">
+              <button class="seg-btn active" data-img-size="compact">compact</button>
+              <button class="seg-btn" data-img-size="full">full</button>
+            </div>
             <button id="summary-copy" class="icon-text-btn" title="Copy all to clipboard">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
               <span>copy all</span>
@@ -251,7 +255,13 @@
             <button id="summary-close" title="Close (Esc)">×</button>
           </div>
         </header>
-        <div id="summary-content"></div>
+        <div class="summary-body">
+          <aside id="summary-groups-panel" aria-label="Group order — drag to reorder">
+            <div class="summary-groups-panel-head">Groups <span class="summary-groups-panel-hint">drag to reorder</span></div>
+            <ul id="summary-groups-list"></ul>
+          </aside>
+          <div id="summary-content"></div>
+        </div>
       </div>
     </div>
     <div id="group-overlay" hidden></div>
@@ -325,8 +335,8 @@
             <label class="ai-field ai-field-row">
               <input id="ai-settings-onnx" type="checkbox" />
               <span>
-                Use <strong>RT-DETR (ONNX)</strong> for figure / table detection — fast, Rust-native, no Python.
-                <em class="ai-field-note">First run downloads ~150&nbsp;MB (Kreuzberg/layout-models, Apache-2.0).</em>
+                Use <strong>RT-DETR v2 (ONNX)</strong> for figure / table detection — fast, Rust-native, no Python.
+                <em class="ai-field-note">First run downloads ~171&nbsp;MB (docling-project/docling-layout-heron, Apache-2.0).</em>
               </span>
             </label>
             <!-- Hidden legacy detector controls. The DOM elements stay so
