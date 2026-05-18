@@ -2,7 +2,7 @@
 
 **Version:** 0.1 (DRAFT)
 **Status:** Working Draft
-**Date:** 2026-05-08
+**Date:** 2026-05-14
 **License:** CC BY 4.0
 
 ## Abstract
@@ -85,6 +85,10 @@ A **workspace** is a user-scoped collection that groups documents and free-float
 ### 2.8 Note
 
 A **note** is an annotation that lives at the workspace level rather than being anchored to a document. Notes carry text, optional image, comment, and group memberships — the same metadata as snippets — but have no `source`, `page`, `anchor`, or `rects`. They participate in the same edge graph as snippets and rank under MarkRank using the same algorithm.
+
+### 2.9 Collection
+
+A **collection** is a workspace-level grouping over members (documents) and free-floating notes — a file-tier categorization distinct from snippet groups (§2.5). Where a group tags annotations by semantic content ("Methodology", "Risk factors"), a collection tags whole files and free-floating notes by their role in the work ("Exhibits", "Vendor documentation", "Our review", "Correspondence"). A member or note MAY belong to zero or more collections — membership is many-to-many, so the same file can appear in "Exhibits" and "Privileged" simultaneously. Conformant implementations MAY support collections; they are OPTIONAL.
 
 ## 3. Sidecar schemas
 
@@ -214,14 +218,15 @@ A workspace sidecar groups documents and free-floating notes under one user-scop
 ```json
 {
   "markleeVersion": "0.1",
-  "kind":     "workspace",
-  "id":       "ws-uuid",
-  "name":     "Reading list, May",
-  "theme":    "cream",
-  "members":  [ ... ],
-  "notes":    [ ... ],
-  "edges":    [ ... ],
-  "groups":   [ ... ]
+  "kind":        "workspace",
+  "id":          "ws-uuid",
+  "name":        "Reading list, May",
+  "theme":       "cream",
+  "members":     [ ... ],
+  "notes":       [ ... ],
+  "edges":       [ ... ],
+  "groups":      [ ... ],
+  "collections": [ ... ]
 }
 ```
 
@@ -236,6 +241,7 @@ A workspace sidecar groups documents and free-floating notes under one user-scop
 | `notes` | array | no | zero or more note objects (Section 3.8) — free-floating annotations not anchored to any source |
 | `edges` | array | no | edges between notes, between notes and document snippets, or between document snippets across workspace members; same shape as Section 3.4 |
 | `groups` | array | no | group metadata referenced by this workspace's notes and members |
+| `collections` | array | no | zero or more collection objects (Section 3.9); a file-tier grouping over members and notes |
 
 Unknown top-level fields MUST be preserved by readers on round-trip.
 
@@ -247,7 +253,8 @@ A **member** is a workspace's reference to a document sidecar. The member entry 
 {
   "path":        "/abs/or/rel/path/file.pdf",
   "contentHash": "sha256:ab12...",
-  "title":       "Optional override"
+  "title":       "Optional override",
+  "collections": ["coll-uuid-1", "coll-uuid-2"]
 }
 ```
 
@@ -256,6 +263,7 @@ A **member** is a workspace's reference to a document sidecar. The member entry 
 | `path` | string | yes | filesystem path or URL of the source document |
 | `contentHash` | string | no | SHA-256 of the source bytes for verification (Section 5) |
 | `title` | string | no | display label override; falls back to the document's own `source.title` |
+| `collections` | array of string | no | collection IDs this member belongs to (Section 3.9); many-to-many — zero or more |
 
 ### 3.8 Note
 
@@ -263,15 +271,16 @@ A **note** is an annotation at the workspace level — text or image content the
 
 ```json
 {
-  "id":         "uuid",
-  "kind":       "text",
-  "text":       "...",
-  "imagePath":  ".clipboard.clips/abc.png",
-  "imageHash":  "sha256:...",
-  "comment":    "user note",
-  "groups":     ["group-uuid"],
-  "tags":       ["string"],
-  "created":    "2026-05-09T10:23:11Z"
+  "id":          "uuid",
+  "kind":        "text",
+  "text":        "...",
+  "imagePath":   ".clipboard.clips/abc.png",
+  "imageHash":   "sha256:...",
+  "comment":     "user note",
+  "groups":      ["group-uuid"],
+  "tags":        ["string"],
+  "collections": ["coll-uuid"],
+  "created":     "2026-05-09T10:23:11Z"
 }
 ```
 
@@ -283,13 +292,54 @@ A **note** is an annotation at the workspace level — text or image content the
 | `imagePath` | string | yes for image | location of the image bytes; relative to the workspace sidecar OR absolute |
 | `imageHash` | string | no | SHA-256 of the image bytes |
 | `comment` | string | no | user-authored note |
-| `groups` | array of string | no | group IDs |
+| `groups` | array of string | no | group IDs (semantic; same palette as snippet groups) |
 | `tags` | array of string | no | free-form labels |
+| `collections` | array of string | no | collection IDs (file-tier; Section 3.9); many-to-many |
 | `created` | string | no | ISO 8601 timestamp |
 
 A note has no `source`, `page`, `anchor`, `rects`, `flowPos`, `contextBefore`, or `contextAfter`. The anchoring algorithm (Section 4) does not apply to notes — they are unanchored by definition.
 
 Notes participate in the same edge graph (Section 3.4) and the same MarkRank computation (Section 8) as document snippets. Edges may connect a note to another note, a note to a document snippet, or two document snippets across different workspace members — all by `id`. The MarkRank graph union of a workspace = all notes ∪ all snippets reachable via `members`.
+
+### 3.9 Collection
+
+A **collection** is a workspace-level tag over members (§3.7) and notes (§3.8) — a file-tier categorization for organizing whole documents and free-floating notes by their role in the work, as distinct from the semantic snippet-level groups (§3.5).
+
+```json
+{
+  "id":          "uuid",
+  "name":        "Exhibits",
+  "color":       "#c084fc",
+  "kind":        "exhibits",
+  "description": "Documents produced by opposing party in discovery"
+}
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | string | yes | UUID v4 RECOMMENDED — referenced by `member.collections` and `note.collections` |
+| `name` | string | no | human-readable label (e.g. `"Exhibits"`, `"Vendor documentation"`, `"Our review"`) |
+| `color` | string | no | CSS color string for sidebar badge / map swimlane rendering; SHOULD be distinct from snippet group palette to avoid visual confusion |
+| `kind` | string | no | optional semantic hint for downstream tooling; free-form. Recommended values: `"exhibits"`, `"review"`, `"reference"`, `"vendor"`, `"correspondence"`, `"draft"`, `"privileged"` |
+| `description` | string | no | longer free-form description of the collection's purpose |
+
+**Many-to-many.** A member or note MAY appear in any number of collections, including zero. The same file MAY belong to "Exhibits" and "Privileged" simultaneously. There is no "uncategorized" sentinel — a member with `collections: []` (or no `collections` field) is simply uncategorized, and readers SHOULD render such members in a default bucket.
+
+**Relationship to groups (§3.5).** Collections and groups are deliberately separate concepts:
+
+| Aspect | `groups` (§3.5) | `collections` (§3.9) |
+|---|---|---|
+| Tier | Annotation (snippet / note content) | File (member / note as a whole) |
+| Typical name | Semantic ("Methodology", "Risk factor") | Role-based ("Exhibits", "Our review") |
+| Lives on | `snippet.groups`, `note.groups` | `member.collections`, `note.collections` |
+| Scope | A document sidecar (snippet groups) or workspace (note groups) | Workspace only |
+| Cardinality | Many-to-many | Many-to-many |
+
+A note can therefore carry **both** `groups` (semantic tags on its content) and `collections` (which file-tier bucket the note belongs to in the workspace).
+
+**Edge graph and MarkRank.** Collections do NOT participate in the edge graph (§3.4) or MarkRank (§8) as nodes. They are a faceting / display layer. A reader MAY compute derived views — e.g. "all snippets in members tagged collection X" — by walking from collection → members → document sidecar → snippets, and MAY surface per-collection or cross-collection MarkRank views (e.g. restrict the graph to one collection, or count edges that cross collection boundaries). Such derived views are implementation-defined.
+
+**Self-containment.** A workspace sidecar's `collections` array SHOULD list only collections referenced by that workspace's `members` or `notes`. Collection IDs referenced from `member.collections` or `note.collections` that are not declared in the workspace's `collections` array SHOULD be treated as unknown and surfaced to the user for re-linking; readers MUST preserve them on round-trip.
 
 ## 4. Anchoring
 
@@ -482,3 +532,4 @@ This specification draws on prior art including:
 ## Appendix D. Changelog
 
 - **0.1** (2026-05-08): Initial working draft.
+- **0.1** (2026-05-14): Added Section 2.9 / 3.9 — workspace **collections** (file-tier many-to-many grouping over members and notes); added optional `collections` field on `member` (§3.7) and `note` (§3.8); added optional `collections` array on workspace sidecar top-level (§3.6).

@@ -14,10 +14,20 @@
  *
  *   readDocumentBytes(path): Promise<Uint8Array>
  *
- *   readAnnot(path): Promise<AnnotFile>
+ *   readAnnot(path): Promise<AnnotFile & { _mtimeMs: number }>
  *       — Returns a default-initialized AnnotFile if no sidecar exists.
+ *       — `_mtimeMs` is the sidecar's mtime at read time (0 if no file).
+ *         Callers stash this and pass it back to writeAnnot for optimistic-
+ *         concurrency protection.
  *
- *   writeAnnot(path, annot): Promise<void>
+ *   writeAnnot(path, annot, expectedMtimeMs?): Promise<{ ok, mtimeMs?, conflict? }>
+ *       — expectedMtimeMs default is -1 (skip the check; write blindly).
+ *         0 means "expect no prior file" (first write).
+ *         >0 means "must match this mtime, else return conflict".
+ *       — On mtime mismatch, returns { ok: false, conflict: { expectedMtimeMs, foundMtimeMs } }
+ *         without writing. Caller surfaces a reload-or-overwrite prompt.
+ *       — On success, returns { ok: true, mtimeMs } so caller can cache
+ *         the new mtime for the next write.
  *
  *   readGlobalGroups(): Promise<Array<GroupMeta>>
  *

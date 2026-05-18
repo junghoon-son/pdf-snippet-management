@@ -104,6 +104,49 @@ struct AnnotFile {
     groups: Vec<GroupMeta>,
 }
 
+// Response wrapper for read_annot that surfaces the sidecar's mtime to
+// the JS layer so persistImmediate can do an optimistic-concurrency
+// check on the next write. `_mtimeMs` is 0 when the sidecar didn't exist
+// (treated as "creating from scratch" — first-write case).
+#[derive(Serialize, Default)]
+struct ReadAnnotResult {
+    #[serde(flatten)]
+    annot: AnnotFile,
+    #[serde(rename = "_mtimeMs")]
+    mtime_ms: u64,
+}
+
+// Response shape for write_annot. On success: ok=true, mtimeMs=new mtime.
+// On mtime mismatch (someone else wrote between our read and write):
+// ok=false, conflict={expected, found}. JS surfaces a reload-or-overwrite
+// prompt and may retry with expectedMtimeMs=-1 to force the write.
+#[derive(Serialize)]
+struct WriteAnnotResult {
+    ok: bool,
+    #[serde(rename = "mtimeMs", skip_serializing_if = "Option::is_none")]
+    mtime_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    conflict: Option<MtimeConflict>,
+}
+
+#[derive(Serialize)]
+struct MtimeConflict {
+    #[serde(rename = "expectedMtimeMs")]
+    expected_mtime_ms: i64,
+    #[serde(rename = "foundMtimeMs")]
+    found_mtime_ms: u64,
+}
+
+// Read the sidecar's mtime as milliseconds since the Unix epoch. Returns
+// 0 when the file does not exist, mirroring the "no prior version"
+// signal the JS layer expects.
+fn sidecar_mtime_ms(p: &Path) -> u64 {
+    let Ok(meta) = fs::metadata(p) else { return 0; };
+    let Ok(modified) = meta.modified() else { return 0; };
+    let Ok(d) = modified.duration_since(std::time::UNIX_EPOCH) else { return 0; };
+    d.as_millis() as u64
+}
+
 fn sidecar_path(pdf_path: &str) -> PathBuf {
     let p = Path::new(pdf_path);
     let mut s = p.as_os_str().to_owned();
@@ -488,11 +531,12 @@ fn write_global_groups(groups: Vec<GroupMeta>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn read_annot(pdf_path: String) -> Result<AnnotFile, String> {
+fn read_annot(pdf_path: String) -> Result<ReadAnnotResult, String> {
     let p = sidecar_path(&pdf_path);
     if !p.exists() {
-        return Ok(AnnotFile::default());
+        return Ok(ReadAnnotResult::default());
     }
+    let mtime_ms = sidecar_mtime_ms(&p);
     let bytes = fs::read(&p).map_err(|e| e.to_string())?;
     let mut af = if let Ok(af) = serde_json::from_slice::<AnnotFile>(&bytes) {
         af
@@ -528,15 +572,43 @@ fn read_annot(pdf_path: String) -> Result<AnnotFile, String> {
             }
         }
     }
-    Ok(af)
+    Ok(ReadAnnotResult { annot: af, mtime_ms })
 }
 
+// expected_mtime_ms semantics:
+//   -1  → skip the check (explicit user-consent overwrite).
+//    0  → caller expects no prior file (first write); write only if the
+//         sidecar still doesn't exist.
+//   >0  → compare against actual mtime; on mismatch, return conflict.
 #[tauri::command]
-fn write_annot(pdf_path: String, payload: AnnotFile) -> Result<(), String> {
+fn write_annot(
+    pdf_path: String,
+    payload: AnnotFile,
+    expected_mtime_ms: Option<i64>,
+) -> Result<WriteAnnotResult, String> {
     let p = sidecar_path(&pdf_path);
+    let expected = expected_mtime_ms.unwrap_or(-1);
+    if expected != -1 {
+        let actual = sidecar_mtime_ms(&p);
+        if expected == 0 && actual != 0 {
+            return Ok(WriteAnnotResult {
+                ok: false,
+                mtime_ms: None,
+                conflict: Some(MtimeConflict { expected_mtime_ms: expected, found_mtime_ms: actual }),
+            });
+        }
+        if expected > 0 && actual as i64 != expected {
+            return Ok(WriteAnnotResult {
+                ok: false,
+                mtime_ms: None,
+                conflict: Some(MtimeConflict { expected_mtime_ms: expected, found_mtime_ms: actual }),
+            });
+        }
+    }
     let json = serde_json::to_vec_pretty(&payload).map_err(|e| e.to_string())?;
     fs::write(&p, json).map_err(|e| e.to_string())?;
-    Ok(())
+    let new_mtime = sidecar_mtime_ms(&p);
+    Ok(WriteAnnotResult { ok: true, mtime_ms: Some(new_mtime), conflict: None })
 }
 
 fn build_app_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<tauri::menu::Menu<R>> {

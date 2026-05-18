@@ -2,9 +2,9 @@
 //
 // One small LLM call that classifies the user's query into what the
 // downstream stack needs. Decouples user intent from expensive pipeline
-// triggers — the figure detector (ONNX/Ollama/Docling) now runs ONLY
-// when the query actually wants figures, not whenever the global toggle
-// happens to be on.
+// triggers — the figure detector (ONNX or built-in hybrid) now runs
+// ONLY when the query actually wants figures, not whenever the global
+// toggle happens to be on.
 //
 // The result is also model-portable: any provider that supports tool
 // calls can serve as the router, including future local models.

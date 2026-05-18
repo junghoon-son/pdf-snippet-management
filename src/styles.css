@@ -1093,35 +1093,123 @@ body.pane-max #snippets-pane { border-left: none; }
 }
 #lineage-cy:active { cursor: grabbing; }
 
+/* Footer panel — scope-aware ("Groups" in doc mode, "Workspace" in
+   workspace mode). Sized by capping the list body (not the panel)
+   so the header stays reachable even when the list overflows.
+   --group-row-height is one row's effective vertical footprint;
+   tweak in one place if row chrome changes. */
+:root {
+  --group-row-height: 28px;
+}
 #groups-panel {
   flex-shrink: 0;
-  max-height: 36vh;
   display: flex;
   flex-direction: column;
   background: var(--pane-bg-2, var(--panel));
   color: var(--pane-fg, var(--text));
   border-top: 1px solid var(--pane-border);
-  transition: max-height 180ms ease;
 }
-#groups-panel.collapsed { max-height: 28px; }
+#groups-panel #groups-list {
+  max-height: calc(10 * var(--group-row-height) + 8px);
+  overflow-y: auto;
+  /* Below 10 rows the list shrinks to fit (no empty placeholder rows). */
+}
 #groups-panel.collapsed #groups-list { display: none; }
-.groups-panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 5px 12px;
+.groups-subhead {
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 1.4px;
   color: var(--pane-fg-dim);
+  padding: 6px 12px 2px;
+  background: var(--pane-bg);
+  border-bottom: 1px solid var(--pane-border);
+  border-top: 1px solid var(--pane-border);
+  list-style: none;
+}
+.groups-subhead:first-child { border-top: none; }
+/* Workspace-scope collections — visually distinguished from groups so
+   the two concepts don't merge in the eye (per SPEC §3.9 rec). */
+.collection-row .collection-sticker {
+  border-radius: 3px;
+  border: 1px dashed var(--pane-border);
+  background: transparent;
+}
+.collection-row .collection-name {
+  flex: 1;
+  font-size: 12px;
+  color: var(--pane-fg);
+  padding: 0 6px;
+}
+/* Generic chrome for collapsible section headers — used by the AI
+   drawer, the snippets/lineage/map view stack, and the Groups/Workspace
+   footer panel so all three feel like the same widget. Layout-only;
+   the uppercase title chrome lives on .pane-section-title so the AI
+   drawer can keep its larger inline metadata (query, count, buttons). */
+.pane-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
   background: var(--pane-bg);
   border-bottom: 1px solid var(--pane-border);
   flex-shrink: 0;
   cursor: default;
   user-select: none;
 }
-#groups-panel.collapsed .groups-panel-header { border-bottom: none; }
+.pane-section-header .toolbar-spacer { flex: 1; }
+.pane-section-title {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1.4px;
+  color: var(--pane-fg-dim);
+  font-weight: 600;
+}
+.pane-section-collapse {
+  background: transparent;
+  border: 1px solid var(--pane-border);
+  color: var(--pane-fg-dim);
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 1.4;
+  transition: transform 160ms ease;
+}
+.pane-section-collapse:hover { color: var(--accent); border-color: var(--accent); }
+
+/* Groups panel header retains its layout helpers (action button cluster
+   on the right) but inherits the chrome from .pane-section-header. */
+.groups-panel-header {
+  justify-content: space-between;
+}
+#groups-panel.collapsed .pane-section-header { border-bottom: none; }
 #groups-panel.collapsed #groups-collapse { transform: rotate(-90deg); }
+
+/* Snippets / view-stack collapse — same chevron behavior as Groups. */
+#snippets-pane.snippets-collapsed #view-stack { display: none; }
+#snippets-pane.snippets-collapsed #snippets-section-header { border-bottom: none; }
+#snippets-pane.snippets-collapsed #snippets-section-collapse { transform: rotate(-90deg); }
+.snippets-section-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.snippets-section-actions button {
+  background: transparent;
+  border: 1px solid var(--pane-border);
+  color: var(--pane-fg-dim);
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 1px 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.snippets-section-actions button:hover { color: var(--accent); border-color: var(--accent); }
+.snippets-section-actions #delete-all-btn:hover { color: #c44a3b; border-color: #c44a3b; }
 .groups-panel-actions {
   display: flex;
   gap: 4px;
@@ -2166,15 +2254,50 @@ body.ai-expanded #ai-ask-bar { display: flex; }
    it. (hideAiDrawer also called explicitly on collapse to clear state.) */
 body:not(.ai-expanded) #ai-drawer { display: none !important; }
 
-/* AI ask bar — lives at the top of the snippets pane. */
+/* AI ask bar — lives at the top of the snippets pane. The bar is now
+   a column: input row, then the loading indicator, then the (mostly
+   hidden) error-status text. */
 #ai-ask-bar {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
+  flex-direction: column;
+  gap: 0;
+  padding: 6px 10px 0;
   border-bottom: 1px solid var(--pane-border);
   background: var(--pane-bg);
   flex-shrink: 0;
+}
+#ai-ask-bar .ai-ask-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Thin indeterminate loading bar — sits under the input. Visible only
+   while body has .busy. Replaces the chatty status text the user used
+   to see for every pipeline stage. */
+#ai-loading-bar {
+  height: 2px;
+  margin-top: 6px;
+  margin-bottom: 4px;
+  border-radius: 2px;
+  background: transparent;
+  overflow: hidden;
+  position: relative;
+}
+#ai-ask-bar.busy #ai-loading-bar {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+#ai-ask-bar.busy #ai-loading-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 35%;
+  background: var(--accent);
+  border-radius: 2px;
+  animation: ai-loading-slide 1.2s ease-in-out infinite;
+}
+@keyframes ai-loading-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(310%); }
 }
 #ai-ask-input {
   flex: 1;
@@ -2205,12 +2328,12 @@ body:not(.ai-expanded) #ai-drawer { display: none !important; }
 #ai-ask-status {
   font-size: 10.5px;
   color: var(--pane-fg-dim);
-  white-space: nowrap;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  padding: 0 2px 4px;
+  word-break: break-word;
 }
 #ai-ask-status[data-state="error"] { color: #d97757; }
+#ai-ask-status[hidden] { display: none; }
 
 /* Suggestion drawer — replaces the snippets list while a query is active. */
 #ai-drawer {
@@ -2244,7 +2367,9 @@ body:not(.ai-expanded) #ai-drawer { display: none !important; }
   margin-right: 2px;
 }
 #ai-drawer-collapse:hover { color: var(--accent); border-color: var(--accent); }
-#ai-drawer.collapsed #ai-drawer-collapse { transform: rotate(-90deg); }
+#ai-drawer.collapsed #ai-drawer-collapse,
+#ai-drawer.collapsed .pane-section-collapse { transform: rotate(-90deg); }
+#ai-drawer.collapsed .pane-section-header { border-bottom: none; }
 .resize-handle-h {
   height: 4px;
   cursor: ns-resize;
@@ -2263,18 +2388,12 @@ body:not(.ai-expanded) #ai-drawer { display: none !important; }
 body.pane-max .resize-handle-h { display: none; }
 body.resizing-v { cursor: ns-resize !important; user-select: none; }
 body.resizing-v * { cursor: ns-resize !important; }
+/* AI drawer header inherits chrome from .pane-section-header; only
+   the inline-text font-size + the slight panel tint differ. */
 #ai-drawer-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--pane-border);
-  background: var(--pane-panel);
-  flex-shrink: 0;
   font-size: 11px;
   color: var(--pane-fg-dim);
 }
-#ai-drawer-header .toolbar-spacer { flex: 1; }
 #ai-drawer-query { color: var(--accent); font-weight: 600; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ai-drawer-sep { color: var(--pane-fg-faint); }
 #ai-drawer-count { color: var(--pane-fg-dim); }
@@ -4038,7 +4157,13 @@ body.dragging-snippet .group-row:hover {
   border-color: var(--g-color);
   background: color-mix(in srgb, var(--g-color) 6%, var(--card-bg, #fff));
 }
-.summary-group-pill:active { cursor: grabbing; }
+.summary-group-pill:active,
+.summary-group-pill.press { cursor: grabbing; }
+.summary-group-pill.press {
+  background: color-mix(in srgb, var(--g-color) 18%, var(--card-bg, #fff));
+  border-color: var(--g-color);
+  transform: scale(0.985);
+}
 .summary-group-pill.dragging { opacity: 0.45; }
 .summary-group-pill.drag-over {
   border-top: 2px solid var(--accent);

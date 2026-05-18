@@ -6,7 +6,7 @@
 // resident ort::Session.
 //
 // Returns figure candidates in Marklee's standard shape so it slots
-// into aiAsk as a backend option alongside Ollama / built-in.
+// into aiAsk as the primary detector ahead of the built-in fallback.
 
 import { invoke } from "@tauri-apps/api/core";
 

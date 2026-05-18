@@ -73,11 +73,14 @@ export class FsaStore {
   async readAnnot(relPath) {
     const sidecarPath = `${relPath}.annot.json`;
     let af = null;
+    let mtimeMs = 0;
     try {
       const file = await this._getFile(sidecarPath);
+      mtimeMs = Number(file.lastModified) || 0;
       af = JSON.parse(await file.text());
     } catch {
       af = null;
+      mtimeMs = 0;
     }
     af = af || {};
     af.source = af.source || { path: relPath, filename: basename(relPath) };
@@ -85,13 +88,43 @@ export class FsaStore {
     af.snippets = af.snippets || [];
     af.edges = af.edges || [];
     af.groups = af.groups || [];
+    af._mtimeMs = mtimeMs;
     return af;
   }
 
-  async writeAnnot(relPath, annot) {
+  // Optimistic-mtime concurrent-write protection. Browser File.lastModified
+  // is less precise than POSIX mtime and may not always update reliably,
+  // so this is best-effort on the FSA backend. Same return shape as the
+  // Tauri store's writeAnnot for caller-side uniformity.
+  async writeAnnot(relPath, annot, expectedMtimeMs = -1) {
     const sidecarPath = `${relPath}.annot.json`;
+    if (expectedMtimeMs !== -1) {
+      let actual = 0;
+      try {
+        const file = await this._getFile(sidecarPath);
+        actual = Number(file.lastModified) || 0;
+      } catch { actual = 0; }
+      const mismatched =
+        (expectedMtimeMs === 0 && actual !== 0) ||
+        (expectedMtimeMs > 0 && actual !== expectedMtimeMs);
+      if (mismatched) {
+        return {
+          ok: false,
+          conflict: { expectedMtimeMs, foundMtimeMs: actual },
+        };
+      }
+    }
     const json = JSON.stringify(annot, null, 2);
     await this._writeFile(sidecarPath, json);
+    // Re-read to capture the post-write mtime so the caller can refresh
+    // its cached value. If the lookup fails, return 0 — caller will
+    // fall back to expectedMtimeMs=-1 on the next write.
+    let newMtime = 0;
+    try {
+      const file = await this._getFile(sidecarPath);
+      newMtime = Number(file.lastModified) || 0;
+    } catch { newMtime = 0; }
+    return { ok: true, mtimeMs: newMtime };
   }
 
   async readGlobalGroups() {

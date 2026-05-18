@@ -1,6 +1,6 @@
 // Provider abstraction — the Reader and settings UI both talk to this
 // instead of directly to anthropic.js / openai.js. Adding a new provider
-// (Gemini, Ollama, ...) is a matter of writing a client with the same
+// (Gemini, Mistral, ...) is a matter of writing a client with the same
 // surface and registering it here.
 
 import * as Anthropic from "./anthropic.js";
@@ -8,6 +8,11 @@ import * as OpenAi from "./openai.js";
 
 const PROVIDER_STORAGE = "marklee-ai-provider";
 
+// `maxOutputTokens` is each model's native output ceiling. Callers that
+// need a generous output budget (e.g. the Reader's many-highlights mode)
+// resolve to the active model's cap via getMaxOutputTokens(); callers with
+// a tight budget (e.g. the Planner's short-plan call) pass their own
+// smaller value. Updated 2026-05-14 — bump as providers extend limits.
 const PROVIDER_DEFS = {
   anthropic: {
     id: "anthropic",
@@ -15,9 +20,9 @@ const PROVIDER_DEFS = {
     module: Anthropic,
     defaultModel: "claude-sonnet-4-6",
     models: [
-      { id: "claude-sonnet-4-6",           label: "Claude Sonnet 4.6 (default — balanced)" },
-      { id: "claude-opus-4-7",             label: "Claude Opus 4.7 (slow, most thorough)" },
-      { id: "claude-haiku-4-5-20251001",   label: "Claude Haiku 4.5 (fast, cheap)" },
+      { id: "claude-sonnet-4-6",           label: "Claude Sonnet 4.6 (default — balanced)",   maxOutputTokens: 32768 },
+      { id: "claude-opus-4-7",             label: "Claude Opus 4.7 (slow, most thorough)",    maxOutputTokens: 24576 },
+      { id: "claude-haiku-4-5-20251001",   label: "Claude Haiku 4.5 (fast, cheap)",           maxOutputTokens: 32768 },
     ],
     keyPlaceholder: "sk-ant-…",
     keyHint: "console.anthropic.com → API Keys",
@@ -26,16 +31,19 @@ const PROVIDER_DEFS = {
     id: "openai",
     label: "OpenAI",
     module: OpenAi,
-    defaultModel: "gpt-4o",
+    defaultModel: "gpt-4.1",
     models: [
-      { id: "gpt-4o",        label: "GPT-4o (default — vision + tools)" },
-      { id: "gpt-4o-mini",   label: "GPT-4o mini (fast, cheap, vision)" },
-      { id: "gpt-4-turbo",   label: "GPT-4 Turbo" },
+      { id: "gpt-4.1",        label: "GPT-4.1 (default — balanced, vision + tools)",  maxOutputTokens: 32768 },
+      { id: "gpt-4.1-mini",   label: "GPT-4.1 mini (fast, cheap, vision)",            maxOutputTokens: 32768 },
+      { id: "gpt-4.1-nano",   label: "GPT-4.1 nano (cheapest, fastest)",              maxOutputTokens: 32768 },
     ],
     keyPlaceholder: "sk-…",
     keyHint: "platform.openai.com → API Keys",
   },
 };
+
+// Conservative floor when a provider/model entry has no declared cap.
+const FALLBACK_MAX_OUTPUT_TOKENS = 4096;
 
 export const PROVIDER_IDS = Object.keys(PROVIDER_DEFS);
 
@@ -83,6 +91,17 @@ export function getModel() {
 }
 export function setModel(m) {
   return activeProvider().module.setModel(m);
+}
+
+// Resolve the active provider+model's output-token ceiling. Reader-style
+// callers should pass this as `maxTokens` so they get the full per-model
+// budget instead of a one-size-fits-all default that either truncates on
+// big models or fails on small ones.
+export function getMaxOutputTokens() {
+  const provider = activeProvider();
+  const modelId = provider.module.getModel ? provider.module.getModel() : provider.defaultModel;
+  const entry = (provider.models || []).find((m) => m.id === modelId);
+  return (entry && entry.maxOutputTokens) || FALLBACK_MAX_OUTPUT_TOKENS;
 }
 
 // Per-provider versions for the settings UI (lets the modal show all

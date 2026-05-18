@@ -61,7 +61,7 @@ const ELLIPSIS_CLASS = "(?:\\u2026|\\.{3})";
 // loose; first hit wins. Designed for LLM quotes which routinely differ
 // from the source by whitespace, dash/quote normalization, ligatures,
 // soft hyphens, line-end hyphenation, leading numbering, and case.
-function findInFlat(flat, quote) {
+export function findInFlat(flat, quote) {
   if (!flat || !quote) return null;
 
   // (1) Exact substring.
@@ -147,7 +147,7 @@ function findInFlat(flat, quote) {
 //   - Ellipsis '…' → '...'
 //   - Whitespace runs collapsed to single space
 //   - Case folded to lowercase
-function normalizeWithMap(s) {
+export function normalizeWithMap(s) {
   const src = s.normalize ? s.normalize("NFC") : s;
   const out = [];
   const origOf = [];

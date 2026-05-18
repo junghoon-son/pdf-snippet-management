@@ -4,19 +4,19 @@
 // forces verbatim quoting + structured fields. Caller passes a query
 // and the doc as plain text; gets back an array of suggestions.
 
-import { callMessages } from "./providers.js";
+import { callMessages, getMaxOutputTokens } from "./providers.js";
 
 // Minimal system prompt. The heavy lifting is done by:
 //   - the tool-use schema (forces structured output)
-//   - the per-query candidate list (Docling/Ollama identifies figures)
+//   - the per-query candidate list (RT-DETR / built-in identifies figures)
 //   - the deterministic resolver (handles whitespace/dash/quote drift)
 // We only need to tell Claude the load-bearing rules: verbatim quotes,
 // prefer pre-detected candidates, route into existing groups.
 const READER_SYSTEM = `Find the passages and figures in this document that answer the question. Return them via the record_highlights tool.
 
 EMIT HIGHLIGHTS GENEROUSLY. Two cases:
-- "all" / "every" / "each" of something → emit ONE highlight per instance, don't summarize. Fill the 15-highlight budget when there are that many genuine matches.
-- "key findings" / "main points" / "important takeaways" / "the conclusions" / "interesting parts" → emit 5-10 text highlights covering the most consequential claims, conclusions, methods, or results. Aim for the sentences a reader would underline in a final pass. ALWAYS return at least 3 highlights when the document has substantive content.
+- "all" / "every" / "each" of something → emit ONE highlight per instance, don't summarize. Fill the 50-highlight budget when there are that many genuine matches.
+- "key findings" / "main points" / "important takeaways" / "the conclusions" / "interesting parts" → emit 8-15 text highlights covering the most consequential claims, conclusions, methods, or results. Aim for the sentences a reader would underline in a final pass. ALWAYS return at least 3 highlights when the document has substantive content.
 
 NEVER return an empty highlights array when the document clearly contains content relevant to the question. If you're hedging on whether something matches, return it with confidence="low" rather than dropping it.
 
@@ -43,7 +43,7 @@ SUBFIGURES / PANELS:
 
 Each highlight needs a one-sentence "reason". For "group_hint": pick an existing group when one fits; reuse across related highlights; propose a short new title-case name only when nothing existing fits.
 
-Max 15 highlights, ranked by relevance.`;
+Max 50 highlights, ranked by relevance.`;
 
 const READER_TOOL = {
   name: "record_highlights",
@@ -110,9 +110,9 @@ const READER_TOOL = {
 };
 
 // Run the Reader. `figureDetections` carries the pre-detected candidate
-// regions from Ollama/Docling/built-in detector; `pageImages` is only
-// included when vision is enabled (otherwise the model picks figures
-// purely from the candidate list + their captions).
+// regions from RT-DETR / built-in detector; `pageImages` is only included
+// when vision is enabled (otherwise the model picks figures purely from
+// the candidate list + their captions).
 export async function runReader({ query, docText, docTitle, groupNames, pageImages, figureDetections, plan }) {
   const wantsText = plan ? plan.wantsText !== false : true;
   const wantsFigures = plan ? !!plan.wantsFigures : true;
@@ -173,7 +173,7 @@ export async function runReader({ query, docText, docTitle, groupNames, pageImag
     system: READER_SYSTEM,
     messages: [{ role: "user", content }],
     tools: [READER_TOOL],
-    maxTokens: 4096,
+    maxTokens: getMaxOutputTokens(),
   });
 
   // Diagnostic: log every content block from the model so we can see

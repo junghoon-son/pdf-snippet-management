@@ -16,6 +16,29 @@ import * as MapView from "./map-view.js";
 import * as LineageView from "./lineage-view.js";
 import { openGroupOverlay } from "./group-overlay.js";
 import { setStore, getStore } from "./storage/store.js";
+import {
+  setup as setupClipboard,
+  createPastedTextSnippet,
+  createPastedImageSnippet,
+  PASTED_PSEUDO_PATH,
+} from "./clipboard.js";
+import {
+  setup as setupPersistence,
+  persist,
+  flushPersist,
+  persistImmediate,
+  pruneOrphanGroups,
+} from "./persistence.js";
+import {
+  setup as setupAiPanel,
+  aiSetStatus,
+  aiSetBusy,
+  mergeRectsIntoBands,
+  rebuildAiModelDropdown,
+  updateAiKeyFieldForProvider,
+  openAiSettings,
+  closeAiSettings,
+} from "./ai-panel.js";
 import { TauriStore } from "./storage/tauri-store.js";
 import { FsaStore } from "./storage/fsa-store.js";
 import { computeMarkRank, rankPercentiles } from "./markrank.js";
@@ -29,37 +52,6 @@ import {
   isOnnxLayoutEnabled, setOnnxLayoutEnabled,
   runOnnxLayout,
 } from "./ai/onnx-layout.js";
-import {
-  isDoclingEnabled, setDoclingEnabled,
-  getDoclingPython, setDoclingPython,
-  runDoclingLayout,
-} from "./ai/docling.js";
-import {
-  isOllamaEnabled, setOllamaEnabled,
-  getOllamaEndpoint, setOllamaEndpoint,
-  getOllamaModel, setOllamaModel,
-  checkOllamaStatus,
-  runOllamaLayout,
-  startBundledOllama, waitForOllamaReady,
-  pullOllamaModel, prewarmOllamaModel,
-} from "./ai/ollama-layout.js";
-
-// Fire-and-forget startup of the bundled Ollama sidecar. After it's
-// up AND the layout model is pulled, also prewarm — loads weights
-// into VRAM so the user's first figure query doesn't pay cold-start.
-// Errors at any step are non-fatal; figure detection silently falls
-// back to the in-browser hybrid if Ollama never becomes ready.
-// Ollama auto-start is gated on the Ollama backend being explicitly
-// enabled. ONNX users never see Ollama start, ever.
-(async () => {
-  if (!isOllamaEnabled()) return;
-  const r = await startBundledOllama();
-  if (r.ok) console.log("[ollama] startup:", r.result);
-  else { console.warn("[ollama] startup failed:", r.error); return; }
-  const ready = await waitForOllamaReady(15000);
-  if (!ready) { console.warn("[ollama] never became ready in 15s"); return; }
-  await prewarmOllamaModel();
-})();
 import {
   hasApiKey,
 } from "./ai/providers.js";
@@ -319,6 +311,18 @@ const state = {
   scale: 1.5,
   snippets: [],
   edges: [],
+  // Mtime of the active doc's sidecar at last read. Drives optimistic
+  // concurrent-write protection in persistImmediate. 0 = no prior file
+  // (first write); -1 = skip check (explicit overwrite consent).
+  sidecarMtimeMs: 0,
+  // Per-document group metadata. Hydrated from the active sidecar's
+  // `groups` array on every loadAnyDocument; cleared synchronously on
+  // doc switch. Was previously a workspace-level accumulator (proxied
+  // to state.workspace.groupsMeta) which caused cross-doc and cross-
+  // window leakage. The data model (SPEC §3.1, §3.5) keeps groups in
+  // each sidecar — this matches it. Workspace-scope reads recompute
+  // the union by walking sidecars on demand (loadWorkspaceMapData).
+  groupsMeta: [],
   source: { path: "", filename: "", title: "", author: "", kind: "pdf" },
   view: "list",
   layout: "group",
@@ -329,23 +333,10 @@ const state = {
     try { return localStorage.getItem("marklee-summary-img-size") || "compact"; }
     catch { return "compact"; }
   })(),
-  snippetSort: (() => {
-    try { return localStorage.getItem("pdf-annotator-snippet-sort") || "order"; }
-    catch { return "order"; }
-  })(),
+  // Sort mode is hard-pinned to "order" while the order/rank toggle
+  // is hidden. Ignoring any stale "rank" value persisted from before.
+  snippetSort: "order",
 };
-Object.defineProperty(state, "groupsMeta", {
-  configurable: true,
-  enumerable: true,
-  get() {
-    if (!state.workspace) return [];
-    if (!Array.isArray(state.workspace.groupsMeta)) state.workspace.groupsMeta = [];
-    return state.workspace.groupsMeta;
-  },
-  set(v) {
-    if (state.workspace) state.workspace.groupsMeta = Array.isArray(v) ? v : [];
-  },
-});
 let selectedEdge = null;
 let mapInitialized = false;
 let lineageInitialized = false;
@@ -453,14 +444,14 @@ function loadAllWorkspaces() {
 
 function activeWorkspaceData() {
   const ws = state.workspaces.byId[state.workspaces.active];
-  if (!ws) return { folders: [], files: [], groupsMeta: [], theme: "cream", pastedSnippets: [] };
-  if (!Array.isArray(ws.groupsMeta)) ws.groupsMeta = [];
+  if (!ws) return { folders: [], files: [], theme: "cream", pastedSnippets: [] };
   if (!Array.isArray(ws.pastedSnippets)) ws.pastedSnippets = [];
   if (!ws.theme) ws.theme = "cream";
+  // Legacy `groupsMeta` field on the workspace is silently ignored —
+  // groups are reconstituted per-document from sidecars on each load.
   return {
     folders: ws.folders || [],
     files: ws.files || [],
-    groupsMeta: ws.groupsMeta,
     pastedSnippets: ws.pastedSnippets,
     theme: ws.theme,
   };
@@ -472,10 +463,11 @@ function saveAllWorkspaces() {
   if (cur) {
     cur.files = state.workspace.files;
     cur.folders = state.workspace.folders;
-    cur.groupsMeta = state.workspace.groupsMeta;
     cur.pastedSnippets = state.workspace.pastedSnippets || [];
     cur.theme = state.workspace.theme || cur.theme || "cream";
     cur.currentPdfPath = state.currentPdfPath;
+    // Legacy `cur.groupsMeta` is no longer touched here. Existing
+    // entries in localStorage are read-tolerated and ignored.
   }
   let ok = true;
   try { localStorage.setItem(WORKSPACES_KEY, JSON.stringify(state.workspaces)); }
@@ -498,6 +490,33 @@ function flashSaveIndicator(state) {
     }, state === "error" ? 4000 : 1400);
   }
 }
+
+// Wire the extracted modules now that their deps (state object, store
+// accessor, the workspace + save indicator helpers) are all defined.
+// Function decls below this point are hoisted, so refreshActiveView and
+// loadAnyDocument are already valid references here. Setup runs once
+// per session.
+setupClipboard({
+  state,
+  getStore,
+  saveAllWorkspaces,
+  refreshActiveView,
+  flashSaveIndicator,
+  IS_TAURI,
+});
+setupPersistence({
+  state,
+  getStore,
+  mapView: MapView,
+  saveAllWorkspaces,
+  flashSaveIndicator,
+  reloadDocument: (path) => loadAnyDocument(path),
+});
+setupAiPanel({
+  hasConsented,
+  getIncludeFigures,
+  isOnnxLayoutEnabled,
+});
 
 const VALID_THEMES = ["cream", "slate", "sepia", "paper", "forest", "ocean", "bubblegum", "dark", "midnight", "terminal", "steampunk", "popshow", "vapor"];
 const THEME_CATEGORIES = [
@@ -601,7 +620,6 @@ function newWorkspace() {
     name: `Workspace ${n}`,
     files: [],
     folders: [],
-    groupsMeta: [],
     pastedSnippets: [],
     theme: "cream",
     currentPdfPath: null,
@@ -1153,12 +1171,7 @@ function captionAnchorRect(viewerContainer, page, label) {
   return null;
 }
 
-function aiSetStatus(msg, state = "idle") {
-  const el = document.getElementById("ai-ask-status");
-  if (!el) return;
-  el.textContent = msg || "";
-  el.dataset.state = state;
-}
+// aiSetStatus, aiSetBusy moved to src/ai-panel.js in Wave 3.
 
 async function aiAsk() {
   if (aiInFlight) return;
@@ -1185,6 +1198,7 @@ async function aiAsk() {
   }
 
   aiInFlight = true;
+  aiSetBusy(true);
   aiSetStatus("Reading document…");
   document.getElementById("ai-ask-submit").disabled = true;
 
@@ -1196,9 +1210,10 @@ async function aiAsk() {
     let pageTextContent = null;
     // Two-stage dispatch: a tiny "planner" call classifies the query
     // into { needsText, needsFigures, figurePages } before any heavy
-    // work runs. The figure detector (ONNX/Ollama/Docling) only fires
-    // when the planner says figures are wanted. Provider-agnostic — same
-    // call works whether the user picks Claude or a local open model.
+    // work runs. The figure detector (ONNX or built-in hybrid) only
+    // fires when the planner says figures are wanted. Provider-agnostic
+    // — same call works regardless of which Claude/OpenAI model the
+    // user picked.
     //
     // The user can force-on figures via the global toggle even when the
     // planner thinks they aren't needed (gives a manual override).
@@ -1221,11 +1236,8 @@ async function aiAsk() {
       if (wantsFigures) {
         // Render page images. Resolution depends on which backend will
         // process them. RT-DETR needs 640 (we render 1024 for resize
-        // quality). Ollama VLM input is 512 (we render 800). Claude
-        // vision uses 1400.
-        const visionRes = isOnnxLayoutEnabled() ? 1024
-                        : isOllamaEnabled() ? 800
-                        : 1400;
+        // quality). Claude vision uses 1400.
+        const visionRes = isOnnxLayoutEnabled() ? 1024 : 1400;
         aiSetStatus(`Rendering ${state.pdfDoc.numPages} page image(s)…`);
         pageImages = await extractPdfPageImages(state.pdfDoc, { targetWidth: visionRes });
 
@@ -1243,30 +1255,6 @@ async function aiAsk() {
             aiSetStatus(`ONNX failed (${err.message || err}); falling back.`, "error");
             figureDetections = await detectFiguresHybrid(state.pdfDoc, { targetWidth: 800 });
           }
-        } else if (isOllamaEnabled()) {
-          aiSetStatus(`Asking local Ollama (granite-docling) on ${pageImages.length} page(s)…`);
-          try {
-            figureDetections = await runOllamaLayout(
-              pageImages,
-              state.source?.contentHash,
-              (i, total, page) => aiSetStatus(`Ollama ${i}/${total} pages…`)
-            );
-            console.log("[ai] ollama detection:", figureDetections);
-          } catch (err) {
-            console.warn("[ai] Ollama failed, falling back:", err);
-            aiSetStatus(`Ollama failed (${err.message || err}); falling back.`, "error");
-            figureDetections = await detectFiguresHybrid(state.pdfDoc, { targetWidth: 800 });
-          }
-        } else if (isDoclingEnabled() && state.currentPdfPath) {
-          aiSetStatus("Running Docling layout (may take 10–60s first run)…");
-          try {
-            figureDetections = await runDoclingLayout(state.currentPdfPath);
-            console.log("[ai] docling detection:", figureDetections);
-          } catch (err) {
-            console.warn("[ai] Docling failed, falling back to in-browser detector:", err);
-            aiSetStatus(`Docling failed (${err.message || err}); falling back to built-in detector.`, "error");
-            figureDetections = await detectFiguresHybrid(state.pdfDoc, { targetWidth: 800 });
-          }
         } else {
           aiSetStatus(`Detecting figures (PDF XObjects + grid) on ${state.pdfDoc.numPages} page(s)…`);
           figureDetections = await detectFiguresHybrid(state.pdfDoc, { targetWidth: 800 });
@@ -1280,10 +1268,10 @@ async function aiAsk() {
     const detectedCount = figureDetections
       ? figureDetections.reduce((n, d) => n + (d.candidates?.length || 0), 0)
       : 0;
-    // If Ollama-style detection ran but came back empty, that's a
-    // signal something went wrong upstream. Log loudly and ALWAYS
-    // ensure page images go to Claude so it can detect figures itself
-    // from the rendered pages (fallback to vision-only path).
+    // If layout detection ran but came back empty, that's a signal
+    // something went wrong upstream. Log loudly and ALWAYS ensure page
+    // images go to Claude so it can detect figures itself from the
+    // rendered pages (fallback to vision-only path).
     if (wantsFigures && figureDetections && detectedCount === 0) {
       console.warn(
         "[ai] Layout detector returned 0 candidates across all pages — falling back to Claude vision-only.",
@@ -1322,6 +1310,20 @@ async function aiAsk() {
     }
     console.log("[ai] raw highlights from model:", highlights);
     console.log("[ai] figure detections by page:", detectionByPage);
+    // Candidate-kind whitelist for fallback paths (B-snap and C-largest).
+    // Layout detectors classify each region; only figure/table/chart-ish
+    // kinds are valid for an image-snippet anchor. Header/title/text
+    // regions used to slip through the C-fallback and produce orphan
+    // "Research Articles" boxes — drop them here instead. Explicit
+    // figure_id requests (path A) still honor whatever the model asked
+    // for; the model owns that decision.
+    const figureLikeKind = (k) => {
+      if (!k) return true; // unlabeled candidate — old detector path; keep
+      const s = String(k).toLowerCase();
+      return s.includes("figure") || s.includes("picture") || s.includes("image")
+          || s.includes("table") || s.includes("chart") || s.includes("plot")
+          || s === "diagram";
+    };
     aiSuggestions = highlights.map((h) => {
       const isImage = h.kind === "image";
       let resolved = null;
@@ -1344,10 +1346,14 @@ async function aiAsk() {
         }
 
         // (B) model gave a free-form rect — try to snap to a candidate
-        //     on the hinted page (or fall back to model-bbox).
+        //     on the hinted page (or fall back to model-bbox). Snapping
+        //     is restricted to figure-like candidates so an image
+        //     suggestion can't accidentally lock onto a text/header
+        //     region just because it geometrically overlaps.
         if (!pick && h.rect && hintPage) {
           const modelRect = clampRect(h.rect);
-          const snapped = bestOverlap(modelRect, cands, 0.2);
+          const figureCands = cands.filter((c) => figureLikeKind(c.kind));
+          const snapped = bestOverlap(modelRect, figureCands, 0.2);
           if (snapped) { pick = snapped; source = "snapped"; }
           else if (modelRect.width > 0 && modelRect.height > 0) {
             pick = { ...ensureMinSize(modelRect) };
@@ -1355,11 +1361,17 @@ async function aiAsk() {
           }
         }
 
-        // (C) detected-fallback on the hinted page.
+        // (C) detected-fallback on the hinted page — only over figure-
+        //     like candidates. If the page has none, skip the fallback
+        //     entirely; the caption-anchor path below or the orphan
+        //     drop at the end will handle the suggestion.
         if (!pick && hintPage && cands.length) {
-          const largest = cands.slice().sort((a, b) => (b.width * b.height) - (a.width * a.height))[0];
-          pick = largest;
-          source = "detected-fallback";
+          const figureCands = cands.filter((c) => figureLikeKind(c.kind));
+          if (figureCands.length) {
+            const largest = figureCands.slice().sort((a, b) => (b.width * b.height) - (a.width * a.height))[0];
+            pick = largest;
+            source = "detected-fallback";
+          }
         }
 
         if (pick && resolvedPage) {
@@ -1413,6 +1425,10 @@ async function aiAsk() {
         resolvedPage: resolved?.page ?? h.page ?? null,
         accepted: false,
         rejected: false,
+        // Stamp the doc this suggestion was generated for. acceptAiSuggestion
+        // checks this before writing — if the user switched docs since the
+        // query, applying would silently retarget the new doc (data hazard).
+        _sourcePath: state.currentPdfPath,
       };
     });
 
@@ -1430,6 +1446,7 @@ async function aiAsk() {
     aiSetStatus(err.message || String(err), "error");
   } finally {
     aiInFlight = false;
+    aiSetBusy(false);
     document.getElementById("ai-ask-submit").disabled = false;
   }
 }
@@ -1452,6 +1469,8 @@ function hideAiDrawer() {
 // Paint all pending suggestions as dashed overlays on the document so
 // the user can SEE where each highlight would land before accepting.
 // Cleared when the drawer closes or all suggestions are handled.
+// mergeRectsIntoBands moved to src/ai-panel.js in Wave 3.
+
 function paintAiPreviews() {
   clearAiPreviews();
   const pending = aiSuggestions.filter((s) => !s.accepted && !s.rejected && s.resolved);
@@ -1462,11 +1481,15 @@ function paintAiPreviews() {
       const page = sug.resolved.page;
       if (!page) continue;
       if (!byPage.has(page)) byPage.set(page, []);
-      // Image kind has a single rect; text kind has rects[].
+      // Image kind has a single rect; text kind has rects[]. For text
+      // we merge intra-suggestion rects into per-line bands first so a
+      // multi-rect quote renders as one clean strip per line instead
+      // of a fence of abutting dashed boxes.
       if (sug.resolved.kind === "image" && sug.resolved.rect) {
         byPage.get(page).push({ rect: sug.resolved.rect, sug, type: "image" });
       } else if (sug.resolved.rects && sug.resolved.rects.length) {
-        for (const r of sug.resolved.rects) byPage.get(page).push({ rect: r, sug, type: "text" });
+        const merged = mergeRectsIntoBands(sug.resolved.rects);
+        for (const r of merged) byPage.get(page).push({ rect: r, sug, type: "text" });
       }
     }
     for (const [page, items] of byPage) {
@@ -1854,7 +1877,21 @@ function renderAiDrawer() {
   }
 }
 
+// Refuse accept when the user has switched docs since the query ran.
+// Suggestions were resolved against the source doc's rects/pages; applying
+// them to a different doc would create snippets with rects that don't
+// correspond to anything in the new doc.
+function canAcceptSuggestion(sug) {
+  if (sug._sourcePath && sug._sourcePath !== state.currentPdfPath) {
+    const fname = sug._sourcePath.split("/").pop() || sug._sourcePath;
+    aiSetStatus(`These suggestions are for ${fname} — switch back to that doc to accept.`, "error");
+    return false;
+  }
+  return true;
+}
+
 async function acceptAiSuggestion(sug) {
+  if (!canAcceptSuggestion(sug)) return;
   sug.accepted = true;
   // Group hint → existing group (fuzzy-matched) or auto-create a new one.
   let groupIds = [];
@@ -2000,6 +2037,11 @@ document.getElementById("ai-ask-input").addEventListener("keydown", (e) => {
 });
 document.getElementById("ai-drawer-close").addEventListener("click", hideAiDrawer);
 document.getElementById("ai-drawer-accept-all").addEventListener("click", () => {
+  // Single-shot guard so the user sees the error once, not per-suggestion.
+  // All pending suggestions in this batch share the same _sourcePath, so
+  // checking the first pending one is sufficient.
+  const firstPending = aiSuggestions.find((s) => !s.accepted && !s.rejected);
+  if (firstPending && !canAcceptSuggestion(firstPending)) return;
   for (const s of aiSuggestions) {
     if (!s.accepted && !s.rejected) acceptAiSuggestion(s);
   }
@@ -2012,54 +2054,10 @@ document.getElementById("ai-drawer-reject-all").addEventListener("click", () => 
 });
 
 // ── AI settings modal ────────────────────────────────────────────
-function rebuildAiModelDropdown(providerId) {
-  const def = getProviderDef(providerId);
-  const sel = document.getElementById("ai-settings-model");
-  sel.innerHTML = "";
-  for (const m of def.models) {
-    const opt = document.createElement("option");
-    opt.value = m.id;
-    opt.textContent = m.label;
-    sel.appendChild(opt);
-  }
-  sel.value = getProviderModel(providerId) || def.defaultModel;
-}
-function updateAiKeyFieldForProvider(providerId) {
-  const def = getProviderDef(providerId);
-  const keyEl = document.getElementById("ai-settings-key");
-  const stateEl = document.getElementById("ai-settings-key-state");
-  const hintEl = document.getElementById("ai-settings-key-hint");
-  keyEl.placeholder = def.keyPlaceholder;
-  keyEl.value = getProviderHasKey(providerId) ? "•".repeat(20) : "";
-  keyEl.dataset.touched = "";
-  stateEl.textContent = getProviderHasKey(providerId) ? "— stored" : "— not set";
-  hintEl.innerHTML = `Get a key at <code>${def.keyHint}</code>.`;
-}
-function openAiSettings() {
-  const m = document.getElementById("ai-settings-modal");
-  m.hidden = false;
-  const provId = getProviderId();
-  document.getElementById("ai-settings-provider").value = provId;
-  rebuildAiModelDropdown(provId);
-  updateAiKeyFieldForProvider(provId);
-  document.getElementById("ai-settings-consent").checked = hasConsented();
-  document.getElementById("ai-settings-figures").checked = getIncludeFigures();
-  const doclingOn = isDoclingEnabled();
-  document.getElementById("ai-settings-docling").checked = doclingOn;
-  document.getElementById("ai-settings-docling-python").value = getDoclingPython();
-  document.getElementById("ai-settings-docling-python-row").hidden = !doclingOn;
-  document.getElementById("ai-settings-onnx").checked = isOnnxLayoutEnabled();
-  const ollamaOn = isOllamaEnabled();
-  document.getElementById("ai-settings-ollama").checked = ollamaOn;
-  document.getElementById("ai-settings-ollama-endpoint").value = getOllamaEndpoint();
-  document.getElementById("ai-settings-ollama-model").value = getOllamaModel();
-  document.getElementById("ai-settings-ollama-row").hidden = !ollamaOn;
-  refreshOllamaStatusBadge();
-  setTimeout(() => document.getElementById("ai-settings-key").focus(), 0);
-}
-function closeAiSettings() {
-  document.getElementById("ai-settings-modal").hidden = true;
-}
+// openAiSettings, closeAiSettings, rebuildAiModelDropdown,
+// updateAiKeyFieldForProvider moved to src/ai-panel.js in Wave 3.
+// DOM event bindings (ai-settings-btn click, provider change, save,
+// clear) stay here so the wiring is centralized.
 document.getElementById("ai-settings-btn").addEventListener("click", openAiSettings);
 document.getElementById("ai-settings-close").addEventListener("click", closeAiSettings);
 document.getElementById("ai-settings-modal").querySelector(".modal-backdrop").addEventListener("click", closeAiSettings);
@@ -2090,22 +2088,6 @@ document.getElementById("ai-settings-save").addEventListener("click", async () =
   setConsented(document.getElementById("ai-settings-consent").checked);
   setIncludeFigures(document.getElementById("ai-settings-figures").checked);
   setOnnxLayoutEnabled(document.getElementById("ai-settings-onnx").checked);
-  const ollamaOnNow = document.getElementById("ai-settings-ollama").checked;
-  const ollamaOnBefore = isOllamaEnabled();
-  setOllamaEnabled(ollamaOnNow);
-  setOllamaEndpoint(document.getElementById("ai-settings-ollama-endpoint").value.trim());
-  setOllamaModel(document.getElementById("ai-settings-ollama-model").value.trim());
-  // If the user just turned Ollama ON, kick off a prewarm so the next
-  // figure query doesn't pay cold-start. Fire-and-forget.
-  if (ollamaOnNow && !ollamaOnBefore) {
-    (async () => {
-      await startBundledOllama();
-      await waitForOllamaReady(15000);
-      await prewarmOllamaModel();
-    })();
-  }
-  setDoclingEnabled(document.getElementById("ai-settings-docling").checked);
-  setDoclingPython(document.getElementById("ai-settings-docling-python").value.trim());
   closeAiSettings();
   if (!hasApiKey()) aiSetStatus("No API key set for the selected provider.", "error");
   else aiSetStatus("Settings saved.");
@@ -2118,102 +2100,6 @@ document.getElementById("ai-settings-clear").addEventListener("click", async () 
   document.getElementById("ai-settings-key").dataset.touched = "1";
   document.getElementById("ai-settings-key-state").textContent = "— not set";
 });
-document.getElementById("ai-settings-docling").addEventListener("change", (e) => {
-  document.getElementById("ai-settings-docling-python-row").hidden = !e.target.checked;
-});
-document.getElementById("ai-settings-ollama").addEventListener("change", (e) => {
-  document.getElementById("ai-settings-ollama-row").hidden = !e.target.checked;
-  if (e.target.checked) {
-    document.getElementById("ai-settings-onnx").checked = false;
-    refreshOllamaStatusBadge();
-  }
-});
-document.getElementById("ai-settings-onnx").addEventListener("change", (e) => {
-  if (e.target.checked) {
-    document.getElementById("ai-settings-ollama").checked = false;
-    document.getElementById("ai-settings-ollama-row").hidden = true;
-  }
-});
-document.getElementById("ai-settings-pull-model").addEventListener("click", async () => {
-  const btn = document.getElementById("ai-settings-pull-model");
-  const helpEl = document.getElementById("ai-settings-pull-help");
-  const statusEl = document.getElementById("ai-settings-ollama-status");
-  const origHelp = helpEl.innerHTML;
-  const model = document.getElementById("ai-settings-ollama-model").value.trim() || getOllamaModel();
-  await startBundledOllama();
-  const ready = await waitForOllamaReady(10000);
-  if (!ready) {
-    statusEl.textContent = "— Ollama failed to start";
-    statusEl.className = "ai-field-note ai-status-bad";
-    return;
-  }
-  const prevText = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = "Pulling…";
-  helpEl.innerHTML = `<span class="ai-status-warn">Streaming progress…</span>`;
-  try {
-    await pullOllamaModel(model, (p) => {
-      const status = p.status || "";
-      const completed = p.completed != null ? `${(p.completed / 1e6).toFixed(1)} MB` : "";
-      const total = p.total != null ? `${(p.total / 1e6).toFixed(0)} MB` : "";
-      const pct = p.total ? Math.round(((p.completed || 0) / p.total) * 100) : null;
-      btn.textContent = pct != null
-        ? `Pulling… ${pct}%`
-        : `Pulling… ${status}`;
-      helpEl.innerHTML = `<span class="ai-status-warn">${status} ${completed}${total ? ` / ${total}` : ""}</span>`;
-    });
-    btn.textContent = "✓ Pulled — ready";
-    statusEl.textContent = `— ready (${model})`;
-    statusEl.className = "ai-field-note ai-status-good";
-    helpEl.innerHTML = `<span class="ai-status-good">✓ Model ready. You can run figure queries now.</span>`;
-    // Keep success state visible until the user takes another action.
-    btn.disabled = false;
-  } catch (err) {
-    const message = err.message || String(err);
-    console.error("[ollama-pull] FAILED:", err);
-    btn.textContent = "Retry pull";
-    btn.disabled = false;
-    statusEl.textContent = `— pull failed`;
-    statusEl.className = "ai-field-note ai-status-bad";
-    helpEl.innerHTML = `<span class="ai-status-bad">✕ ${message}</span><br><small style="color:var(--text-dim)">Check the dev console for full event log (⌘⌥I → Console → filter "[ollama-pull]").</small>`;
-  }
-  // Don't restore origHelp/prevText automatically — let the user see
-  // the result until they retry or change the model name.
-  void origHelp; void prevText;
-});
-document.getElementById("ai-settings-ollama-endpoint").addEventListener("blur", refreshOllamaStatusBadge);
-document.getElementById("ai-settings-ollama-model").addEventListener("blur", refreshOllamaStatusBadge);
-
-async function refreshOllamaStatusBadge() {
-  const el = document.getElementById("ai-settings-ollama-status");
-  if (!el) return;
-  // Snapshot the live endpoint/model so check uses the un-saved values.
-  const epEl = document.getElementById("ai-settings-ollama-endpoint");
-  const mdEl = document.getElementById("ai-settings-ollama-model");
-  const ep = epEl?.value.trim() || getOllamaEndpoint();
-  const md = mdEl?.value.trim() || getOllamaModel();
-  el.textContent = "— checking…";
-  el.className = "ai-field-note";
-  // Temporarily set so checkOllamaStatus reads the current input.
-  const prevEp = getOllamaEndpoint();
-  const prevMd = getOllamaModel();
-  setOllamaEndpoint(ep);
-  setOllamaModel(md);
-  const status = await checkOllamaStatus();
-  setOllamaEndpoint(prevEp);
-  setOllamaModel(prevMd);
-  if (!status.available) {
-    el.textContent = `— Ollama not running at ${ep}`;
-    el.classList.add("ai-status-bad");
-  } else if (!status.hasModel) {
-    el.textContent = `— Ollama up; run: ollama pull ${md}`;
-    el.classList.add("ai-status-warn");
-  } else {
-    el.textContent = `— ready (${md})`;
-    el.classList.add("ai-status-good");
-  }
-}
-
 function toggleMaximizePane() {
   document.body.classList.toggle("pane-max");
   setTimeout(() => {
@@ -2385,20 +2271,10 @@ document.querySelectorAll("#map-scope .seg-btn").forEach((b) => {
   b.addEventListener("click", () => setMapScope(b.dataset.scope));
 });
 
-document.querySelectorAll("#snippet-sort .seg-btn").forEach((b) => {
-  b.addEventListener("click", () => setSnippetSort(b.dataset.sort));
-  b.classList.toggle("active", b.dataset.sort === state.snippetSort);
-});
-
-function setSnippetSort(sort) {
-  if (sort !== "order" && sort !== "rank") return;
-  state.snippetSort = sort;
-  document.querySelectorAll("#snippet-sort .seg-btn").forEach((b) => {
-    b.classList.toggle("active", b.dataset.sort === sort);
-  });
-  try { localStorage.setItem("pdf-annotator-snippet-sort", sort); } catch {}
-  renderSnippets();
-}
+// Sort toggle (order ↔ rank) removed for now. state.snippetSort is
+// still defaulted to "order" in the state initializer so the existing
+// rank-sort branch in renderSnippets stays inert; restore the toggle
+// HTML + handler if the option is re-introduced later.
 
 document.getElementById("edge-save").addEventListener("click", saveEdgeLabel);
 document.getElementById("edge-delete").addEventListener("click", () => {
@@ -2885,6 +2761,13 @@ document.getElementById("groups-collapse").addEventListener("click", () => {
   document.getElementById("groups-panel").classList.toggle("collapsed");
 });
 
+// Snippets / Lineage / Map section collapse — toggles a class on the
+// outer #snippets-pane so the view-stack hides but the section header
+// stays clickable to expand again.
+document.getElementById("snippets-section-collapse").addEventListener("click", () => {
+  document.getElementById("snippets-pane").classList.toggle("snippets-collapsed");
+});
+
 document.getElementById("groups-template").addEventListener("click", openTemplatesModal);
 document.getElementById("groups-overflow").addEventListener("click", (e) => {
   e.stopPropagation();
@@ -3288,39 +3171,14 @@ function flashButton(id, text) {
   setTimeout(() => { btn.innerHTML = prev; }, 1100);
 }
 
-const DEFAULT_GROUP = { id: "__notes__", name: "Notes" };
-const DEFAULT_GROUP_SEEDED_KEY = "pdf-annotator-default-group-seeded";
-
-const LEGACY_MIGRATED_KEY = "pdf-annotator-groups-migrated-to-ws";
-
-(async () => {
-  try {
-    // One-time migration: pull legacy global groups into the active
-    // workspace if it doesn't have any of its own yet.
-    const alreadyMigrated = (() => {
-      try { return localStorage.getItem(LEGACY_MIGRATED_KEY) === "1"; } catch { return false; }
-    })();
-    if (!alreadyMigrated && state.groupsMeta.length === 0) {
-      let legacy = [];
-      try { legacy = (await getStore().readGlobalGroups()) || []; } catch {}
-      if (legacy.length > 0) {
-        state.groupsMeta = legacy.map((g) => ({ ...g }));
-      }
-      try { localStorage.setItem(LEGACY_MIGRATED_KEY, "1"); } catch {}
-    }
-    const alreadySeeded = (() => {
-      try { return localStorage.getItem(DEFAULT_GROUP_SEEDED_KEY) === "1"; } catch { return false; }
-    })();
-    if (state.groupsMeta.length === 0 && !alreadySeeded) {
-      state.groupsMeta.push({ ...DEFAULT_GROUP });
-      try { localStorage.setItem(DEFAULT_GROUP_SEEDED_KEY, "1"); } catch {}
-    }
-    saveAllWorkspaces();
-    renderGroups();
-  } catch (err) {
-    console.warn("groups bootstrap failed", err);
-  }
-})();
+// Legacy groups-bootstrap IIFE removed when state.groupsMeta moved from
+// workspace-level (persistent) to per-document (ephemeral, hydrated from
+// each sidecar's `groups` array on doc load). Both the legacy-group
+// migration and the DEFAULT_GROUP seeding ran at startup and wrote into
+// state.groupsMeta, which is now cleared on every loadAnyDocument — so
+// they had no lasting effect. The default group, if desired, can be
+// added when a sidecar is first created; the legacy migration is
+// long-past for any active user.
 
 function setActiveFile(path) {
   document.querySelectorAll("#file-list li, #recents-list li").forEach((li) => {
@@ -3346,6 +3204,8 @@ async function loadAnyDocument(path) {
   // see another doc's snippets/edges/highlights between awaits.
   state.snippets = [];
   state.edges = [];
+  state.groupsMeta = [];
+  state.sidecarMtimeMs = 0;
   state.pdfDoc = null;
   state.flowDoc = null;
   state.currentPdfPath = path;
@@ -3418,14 +3278,12 @@ async function loadAnyDocument(path) {
   };
   state.snippets = existing.snippets || [];
   state.edges = existing.edges || [];
-  for (const g of existing.groups || []) {
-    if (!state.groupsMeta.find((x) => x.id === g.id)) {
-      state.groupsMeta.push({ id: g.id, name: g.name || "" });
-    } else if (g.name) {
-      const existingMeta = state.groupsMeta.find((x) => x.id === g.id);
-      if (existingMeta && !existingMeta.name) existingMeta.name = g.name;
-    }
-  }
+  // state.groupsMeta was reset to [] in the sync clear block at the top
+  // of this function, so this is a direct copy — no dedup needed.
+  state.groupsMeta = (existing.groups || []).map((g) => ({ ...g }));
+  // Capture the sidecar's mtime at read time so the next persist can
+  // do an optimistic-concurrency check (Wave 2).
+  state.sidecarMtimeMs = Number(existing._mtimeMs) || 0;
   saveAllWorkspaces();
   if (myToken !== docLoadToken) return;
 
@@ -3550,15 +3408,10 @@ document.addEventListener("paste", async (e) => {
   await createPastedTextSnippet(text);
 });
 
-// Pseudo-source path for pasted snippets — never written to disk; lives in
-// workspace-level localStorage. Lineage view + workspace list treat this as
-// its own document so pasted notes have their own source/umbrella.
-const PASTED_PSEUDO_PATH = "marklee:pasted";
+// Pasted snippet helpers (createPastedTextSnippet, createPastedImageSnippet,
+// getClipboardDocPath, PASTED_PSEUDO_PATH) moved to src/clipboard.js
+// in Wave 3 of the hardening roadmap. Imports at the top of this file.
 
-// Real on-disk placeholder doc used as the storage anchor for pasted image
-// clips. Lives at ~/.marklee/clipboard. Derived clip dir is
-// ~/.marklee/.clipboard.clips/ via clip_dir_for. Resolved once per session.
-let _clipboardDocPath = null;
 async function revealInFinder(path) {
   if (!IS_TAURI) {
     console.warn("[reveal] only supported in Tauri build");
@@ -3571,78 +3424,6 @@ async function revealInFinder(path) {
     console.error("[reveal] failed", err);
     alert(`Couldn't open in Finder:\n${err}`);
   }
-}
-
-async function getClipboardDocPath() {
-  if (_clipboardDocPath) return _clipboardDocPath;
-  if (!IS_TAURI) return null; // FSA mode unsupported for now
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    _clipboardDocPath = await invoke("clipboard_doc_path");
-    return _clipboardDocPath;
-  } catch (err) {
-    console.warn("[clipboard] couldn't resolve clipboard doc path", err);
-    return null;
-  }
-}
-
-async function createPastedTextSnippet(text) {
-  if (!Array.isArray(state.workspace.pastedSnippets)) state.workspace.pastedSnippets = [];
-  const snippet = {
-    id: crypto.randomUUID(),
-    kind: "text",
-    page: 1,
-    text,
-    textNormalized: normalizeText(text),
-    rects: [],
-    comment: "",
-    created: new Date().toISOString(),
-    groups: [],
-    anchor: "pasted",
-  };
-  state.workspace.pastedSnippets.push(snippet);
-  saveAllWorkspaces();
-  refreshActiveView();
-  flashSaveIndicator("saved");
-}
-
-async function createPastedImageSnippet(bytes, mime) {
-  // Pasted image clips go to ~/.marklee/.clipboard.clips/ via the
-  // placeholder clipboard doc — workspace-agnostic, no open document
-  // required. The snippet records the placeholder path so the loader
-  // can resolve the bytes later.
-  const clipboardDoc = await getClipboardDocPath();
-  if (!clipboardDoc) {
-    flashSaveIndicator("error");
-    console.warn("[paste] image paste needs Tauri (clipboard storage)");
-    return;
-  }
-  if (!Array.isArray(state.workspace.pastedSnippets)) state.workspace.pastedSnippets = [];
-  const id = crypto.randomUUID();
-  let imagePath;
-  try {
-    imagePath = await getStore().writeClip(clipboardDoc, id, bytes);
-  } catch (err) {
-    console.error("[paste] writeClip failed", err);
-    return;
-  }
-  const snippet = {
-    id,
-    kind: "image",
-    page: 1,
-    text: "Pasted image",
-    rects: [],
-    imagePath,
-    _imageOwnerPath: clipboardDoc,
-    comment: "",
-    created: new Date().toISOString(),
-    groups: [],
-    anchor: "pasted",
-  };
-  state.workspace.pastedSnippets.push(snippet);
-  saveAllWorkspaces();
-  refreshActiveView();
-  flashSaveIndicator("saved");
 }
 
 async function setScale(next) {
@@ -5246,96 +5027,9 @@ function applyAllHighlights() {
 // sidecar write 200ms after the last call. Awaiting it returns a promise
 // that resolves after the next flush completes (or rejects on error).
 // Use `flushPersist()` to bypass the debounce, e.g. before close.
-const PERSIST_DEBOUNCE_MS = 200;
-let _persistPending = null;
-let _persistResolve = null;
-let _persistReject = null;
-let _persistTimer = null;
-
-function persist() {
-  if (_persistPending) return _persistPending;
-  _persistPending = new Promise((resolve, reject) => {
-    _persistResolve = resolve;
-    _persistReject = reject;
-  });
-  _persistTimer = setTimeout(runPersistFlush, PERSIST_DEBOUNCE_MS);
-  return _persistPending;
-}
-
-async function runPersistFlush() {
-  _persistTimer = null;
-  const resolve = _persistResolve;
-  const reject = _persistReject;
-  _persistPending = null;
-  _persistResolve = null;
-  _persistReject = null;
-  try {
-    await persistImmediate();
-    resolve?.();
-  } catch (err) {
-    reject?.(err);
-  }
-}
-
-async function flushPersist() {
-  if (_persistTimer) {
-    clearTimeout(_persistTimer);
-    await runPersistFlush();
-  }
-}
-
-window.addEventListener("beforeunload", () => {
-  // Best-effort flush — synchronous localStorage writes get through even
-  // during unload; the async sidecar write may not, but the workspace
-  // metadata save inside persistImmediate covers groupsMeta + recents.
-  if (_persistTimer) {
-    clearTimeout(_persistTimer);
-    runPersistFlush();
-  }
-});
-
-async function persistImmediate() {
-  if (!state.currentPdfPath) return;
-  if (state.view === "map") {
-    state.edges = MapView.getEdgesData();
-    const positions = MapView.getNodePositions();
-    state.snippets.forEach((s) => {
-      const p = positions.get(s.id);
-      if (p) s.pos = { x: p.x, y: p.y };
-    });
-  }
-  flashSaveIndicator("saving");
-  // No auto-prune here: a group unused in the current doc may still be in use elsewhere.
-  // Persist workspace state (groupsMeta lives there now, not in a global file).
-  saveAllWorkspaces();
-  // Per-doc sidecar carries only the groups referenced by this doc's snippets,
-  // so a sidecar shared standalone still has enough context.
-  const usedIds = new Set();
-  for (const s of state.snippets) for (const g of s.groups || []) usedIds.add(g);
-  const localGroups = (state.groupsMeta || []).filter((g) => usedIds.has(g.id));
-  try {
-    await getStore().writeAnnot(state.currentPdfPath, {
-      markleeVersion: "0.1",
-      source: state.source,
-      snippets: state.snippets,
-      edges: state.edges,
-      groups: localGroups,
-    });
-    flashSaveIndicator("saved");
-  } catch (err) {
-    console.error("[persist] writeAnnot failed", err);
-    flashSaveIndicator("error");
-    throw err;
-  }
-}
-
-function pruneOrphanGroups() {
-  const used = new Set();
-  for (const s of state.snippets) for (const g of s.groups || []) used.add(g);
-  state.groupsMeta = (state.groupsMeta || []).filter(
-    (g) => used.has(g.id) || (g.name && g.name.trim().length > 0)
-  );
-}
+// Persistence pipeline (persist, flushPersist, persistImmediate,
+// pruneOrphanGroups, beforeunload flush, mtime-conflict handler) moved
+// to src/persistence.js in Wave 3. Imports at the top of this file.
 
 function groupName(id) {
   const meta = (state.groupsMeta || []).find((g) => g.id === id);
@@ -5382,6 +5076,12 @@ function switchView(view) {
   document.getElementById("map-view").hidden = !isMap;
   document.getElementById("lineage-view").hidden = !isLineage;
   document.getElementById("map-scope").hidden = false;
+  // Keep the collapsible section title in sync with the active view so
+  // the heading row reads naturally as the user tabs between modes.
+  const titleEl = document.getElementById("snippets-section-title");
+  if (titleEl) {
+    titleEl.textContent = isMap ? "Map" : isLineage ? "Lineage" : "Snippets";
+  }
   if (isMap) {
     requestAnimationFrame(async () => {
       if (!mapInitialized) {
@@ -5503,16 +5203,29 @@ async function loadWorkspaceMapData() {
   }));
   const folderPdfs = (state.workspace.folders || []).flatMap((f) => f.pdfs || []);
   const allPaths = [...new Set([...(state.workspace.files || []), ...folderPdfs])];
+  // Workspace-level collections live on the active workspace (per SPEC §3.9).
+  // Read once up-front so every return shape includes the same key.
+  const collections = (state.workspace?.collections || []).map((c) => ({ ...c }));
   if (allPaths.length === 0) {
     return state.currentPdfPath
-      ? { snippets: state.snippets.map((s) => ({ ...s, _pdfPath: state.currentPdfPath })), edges: state.edges }
-      : { snippets: [], edges: [] };
+      ? {
+          snippets: state.snippets.map((s) => ({ ...s, _pdfPath: state.currentPdfPath })),
+          edges: state.edges,
+          groups: (state.groupsMeta || []).map((g) => ({ ...g })),
+          collections,
+        }
+      : { snippets: [], edges: [], groups: [], collections };
   }
   const results = await Promise.all(
     allPaths.map((p) => getStore().readAnnot(p).catch(() => null)),
   );
   const snippets = [];
   const edges = [];
+  // Union groups across every member sidecar, deduping by id. Later
+  // sidecars don't overwrite earlier metadata — first writer wins for a
+  // given group id (matches the in-memory copy a user sees when that
+  // doc is the one currently open).
+  const groupsById = new Map();
   for (let i = 0; i < allPaths.length; i++) {
     const r = results[i];
     if (!r) continue;
@@ -5520,17 +5233,23 @@ async function loadWorkspaceMapData() {
       snippets.push({ ...s, _pdfPath: allPaths[i] });
     }
     for (const e of r.edges || []) edges.push(e);
+    for (const g of r.groups || []) {
+      if (g.id && !groupsById.has(g.id)) groupsById.set(g.id, { ...g });
+    }
   }
   if (state.currentPdfPath && !allPaths.includes(state.currentPdfPath)) {
     for (const s of state.snippets) snippets.push({ ...s, _pdfPath: state.currentPdfPath });
     edges.push(...state.edges);
+    for (const g of state.groupsMeta || []) {
+      if (g.id && !groupsById.has(g.id)) groupsById.set(g.id, { ...g });
+    }
   }
   // Workspace-level pasted snippets — virtual source so they appear under
   // their own umbrella in the lineage view + summary + workspace search.
   for (const s of state.workspace?.pastedSnippets || []) {
     snippets.push({ ...s, _pdfPath: PASTED_PSEUDO_PATH });
   }
-  return { snippets, edges };
+  return { snippets, edges, groups: [...groupsById.values()], collections };
 }
 
 async function openGlobalSearch() {
@@ -5728,24 +5447,45 @@ async function setMapScope(scope) {
     b.classList.toggle("active", b.dataset.scope === scope);
   });
   await refreshActiveView();
+  // Footer panel mirrors the scope toggle — "Groups" in doc mode,
+  // "Workspace" (groups union + collections) in workspace mode.
+  renderGroups();
 }
 
 function renderGroups() {
   const list = document.getElementById("groups-list");
   list.innerHTML = "";
+  const titleEl = document.getElementById("groups-panel-title");
+  if (state.mapScope === "workspace") {
+    if (titleEl) titleEl.textContent = "Workspace";
+    renderWorkspaceGroupsPanel(list);
+    return;
+  }
+  if (titleEl) titleEl.textContent = "Groups";
+  renderDocGroupRows(list, state.groupsMeta || [], state.snippets || [], { editable: true });
+}
+
+// Doc-scope (and workspace-scope groups subsection) row builder. Pulled
+// out so the workspace view can reuse the same row chrome with editing
+// disabled (workspace mode shows groups as a read-only union — edits
+// would have to fan out to many sidecars, which is out of scope here).
+function renderDocGroupRows(list, groupsMeta, snippets, opts = {}) {
+  const editable = opts.editable !== false;
   const counts = new Map();
-  for (const s of state.snippets) for (const g of s.groups || []) counts.set(g, (counts.get(g) || 0) + 1);
-  const ids = (state.groupsMeta || []).map((g) => g.id);
+  for (const s of snippets) for (const g of s.groups || []) counts.set(g, (counts.get(g) || 0) + 1);
+  const ids = groupsMeta.map((g) => g.id);
   for (const cid of counts.keys()) if (!ids.includes(cid)) ids.push(cid);
   if (ids.length === 0) {
     const empty = document.createElement("li");
     empty.className = "groups-empty";
-    empty.textContent = "No groups yet — right-click a snippet to start grouping.";
+    empty.textContent = editable
+      ? "No groups yet — right-click a snippet to start grouping."
+      : "No groups in this workspace yet.";
     list.appendChild(empty);
     return;
   }
   for (const id of ids) {
-    const meta = (state.groupsMeta || []).find((g) => g.id === id) || { id, name: "" };
+    const meta = groupsMeta.find((g) => g.id === id) || { id, name: "" };
     const li = document.createElement("li");
     li.className = "group-row";
     li.dataset.groupId = id;
@@ -5753,84 +5493,177 @@ function renderGroups() {
     if (memberCount === 0) li.classList.add("empty");
     if (meta.hidden) li.classList.add("bubble-hidden");
 
-    li.addEventListener("dragover", (e) => {
-      if (!e.dataTransfer.types.includes("text/plain")) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "link";
-      li.classList.add("drop-target");
-    });
-    li.addEventListener("dragleave", () => li.classList.remove("drop-target"));
-    li.addEventListener("drop", async (e) => {
-      e.preventDefault();
-      li.classList.remove("drop-target");
-      const snippetId = e.dataTransfer.getData("text/plain");
-      if (!snippetId) return;
-      const snippet = state.snippets.find((x) => x.id === snippetId);
-      if (!snippet) return;
-      snippet.groups = snippet.groups || [];
-      if (!snippet.groups.includes(id)) snippet.groups.push(id);
-      await persist();
-      refreshActiveView();
-      applyAllHighlights();
-    });
+    if (editable) {
+      li.addEventListener("dragover", (e) => {
+        if (!e.dataTransfer.types.includes("text/plain")) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "link";
+        li.classList.add("drop-target");
+      });
+      li.addEventListener("dragleave", () => li.classList.remove("drop-target"));
+      li.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        li.classList.remove("drop-target");
+        const snippetId = e.dataTransfer.getData("text/plain");
+        if (!snippetId) return;
+        const snippet = state.snippets.find((x) => x.id === snippetId);
+        if (!snippet) return;
+        snippet.groups = snippet.groups || [];
+        if (!snippet.groups.includes(id)) snippet.groups.push(id);
+        await persist();
+        refreshActiveView();
+        applyAllHighlights();
+      });
+    }
 
     const sticker = document.createElement("button");
     sticker.type = "button";
     sticker.className = "group-row-sticker";
-    sticker.title = "Click to recolor · drag onto a snippet to tag it";
-    sticker.style.setProperty("--g", groupColorHex(id));
-    // Click → open palette popover anchored to the sticker.
-    // Drag → start sticker drag onto a snippet (handled by maybeBeginStickerDrag).
-    sticker.addEventListener("pointerdown", (e) => {
-      maybeBeginStickerDrag(e, id, meta, () => openColorPopover(sticker, id));
-    });
+    sticker.title = editable
+      ? "Click to recolor · drag onto a snippet to tag it"
+      : "Workspace-scope view — switch to this doc to edit";
+    // In doc mode groupColorHex reads state.groupsMeta; in workspace mode
+    // the row meta came from a different sidecar, so prefer its own color
+    // field. Falls back to the hashed default when neither is set.
+    const colorRaw = meta.color
+      || (state.groupsMeta?.find((g) => g.id === id)?.color)
+      || defaultGroupColor(id);
+    const colorHex = colorRaw.startsWith("#") ? colorRaw : hslToHex(colorRaw);
+    sticker.style.setProperty("--g", colorHex);
+    if (editable) {
+      sticker.addEventListener("pointerdown", (e) => {
+        maybeBeginStickerDrag(e, id, meta, () => openColorPopover(sticker, id));
+      });
+    }
 
     const input = document.createElement("input");
     input.type = "text";
     input.placeholder = `Group ${ids.indexOf(id) + 1}`;
     input.value = meta.name || "";
+    if (!editable) input.readOnly = true;
     let saveTimer;
-    input.addEventListener("input", () => {
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(() => renameGroup(id, input.value), 250);
-    });
-    input.addEventListener("blur", () => renameGroup(id, input.value));
+    if (editable) {
+      input.addEventListener("input", () => {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => renameGroup(id, input.value), 250);
+      });
+      input.addEventListener("blur", () => renameGroup(id, input.value));
+    }
 
     const count = document.createElement("span");
     count.className = "group-row-count";
     const n = counts.get(id) || 0;
     if (n === 0) {
-      count.textContent = "not in this doc";
+      count.textContent = editable ? "not in this doc" : "—";
       count.dataset.short = "—";
     } else {
-      count.textContent = `${n} here`;
+      count.textContent = editable ? `${n} here` : `${n}`;
       count.dataset.short = `${n}`;
     }
 
-    // Group-visibility checkbox. Checked = snippets in this group are
-    // shown in the list / lineage / highlights / drag-bubbles. Unchecked
-    // hides them everywhere (toggle, not destructive).
     const eye = document.createElement("input");
     eye.type = "checkbox";
     eye.className = "group-row-eye";
     eye.checked = !meta.hidden;
     eye.title = meta.hidden ? "Group hidden — click to show" : "Group visible — click to hide";
-    eye.addEventListener("change", (e) => {
-      e.stopPropagation();
-      setGroupHidden(id, !eye.checked);
-    });
-    eye.addEventListener("click", (e) => e.stopPropagation());
+    if (editable) {
+      eye.addEventListener("change", (e) => {
+        e.stopPropagation();
+        setGroupHidden(id, !eye.checked);
+      });
+      eye.addEventListener("click", (e) => e.stopPropagation());
+    } else {
+      eye.disabled = true;
+    }
 
-    const del = document.createElement("button");
-    del.className = "group-row-delete";
-    del.textContent = "delete";
-    del.title = "Delete group (snippets are preserved)";
-    del.addEventListener("click", async () => {
-      if (!confirm(`Delete this group? Snippets stay, just no longer grouped.`)) return;
-      await deleteGroup(id);
-    });
+    if (editable) {
+      const del = document.createElement("button");
+      del.className = "group-row-delete";
+      del.textContent = "delete";
+      del.title = "Delete group (snippets are preserved)";
+      del.addEventListener("click", async () => {
+        if (!confirm(`Delete this group? Snippets stay, just no longer grouped.`)) return;
+        await deleteGroup(id);
+      });
+      li.append(sticker, input, count, eye, del);
+    } else {
+      li.append(sticker, input, count, eye);
+    }
+    list.appendChild(li);
+  }
+}
 
-    li.append(sticker, input, count, eye, del);
+// Workspace-scope footer. Two stacked subsections inside the same scroll
+// region: groups (read-only union across member sidecars) then
+// collections (from the active workspace sidecar — per SPEC §3.9).
+async function renderWorkspaceGroupsPanel(list) {
+  const placeholder = document.createElement("li");
+  placeholder.className = "groups-empty";
+  placeholder.textContent = "Loading workspace…";
+  list.appendChild(placeholder);
+  let data;
+  try {
+    data = await loadWorkspaceMapData();
+  } catch (err) {
+    console.warn("[groups-panel] workspace load failed", err);
+    placeholder.textContent = "Could not load workspace groups.";
+    return;
+  }
+  // If a scope toggle happened mid-load, bail — the doc-mode render
+  // will already have rebuilt the list.
+  if (state.mapScope !== "workspace") return;
+  list.innerHTML = "";
+
+  // Subsection header helper — keeps the same uppercase-tracking look
+  // as the panel header without re-styling each insertion.
+  const subhead = (label) => {
+    const li = document.createElement("li");
+    li.className = "groups-subhead";
+    li.textContent = label;
+    return li;
+  };
+
+  const groups = data.groups || [];
+  const collections = data.collections || [];
+  list.appendChild(subhead(`Groups · ${groups.length}`));
+  if (groups.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "groups-empty";
+    empty.textContent = "No groups in this workspace yet.";
+    list.appendChild(empty);
+  } else {
+    renderDocGroupRows(list, groups, data.snippets || [], { editable: false });
+  }
+
+  list.appendChild(subhead(`Collections · ${collections.length}`));
+  if (collections.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "groups-empty";
+    empty.textContent = "No collections — define via workspace sidecar.";
+    list.appendChild(empty);
+    return;
+  }
+  for (const c of collections) {
+    const li = document.createElement("li");
+    li.className = "group-row collection-row";
+    li.dataset.collectionId = c.id;
+    const sticker = document.createElement("span");
+    sticker.className = "group-row-sticker collection-sticker";
+    if (c.color) sticker.style.setProperty("--g", c.color);
+    sticker.title = c.kind ? `Collection · ${c.kind}` : "Collection";
+    const name = document.createElement("span");
+    name.className = "collection-name";
+    name.textContent = c.name || "(unnamed collection)";
+    const count = document.createElement("span");
+    count.className = "group-row-count";
+    // Member count derives from any member sidecar that lists this
+    // collection id; computed once over the workspace's members.
+    const memberCount = (state.workspace?.members || []).filter(
+      (m) => (m.collections || []).includes(c.id),
+    ).length;
+    count.textContent = `${memberCount}`;
+    count.dataset.short = `${memberCount}`;
+    li.append(sticker, name, count);
     list.appendChild(li);
   }
 }
@@ -6465,7 +6298,9 @@ function renderSummaryGroupsPanel(orderedGids, sections, ungroupedCount) {
     const gid = orderedGids[idx];
     const li = document.createElement("li");
     li.className = "summary-group-pill";
-    li.draggable = true;
+    // Not using HTML5 drag (draggable=true) — pointer events handle
+    // reorder. Leaving draggable=true would let WebKit start a system
+    // drag that we then have to cancel.
     li.dataset.gid = gid;
     li.style.setProperty("--g-color", groupColor(gid));
     const dot = document.createElement("span");
@@ -6518,65 +6353,93 @@ function renderSummaryGroupsPanel(orderedGids, sections, ungroupedCount) {
   wireSummaryGroupDrag(list);
 }
 
-// Drag state lives at module scope so handlers attached to a fresh
-// <ul> can read it across drag sessions.
-let _summaryDragGid = null;
-
+// Reorder via pointer events rather than HTML5 drag-and-drop. The
+// browser drag API kept losing to other listeners in the app
+// (snippet→group drop targets, Tauri drag-region intercept on the
+// title strip, modal click handlers). Pointer events have none of
+// that ceremony — pointerdown on a pill captures the gid, pointermove
+// tracks the cursor and highlights the pill underneath, pointerup
+// performs the reorder. Small click-vs-drag threshold so a quick
+// click still scrolls to the section.
 function wireSummaryGroupDrag(list) {
-  list.addEventListener("dragstart", (e) => {
-    const li = e.target.closest(".summary-group-pill");
-    if (!li || !li.dataset.gid) {
-      e.preventDefault();
-      return;
+  let downGid = null;
+  let startY = 0;
+  let dragging = false;
+  const DRAG_THRESHOLD = 4;
+
+  const findPillAt = (clientX, clientY) => {
+    for (const li of list.querySelectorAll(".summary-group-pill")) {
+      if (!li.dataset.gid) continue;
+      const r = li.getBoundingClientRect();
+      if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
+        return li;
+      }
     }
-    _summaryDragGid = li.dataset.gid;
-    li.classList.add("dragging");
-    // WebKit refuses to start a drag without dataTransfer.setData().
-    // Use a custom MIME (NOT text/plain) so this drag is invisible to
-    // the snippet→group drop handlers on .group-row elements in the
-    // Groups panel — they check for text/plain and would otherwise
-    // try to treat our group-id as a snippet-id.
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("application/x-marklee-summary-group", li.dataset.gid);
+    return null;
+  };
+
+  list.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    // Ignore clicks on the inline ▲/▼ arrows so they keep working
+    // as plain buttons.
+    if (e.target.closest(".summary-group-pill-arrow")) return;
+    const li = e.target.closest(".summary-group-pill");
+    if (!li || !li.dataset.gid) return;
+    downGid = li.dataset.gid;
+    startY = e.clientY;
+    dragging = false;
+    // Capture the pointer to <ul> so pointermove/up keep flowing even
+    // when the cursor crosses out of any specific pill or out of the
+    // list entirely. Without this, WebKit drops move events the
+    // moment the cursor leaves the element where pointerdown fired.
+    try { list.setPointerCapture(e.pointerId); } catch {}
+    // Visible immediate feedback so the user can tell pointerdown
+    // registered — otherwise the threshold delay can feel like
+    // nothing's happening.
+    li.classList.add("press");
   });
 
-  list.addEventListener("dragend", () => {
-    list.querySelectorAll(".dragging, .drag-over").forEach((el) =>
-      el.classList.remove("dragging", "drag-over"));
-    _summaryDragGid = null;
-  });
-
-  list.addEventListener("dragover", (e) => {
-    if (!_summaryDragGid) return;
-    // preventDefault BEFORE the same-pill guard so we always declare
-    // the list as a valid drop target — otherwise WebKit cancels the
-    // drag the moment the cursor leaves the source pill.
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    const over = e.target.closest(".summary-group-pill");
+  list.addEventListener("pointermove", (e) => {
+    if (!downGid) return;
+    if (!dragging && Math.abs(e.clientY - startY) < DRAG_THRESHOLD) return;
+    if (!dragging) {
+      dragging = true;
+      const src = list.querySelector(`.summary-group-pill[data-gid="${downGid}"]`);
+      src?.classList.add("dragging");
+      document.body.classList.add("summary-reorder-active");
+    }
+    const over = findPillAt(e.clientX, e.clientY);
     list.querySelectorAll(".drag-over").forEach((el) => el.classList.remove("drag-over"));
-    if (over && over.dataset.gid && over.dataset.gid !== _summaryDragGid) {
+    if (over && over.dataset.gid && over.dataset.gid !== downGid) {
       over.classList.add("drag-over");
     }
   });
 
-  list.addEventListener("drop", async (e) => {
-    e.preventDefault();
-    if (!_summaryDragGid) return;
-    const over = e.target.closest(".summary-group-pill");
-    if (!over || !over.dataset.gid || over.dataset.gid === _summaryDragGid) return;
-    const targetGid = over.dataset.gid;
-    const draggingGid = _summaryDragGid;
-    _summaryDragGid = null;
+  const finish = (e) => {
+    if (!downGid) return;
+    const wasDragging = dragging;
+    const sourceGid = downGid;
+    downGid = null;
+    dragging = false;
+    try { list.releasePointerCapture(e.pointerId); } catch {}
+    document.body.classList.remove("summary-reorder-active");
+    list.querySelectorAll(".press, .dragging, .drag-over").forEach((el) =>
+      el.classList.remove("press", "dragging", "drag-over"));
+    if (!wasDragging) return; // pure click — pill's own click handler runs separately
+    const over = findPillAt(e.clientX, e.clientY);
+    if (!over || !over.dataset.gid || over.dataset.gid === sourceGid) return;
     const meta = state.groupsMeta || [];
-    const fromIdx = meta.findIndex((g) => g.id === draggingGid);
-    const toIdx = meta.findIndex((g) => g.id === targetGid);
+    const fromIdx = meta.findIndex((g) => g.id === sourceGid);
+    const toIdx = meta.findIndex((g) => g.id === over.dataset.gid);
     if (fromIdx === -1 || toIdx === -1) return;
     const [moved] = meta.splice(fromIdx, 1);
     meta.splice(toIdx, 0, moved);
     saveWorkspace();
     openSummary();
-  });
+  };
+
+  list.addEventListener("pointerup", finish);
+  list.addEventListener("pointercancel", finish);
 }
 
 function closeSummary() {

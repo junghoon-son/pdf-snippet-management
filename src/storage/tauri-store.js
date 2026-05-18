@@ -27,12 +27,23 @@ export class TauriStore {
   }
 
   async readAnnot(path) {
+    // Rust side flattens AnnotFile + adds _mtimeMs (0 when sidecar
+    // doesn't exist). normalizeAnnotFile passes the extra field through.
     const af = await invoke("read_annot", { pdfPath: path });
     return normalizeAnnotFile(af, path);
   }
 
-  async writeAnnot(path, annot) {
-    await invoke("write_annot", { pdfPath: path, payload: annot });
+  // expectedMtimeMs:
+  //   -1 → skip the check (explicit user-consent overwrite)
+  //    0 → caller expects no prior file (first write)
+  //   >0 → must match the sidecar's current mtime, else returns conflict
+  // Returns { ok, mtimeMs, conflict? } from the Rust side.
+  async writeAnnot(path, annot, expectedMtimeMs = -1) {
+    return await invoke("write_annot", {
+      pdfPath: path,
+      payload: annot,
+      expectedMtimeMs,
+    });
   }
 
   async readGlobalGroups() {
@@ -72,5 +83,8 @@ function normalizeAnnotFile(af, path) {
   af.snippets = af.snippets || [];
   af.edges = af.edges || [];
   af.groups = af.groups || [];
+  // _mtimeMs is added by the Rust read_annot wrapper; default to 0 so
+  // callers can treat absence as "no prior file" uniformly.
+  if (typeof af._mtimeMs !== "number") af._mtimeMs = 0;
   return af;
 }

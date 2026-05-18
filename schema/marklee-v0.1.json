@@ -59,6 +59,10 @@
         "groups": {
           "type": "array",
           "items": { "$ref": "#/$defs/group" }
+        },
+        "collections": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/collection" }
         }
       }
     },
@@ -71,7 +75,8 @@
           "type": "string",
           "pattern": "^(sha256:)?[0-9a-f]{64}$"
         },
-        "title": { "type": "string" }
+        "title": { "type": "string" },
+        "collections": { "type": "array", "items": { "type": "string" } }
       }
     },
     "note": {
@@ -89,6 +94,7 @@
         "comment": { "type": "string" },
         "groups": { "type": "array", "items": { "type": "string" } },
         "tags": { "type": "array", "items": { "type": "string" } },
+        "collections": { "type": "array", "items": { "type": "string" } },
         "created": { "type": "string", "format": "date-time" }
       },
       "allOf": [
@@ -178,6 +184,17 @@
         "id":    { "type": "string", "minLength": 1 },
         "name":  { "type": "string" },
         "color": { "type": "string" }
+      }
+    },
+    "collection": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id":          { "type": "string", "minLength": 1 },
+        "name":        { "type": "string" },
+        "color":       { "type": "string" },
+        "kind":        { "type": "string" },
+        "description": { "type": "string" }
       }
     }
   }

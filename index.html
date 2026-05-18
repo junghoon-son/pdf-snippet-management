@@ -11,6 +11,7 @@
       <div id="ws-traffic-spacer" data-tauri-drag-region></div>
       <div id="ws-tabs-list"></div>
       <button id="ws-tab-add" title="New workspace">+</button>
+      <button id="help-btn" title="How to group + shortcuts">?</button>
       <button id="theme-btn" title="Theme" aria-haspopup="true" aria-expanded="false">◐</button>
       <div id="theme-menu" hidden role="menu" aria-label="Theme"></div>
     </div>
@@ -101,15 +102,10 @@
             <button class="tab-btn" data-view="lineage">lineage</button>
           </div>
           <div class="header-tools">
-            <div id="snippet-sort" class="seg-toggle" title="Sort snippets">
-              <button class="seg-btn active" data-sort="order" data-short="ord">order</button>
-              <button class="seg-btn" data-sort="rank" data-short="rnk" title="Sort by MarkRank — graph centrality">rank</button>
-            </div>
             <div id="map-scope" class="seg-toggle" hidden>
               <button class="seg-btn active" data-scope="doc" data-short="doc">this doc</button>
               <button class="seg-btn" data-scope="workspace" data-short="ws">workspace</button>
             </div>
-            <button id="help-btn" title="How to group + shortcuts">?</button>
             <button id="summary-btn" title="Show summary" data-short="sum">summary</button>
             <button id="ai-toggle-btn" title="Ask AI (premium)" aria-pressed="false">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.39 6.36L21 11l-6.61 2.64L12 20l-2.39-6.36L3 11l6.61-2.64L12 2z"/></svg>
@@ -119,20 +115,20 @@
             <button id="ai-settings-btn" title="AI settings">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             </button>
-            <button id="delete-all-btn" title="Delete all annotations in this document">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-            </button>
             <button id="maximize-btn" title="Expand panel to full window (⌘⇧M)">⛶</button>
           </div>
         </div>
         <div id="ai-ask-bar">
-          <input id="ai-ask-input" placeholder="Ask about this document…   ⌘↵ to send" autocomplete="off" />
-          <button id="ai-ask-submit" title="Ask">↵</button>
-          <span id="ai-ask-status"></span>
+          <div class="ai-ask-row">
+            <input id="ai-ask-input" placeholder="Ask about this document…   ⌘↵ to send" autocomplete="off" />
+            <button id="ai-ask-submit" title="Ask">↵</button>
+          </div>
+          <div id="ai-loading-bar" aria-hidden="true"></div>
+          <span id="ai-ask-status" hidden></span>
         </div>
         <div id="ai-drawer" hidden>
-          <div id="ai-drawer-header">
-            <button id="ai-drawer-collapse" title="Collapse / expand AI pane">▾</button>
+          <div id="ai-drawer-header" class="pane-section-header">
+            <span class="pane-section-title">AI Suggestions</span>
             <span id="ai-drawer-query"></span>
             <span class="ai-drawer-sep"></span>
             <span id="ai-drawer-count"></span>
@@ -140,10 +136,21 @@
             <button id="ai-drawer-accept-all" title="Accept all">✓ all</button>
             <button id="ai-drawer-reject-all" title="Reject all">✕ all</button>
             <button id="ai-drawer-close" title="Close suggestions (Esc)">×</button>
+            <button id="ai-drawer-collapse" class="pane-section-collapse" title="Collapse / expand AI pane">▾</button>
           </div>
           <ul id="ai-drawer-list"></ul>
         </div>
         <div class="resize-handle-h" id="ai-drawer-resize" title="Drag to resize AI pane"></div>
+        <div id="snippets-section-header" class="pane-section-header">
+          <span class="pane-section-title" id="snippets-section-title">Snippets</span>
+          <span class="toolbar-spacer"></span>
+          <div class="snippets-section-actions">
+            <button id="delete-all-btn" title="Delete all annotations in this document">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+            </button>
+            <button id="snippets-section-collapse" class="pane-section-collapse" title="Collapse / expand">▾</button>
+          </div>
+        </div>
         <div id="view-stack">
           <ul id="snippets-list"></ul>
           <div id="map-view" hidden>
@@ -164,12 +171,13 @@
           </div>
         </div>
         <div id="groups-panel">
-          <div class="groups-panel-header">
-            <span>Groups</span>
+          <div class="groups-panel-header pane-section-header">
+            <span id="groups-panel-title" class="pane-section-title">Groups</span>
+            <span class="toolbar-spacer"></span>
             <div class="groups-panel-actions">
               <button id="groups-template" title="Apply a group template" data-short="tmpl">templates</button>
               <button id="groups-overflow" title="More group actions (import / export)" aria-label="More group actions">⋯</button>
-              <button id="groups-collapse" title="Collapse / expand">▾</button>
+              <button id="groups-collapse" class="pane-section-collapse" title="Collapse / expand">▾</button>
             </div>
           </div>
           <ul id="groups-list"></ul>
@@ -328,7 +336,7 @@
           </label>
           <label class="ai-field ai-field-row">
             <input id="ai-settings-figures" type="checkbox" />
-            <span>Include figures (vision pass — renders each PDF page as an image, ~50% extra cost).</span>
+            <span>Include figures (vision pass — renders each PDF page as an image; cost scales with page count).</span>
           </label>
           <fieldset class="ai-fieldset">
             <legend>Layout detector</legend>
@@ -339,25 +347,6 @@
                 <em class="ai-field-note">First run downloads ~171&nbsp;MB (docling-project/docling-layout-heron, Apache-2.0).</em>
               </span>
             </label>
-            <!-- Hidden legacy detector controls. The DOM elements stay so
-                 main.js can populate/read them without null errors; the
-                 wrapper hides them from users. Re-show by removing the
-                 hidden attribute if you ever want to expose Ollama or
-                 Docling as a layout backend again. -->
-            <div hidden aria-hidden="true">
-              <input id="ai-settings-ollama" type="checkbox" />
-              <em id="ai-settings-ollama-status"></em>
-              <div id="ai-settings-ollama-row" hidden>
-                <button id="ai-settings-pull-model" type="button"></button>
-                <span id="ai-settings-pull-help"></span>
-                <input id="ai-settings-ollama-endpoint" type="text" />
-                <input id="ai-settings-ollama-model" type="text" />
-              </div>
-              <input id="ai-settings-docling" type="checkbox" />
-              <div id="ai-settings-docling-python-row" hidden>
-                <input id="ai-settings-docling-python" type="text" />
-              </div>
-            </div>
           </fieldset>
           <div class="ai-settings-actions">
             <button id="ai-settings-save" class="primary">Save</button>
