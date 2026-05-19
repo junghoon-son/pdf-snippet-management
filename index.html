@@ -12,6 +12,7 @@
       <div id="ws-tabs-list"></div>
       <button id="ws-tab-add" title="New workspace">+</button>
       <button id="help-btn" title="How to group + shortcuts">?</button>
+      <button id="maximize-btn" title="Expand panel to full window (⌘⇧M)">⛶</button>
       <button id="theme-btn" title="Theme" aria-haspopup="true" aria-expanded="false">◐</button>
       <div id="theme-menu" hidden role="menu" aria-label="Theme"></div>
     </div>
@@ -96,53 +97,53 @@
           <input id="local-search-input" placeholder="filter snippets…  Esc to clear" />
           <span id="local-search-count"></span>
         </div>
-        <div class="snippets-header">
-          <div class="header-tabs">
-            <button class="tab-btn active" data-view="list">snippets</button>
-            <button class="tab-btn" data-view="lineage">lineage</button>
-          </div>
-          <div class="header-tools">
-            <div id="map-scope" class="seg-toggle" hidden>
-              <button class="seg-btn active" data-scope="doc" data-short="doc">this doc</button>
-              <button class="seg-btn" data-scope="workspace" data-short="ws">workspace</button>
-            </div>
-            <button id="summary-btn" title="Show summary" data-short="sum">summary</button>
-            <button id="ai-toggle-btn" title="Ask AI (premium)" aria-pressed="false">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.39 6.36L21 11l-6.61 2.64L12 20l-2.39-6.36L3 11l6.61-2.64L12 2z"/></svg>
-              <span class="ai-toggle-label">AI</span>
-              <span class="ai-toggle-plus" title="Premium">＋</span>
-            </button>
-            <button id="ai-settings-btn" title="AI settings">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            </button>
-            <button id="maximize-btn" title="Expand panel to full window (⌘⇧M)">⛶</button>
-          </div>
-        </div>
-        <div id="ai-ask-bar">
-          <div class="ai-ask-row">
-            <input id="ai-ask-input" placeholder="Ask about this document…   ⌘↵ to send" autocomplete="off" />
-            <button id="ai-ask-submit" title="Ask">↵</button>
-          </div>
-          <div id="ai-loading-bar" aria-hidden="true"></div>
-          <span id="ai-ask-status" hidden></span>
-        </div>
-        <div id="ai-drawer" hidden>
-          <div id="ai-drawer-header" class="pane-section-header">
-            <span class="pane-section-title">AI Suggestions</span>
-            <span id="ai-drawer-query"></span>
-            <span class="ai-drawer-sep"></span>
-            <span id="ai-drawer-count"></span>
+        <!-- AI section — own collapsible group (own header, ask bar, drawer). -->
+        <div id="ai-section">
+          <div id="ai-section-header" class="pane-section-header">
+            <span class="pane-section-title">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="vertical-align:-1px; color: var(--accent);"><path d="M12 2l2.39 6.36L21 11l-6.61 2.64L12 20l-2.39-6.36L3 11l6.61-2.64L12 2z"/></svg>
+              AI
+            </span>
             <span class="toolbar-spacer"></span>
-            <button id="ai-drawer-accept-all" title="Accept all">✓ all</button>
-            <button id="ai-drawer-reject-all" title="Reject all">✕ all</button>
-            <button id="ai-drawer-close" title="Close suggestions (Esc)">×</button>
-            <button id="ai-drawer-collapse" class="pane-section-collapse" title="Collapse / expand AI pane">▾</button>
+            <button id="ai-settings-btn" title="AI settings">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
+            <button id="ai-section-collapse" class="pane-section-collapse" title="Collapse / expand AI section">▾</button>
           </div>
-          <ul id="ai-drawer-list"></ul>
+          <div id="ai-ask-bar">
+            <div class="ai-ask-row">
+              <input id="ai-ask-input" placeholder="Ask about this document…   ⌘↵ to send" autocomplete="off" />
+              <button id="ai-ask-submit" title="Ask">↵</button>
+            </div>
+            <div id="ai-loading-bar" aria-hidden="true"></div>
+            <span id="ai-ask-status" hidden></span>
+          </div>
+          <div id="ai-drawer" hidden>
+            <div id="ai-drawer-header" class="pane-section-subhead">
+              <span id="ai-drawer-query"></span>
+              <span class="ai-drawer-sep"></span>
+              <span id="ai-drawer-count"></span>
+              <span class="toolbar-spacer"></span>
+              <button id="ai-drawer-accept-all" title="Accept all">✓ all</button>
+              <button id="ai-drawer-reject-all" title="Reject all">✕ all</button>
+              <button id="ai-drawer-close" title="Close suggestions (Esc)">×</button>
+              <button id="ai-drawer-collapse" class="pane-section-collapse" title="Collapse / expand drawer">▾</button>
+            </div>
+            <ul id="ai-drawer-list"></ul>
+          </div>
         </div>
         <div class="resize-handle-h" id="ai-drawer-resize" title="Drag to resize AI pane"></div>
+        <!-- Snippets section — tabs (Snippets / Lineage), scope toggle, summary, delete. -->
         <div id="snippets-section-header" class="pane-section-header">
-          <span class="pane-section-title" id="snippets-section-title">Snippets</span>
+          <div class="header-tabs">
+            <button class="tab-btn active" data-view="list">Snippets</button>
+            <button class="tab-btn" data-view="lineage">Lineage</button>
+          </div>
+          <div id="map-scope" class="seg-toggle" hidden>
+            <button class="seg-btn active" data-scope="doc" data-short="doc">this doc</button>
+            <button class="seg-btn" data-scope="workspace" data-short="ws">workspace</button>
+          </div>
+          <button id="summary-btn" title="Show summary" data-short="sum">summary</button>
           <span class="toolbar-spacer"></span>
           <div class="snippets-section-actions">
             <button id="delete-all-btn" title="Delete all annotations in this document">

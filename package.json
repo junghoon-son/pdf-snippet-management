@@ -10,7 +10,8 @@
     "tauri": "tauri",
     "test": "bun test spec/tests/",
     "summary": "bun run scripts/summary.mjs",
-    "annotate": "bun run scripts/annotate.mjs"
+    "annotate": "bun run scripts/annotate.mjs",
+    "ai-batch": "bun run scripts/ai-batch.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.10.1",

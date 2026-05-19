@@ -111,7 +111,7 @@
         "filename":    { "type": "string" },
         "title":       { "type": "string" },
         "author":      { "type": "string" },
-        "kind":        { "enum": ["pdf", "markdown", "docx"] },
+        "kind":        { "enum": ["pdf", "markdown", "docx", "image"] },
         "contentHash": {
           "type": "string",
           "pattern": "^(sha256:)?[0-9a-f]{64}$"

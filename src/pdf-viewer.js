@@ -260,11 +260,32 @@ function hashItems(items, hoverId) {
 export function applyHighlights(container, snippets) {
   _lastSnippets = snippets || [];
   bucketByPage(_lastSnippets);
+  // Diagnostic: surface the bucket → page mapping so "no highlights"
+  // bugs are immediately traceable (snippet exists but page mismatch,
+  // empty rects, no pageStates entry, etc.).
+  const bucketSummary = [];
+  for (const [p, items] of _pageBuckets) {
+    bucketSummary.push(`p${p}:${items.length}`);
+  }
+  console.log("[hl] applyHighlights", {
+    snippetCount: _lastSnippets.length,
+    pageStatesSize: pageStates.size,
+    buckets: bucketSummary.join(" ") || "(none)",
+  });
   for (const ps of pageStates.values()) {
     const pageNum = parseInt(ps.wrap.dataset.page, 10);
     const items = _pageBuckets.get(pageNum) || [];
     const hash = hashItems(items, _hoverSnippetId);
-    if (_pageHashes.get(pageNum) === hash) continue;
+    if (_pageHashes.get(pageNum) === hash) {
+      if (items.length) console.log(`[hl] page ${pageNum} skip (hash unchanged), ${items.length} items`);
+      continue;
+    }
+    console.log(`[hl] page ${pageNum} paint ${items.length} item(s)`, items.map((it) => ({
+      id: it.snippet.id?.slice(0, 4),
+      kind: it.snippet.kind,
+      ghost: !!it.ghost,
+      rect: it.rect,
+    })));
     paintHighlightCanvas(ps.highlightLayer, items);
     _pageHashes.set(pageNum, hash);
   }
@@ -317,6 +338,7 @@ function paintHighlightCanvas(canvas, items) {
   const ctx = canvas.getContext("2d");
   const W = canvas.width;
   const H = canvas.height;
+  console.log(`[hl] paintHighlightCanvas W=${W} H=${H} items=${items.length} canvasInDom=${!!canvas.isConnected}`);
   ctx.clearRect(0, 0, W, H);
   if (items.length === 0) return;
 
@@ -367,6 +389,14 @@ function paintHighlightCanvas(canvas, items) {
     const hot = snippet.id === _hoverSnippetId;
     ctx.save();
     if (ghost) ctx.globalAlpha = 0.55;
+    // Solid HL_FILL — the highlight-layer canvas above us has
+    // `opacity: 0.42; mix-blend-mode: multiply` in CSS, so any rgba()
+    // with internal alpha would attenuate twice and disappear. Use the
+    // same solid fill text snippets use; let the layer's blend handle
+    // visibility. Image-kind also draws a dashed teal outline below
+    // so it's distinguishable from a plain text highlight.
+    ctx.fillStyle = hot ? HL_HOVER_FILL : HL_FILL;
+    ctx.fillRect(rect.left * W, rect.top * H, rect.width * W, rect.height * H);
     ctx.strokeStyle = hot ? HL_IMAGE_HOVER_STROKE : HL_IMAGE_STROKE;
     ctx.lineWidth = (hot ? 2.5 : 1.5) * dpr;
     ctx.setLineDash([6 * dpr, 4 * dpr]);

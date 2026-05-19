@@ -5,120 +5,28 @@
 // and the doc as plain text; gets back an array of suggestions.
 
 import { callMessages, getMaxOutputTokens } from "./providers.js";
+import { READER_SYSTEM, READER_TOOL } from "./reader-prompt.js";
 
-// Minimal system prompt. The heavy lifting is done by:
-//   - the tool-use schema (forces structured output)
-//   - the per-query candidate list (RT-DETR / built-in identifies figures)
-//   - the deterministic resolver (handles whitespace/dash/quote drift)
-// We only need to tell Claude the load-bearing rules: verbatim quotes,
-// prefer pre-detected candidates, route into existing groups.
-const READER_SYSTEM = `Find the passages and figures in this document that answer the question. Return them via the record_highlights tool.
-
-EMIT HIGHLIGHTS GENEROUSLY. Two cases:
-- "all" / "every" / "each" of something → emit ONE highlight per instance, don't summarize. Fill the 50-highlight budget when there are that many genuine matches.
-- "key findings" / "main points" / "important takeaways" / "the conclusions" / "interesting parts" → emit 8-15 text highlights covering the most consequential claims, conclusions, methods, or results. Aim for the sentences a reader would underline in a final pass. ALWAYS return at least 3 highlights when the document has substantive content.
-
-NEVER return an empty highlights array when the document clearly contains content relevant to the question. If you're hedging on whether something matches, return it with confidence="low" rather than dropping it.
-
-MIX TEXT AND IMAGES FREELY. Most queries benefit from both kinds of highlights:
-- A "key findings" query should surface text claims AND the figures/tables that support them.
-- A "highlight the methods" query should surface text describing methods AND any methodology diagrams.
-- A "show me the figures" query should still surface relevant text claims that those figures are about.
-When a pre-detected candidate list is provided, scan it for figures whose captions match the query's topic — those are almost always worth emitting alongside text quotes.
-
-WHEN THE QUERY EXPLICITLY MENTIONS figures, charts, tables, panels, diagrams, plots, images, or similar visual terms, you MUST emit at least one image highlight per visible figure. Do not return text-only output for a query that asked for figures. If no pre-detected candidate matches, fall back to a free-form rect inferred from the page image. If page images aren't provided either, emit an image highlight with the candidate's figure_id from the list regardless of caption match — better an approximate figure than none.
-
-TEXT highlights — "quote" is copied VERBATIM from the document. Skip rather than paraphrase. Prefer short, distinctive 1-3 sentence spans.
-
-IMAGE highlights — for figures, sub-panels, tables, charts.
-- If a pre-detected candidate list is provided, prefer "figure_id" (pixel-accurate coords). Match by page + caption text.
-- If no candidates are listed for a page that visibly has figures, emit a free-form "rect" with the figure's bounding box (normalized 0-1, top-left origin) and a "label" describing it.
-- It is OK to emit image highlights WITHOUT a paired caption text highlight. Only quote captions when they appear verbatim in the document text AND add useful context.
-
-SUBFIGURES / PANELS:
-- When the query mentions "subfigures", "panels", "all figures", or similar, AND a figure contains multiple panels (e.g., Figure 2 has panels A, B, and C visible), emit ONE highlight PER PANEL — not one for the whole composite.
-- If the detected candidate covers the whole multi-panel figure but you can see distinct sub-panels in the page image, OVERRIDE figure_id with a free-form "rect" for each panel. Use the page image to estimate each panel's bounding box (normalized 0-1).
-- Label each panel with both the parent figure and panel letter, e.g., "Fig. 2A: Histogram of o1-preview Bond score distribution".
-- Each panel gets its own "reason" referencing what that specific panel shows.
-
-Each highlight needs a one-sentence "reason". For "group_hint": pick an existing group when one fits; reuse across related highlights; propose a short new title-case name only when nothing existing fits.
-
-Max 50 highlights, ranked by relevance.`;
-
-const READER_TOOL = {
-  name: "record_highlights",
-  description: "Record the relevant passages (text + figures) found in the document as structured highlights.",
-  input_schema: {
-    type: "object",
-    properties: {
-      highlights: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            kind: {
-              type: "string",
-              enum: ["text", "image"],
-              description: "text = verbatim quoted passage; image = bounding box around a figure/chart/diagram.",
-            },
-            quote: {
-              type: ["string", "null"],
-              description: "Required for kind=text. Verbatim text from the document. Omit for kind=image.",
-            },
-            label: {
-              type: ["string", "null"],
-              description: "Required for kind=image. Short description of the figure (e.g., 'Figure 3: regression coefficients'). Omit for kind=text.",
-            },
-            figure_id: {
-              type: ["string", "null"],
-              description: "PREFERRED for kind=image. Letter ID (A, B, C, …) of a pre-detected candidate region on the given page.",
-            },
-            rect: {
-              type: ["object", "null"],
-              description: "FALLBACK for kind=image — only when no detected candidate matches. Normalized 0..1 fractions of the page.",
-              properties: {
-                left:   { type: "number" },
-                top:    { type: "number" },
-                width:  { type: "number" },
-                height: { type: "number" },
-              },
-              required: ["left", "top", "width", "height"],
-            },
-            reason: {
-              type: "string",
-              description: "One sentence explaining why this highlight answers the question.",
-            },
-            page: {
-              type: ["integer", "null"],
-              description: "Page number (1-indexed). Required for kind=image.",
-            },
-            group_hint: {
-              type: ["string", "null"],
-              description: "Existing group name from the provided list, OR a short new title-case name (1-3 words).",
-            },
-            confidence: {
-              type: "string",
-              enum: ["high", "medium", "low"],
-            },
-          },
-          required: ["kind", "reason", "confidence"],
-        },
-      },
-    },
-    required: ["highlights"],
-  },
-};
+// READER_SYSTEM + READER_TOOL moved to ./reader-prompt.js — pure
+// constants, shared by both this Tauri-side caller and the headless
+// CLI (scripts/ai-batch.mjs). One source of truth for prompt + schema.
 
 // Run the Reader. `figureDetections` carries the pre-detected candidate
 // regions from RT-DETR / built-in detector; `pageImages` is only included
 // when vision is enabled (otherwise the model picks figures purely from
 // the candidate list + their captions).
-export async function runReader({ query, docText, docTitle, groupNames, pageImages, figureDetections, plan }) {
-  const wantsText = plan ? plan.wantsText !== false : true;
-  const wantsFigures = plan ? !!plan.wantsFigures : true;
+export async function runReader({ query, docText, docTitle, groupNames, pageImages, figureDetections, plan, sourceKind }) {
+  // Image sources (PNG/JPEG) override the mode regardless of plan —
+  // there's no text to quote and no multi-page layout to detect, so
+  // the model gets one image and returns rect-only highlights.
+  const isImageSource = sourceKind === "image";
+  const wantsText = isImageSource ? false : (plan ? plan.wantsText !== false : true);
+  const wantsFigures = isImageSource ? true : (plan ? !!plan.wantsFigures : true);
   const lines = [];
   lines.push(`Question: ${query}`);
-  if (wantsText && !wantsFigures) {
+  if (isImageSource) {
+    lines.push("Mode: IMAGE SOURCE — the document IS a single image (PNG/JPEG). Return only kind=image highlights with rects pointing to regions of interest inside the image. Use page=1 for all rects. Do NOT emit any kind=text highlights (the source has no extractable text). figure_id is unavailable here; always supply rect={left, top, width, height} in fractional [0..1] coords.");
+  } else if (wantsText && !wantsFigures) {
     lines.push("Mode: TEXT ONLY — emit only kind=text highlights. Do NOT emit any kind=image highlights.");
   } else if (wantsFigures && !wantsText) {
     lines.push("Mode: FIGURES ONLY — emit only kind=image highlights for figures, charts, tables, panels. Do NOT emit any kind=text highlights.");

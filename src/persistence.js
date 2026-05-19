@@ -103,8 +103,17 @@ export async function persistImmediate() {
     groups: localGroups,
   };
   const targetPath = state.currentPdfPath;
+  // sidecarMtimeMs semantics:
+  //   >0 → real mtime captured at last successful read/write → run check
+  //    0 → uninitialized / first-write / pre-read state → SKIP the check
+  //        (passing 0 would tell Rust "expect no prior file" which fails
+  //        when the sidecar exists. That manifested as: every first
+  //        persist after load triggered a spurious conflict prompt;
+  //        if the user dismissed it, the reload wiped the in-flight
+  //        edit. Net effect "snippets don't persist". Bypass instead.)
+  const expectedMtime = state.sidecarMtimeMs > 0 ? state.sidecarMtimeMs : -1;
   try {
-    const res = await getStore().writeAnnot(targetPath, payload, state.sidecarMtimeMs);
+    const res = await getStore().writeAnnot(targetPath, payload, expectedMtime);
     // Legacy stores might still return undefined (old surface). Treat
     // that as success and skip mtime tracking until they're upgraded.
     if (res && res.ok === false && res.conflict) {
@@ -124,19 +133,40 @@ export async function persistImmediate() {
 
 // Handle the optimistic-mtime conflict surfaced by writeAnnot. The
 // sidecar changed externally between our last read and this write —
-// typically another window saved first. Ask the user whether to reload
-// or overwrite. v1 uses confirm() for simplicity; a dedicated non-modal
-// prompt is a follow-up.
+// typically another window saved first, OR (more often in practice)
+// some bare 2-arg writeAnnot caller bumped the file without updating
+// state.sidecarMtimeMs. Tauri blocks window.confirm, so we use the
+// Tauri dialog plugin's ask() when available and fall through to a
+// safe default ("reload") in the browser fallback.
+async function askOverwriteOrReload(filename) {
+  // Try Tauri's native ask() first — works in the desktop build.
+  try {
+    const { ask } = await import("@tauri-apps/plugin-dialog");
+    // ask() returns true = primary (overwrite), false = secondary (reload).
+    return await ask(
+      `"${filename}" was modified externally (likely by another window or a cross-doc edit).\n\n` +
+      `Choose what to do:`,
+      {
+        title: "Sidecar conflict",
+        okLabel: "Overwrite",
+        cancelLabel: "Reload",
+        kind: "warning",
+      },
+    );
+  } catch (err) {
+    console.warn("[persist] Tauri ask() unavailable; defaulting to reload (safer)", err);
+    // Browser fallback or plugin missing — default to reload (no data
+    // loss). User can re-apply their changes after the reload completes.
+    return false;
+  }
+}
+
 async function handleSidecarMtimeConflict(targetPath, payload, conflict) {
   const { state, getStore, flashSaveIndicator, reloadDocument } = deps;
   console.warn("[persist] sidecar mtime conflict", { targetPath, conflict });
   flashSaveIndicator("error");
   const filename = targetPath.split("/").pop() || targetPath;
-  const overwrite = window.confirm(
-    `"${filename}" was modified externally (likely by another window).\n\n` +
-    `OK = overwrite the external changes with what's in this window\n` +
-    `Cancel = reload to see the external changes (in-memory edits not yet saved will be lost)`
-  );
+  const overwrite = await askOverwriteOrReload(filename);
   if (!overwrite) {
     if (state.currentPdfPath === targetPath && reloadDocument) {
       await reloadDocument(targetPath);

@@ -1,6 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 
-const KIND_BY_EXT = { pdf: "pdf", md: "markdown", markdown: "markdown", docx: "docx" };
+const KIND_BY_EXT = {
+  pdf: "pdf",
+  md: "markdown",
+  markdown: "markdown",
+  docx: "docx",
+  png: "image",
+  jpg: "image",
+  jpeg: "image",
+};
 function kindFromPath(p) {
   const m = (p || "").toLowerCase().match(/\.([a-z0-9]+)$/);
   return m ? KIND_BY_EXT[m[1]] || null : null;

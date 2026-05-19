@@ -358,43 +358,7 @@ export function resolvePdfQuoteFromContent(pageContents, quote, hintPage) {
     const [startOff, endOff] = span;
     const inRange = pc.ranges.filter((r) => r.start < endOff && r.end > startOff);
     if (!inRange.length) continue;
-
-    // Bucket items by their y-baseline (rounded to 3 PDF units) — same
-    // bucket = same visual line. Compose one rect per bucket.
-    // PDF's transform[5] is the BASELINE — glyphs extend ~80% above
-    // (ascender + cap height) and ~20% below (descender). Use these
-    // factors to position the rect on the visible glyph extent rather
-    // than at the baseline.
-    const ASCENT = 0.8;
-    const DESCENT = 0.2;
-    const lines = new Map();
-    for (const r of inRange) {
-      const tx = r.item.transform;
-      const yBase = Math.round(tx[5] / 3) * 3;
-      const x = tx[4];
-      const h = r.item.height || Math.abs(tx[3]) || 12;
-      const w = r.item.width || 0;
-      const itemTop = tx[5] + ASCENT * h;      // top of glyph box (PDF coords)
-      const itemBottom = tx[5] - DESCENT * h;  // bottom of glyph box
-      let line = lines.get(yBase);
-      if (!line) {
-        line = { left: Infinity, right: -Infinity, top: -Infinity, bottom: Infinity };
-        lines.set(yBase, line);
-      }
-      if (x < line.left) line.left = x;
-      if (x + w > line.right) line.right = x + w;
-      if (itemTop > line.top) line.top = itemTop;
-      if (itemBottom < line.bottom) line.bottom = itemBottom;
-    }
-    const rects = [];
-    for (const line of lines.values()) {
-      const left = line.left / pc.width;
-      const top = 1 - line.top / pc.height;
-      const width = (line.right - line.left) / pc.width;
-      const height = (line.top - line.bottom) / pc.height;
-      if (width <= 0 || height <= 0) continue;
-      rects.push({ left, top, width, height });
-    }
+    const rects = computeLineRects(inRange, pc.width, pc.height);
     if (!rects.length) continue;
     const actualText = pc.flat.slice(startOff, endOff);
     return {
@@ -408,6 +372,49 @@ export function resolvePdfQuoteFromContent(pageContents, quote, hintPage) {
     };
   }
   return null;
+}
+
+// Bucket PDF text-content items by their y-baseline (rounded to 3 PDF
+// units) — same bucket = same visual line. Emit one fractional rect
+// per bucket. PDF's transform[5] is the BASELINE; glyphs extend ~80%
+// above (ascender + cap height) and ~20% below (descender), so we use
+// those factors to position the rect on the visible glyph extent
+// rather than at the baseline.
+//
+// Exported separately so the headless CLI (scripts/ai-batch.mjs) can
+// reuse the same math without duplicating the constants.
+export function computeLineRects(inRange, pageWidth, pageHeight) {
+  const ASCENT = 0.8;
+  const DESCENT = 0.2;
+  const lines = new Map();
+  for (const r of inRange) {
+    const tx = r.item.transform;
+    const yBase = Math.round(tx[5] / 3) * 3;
+    const x = tx[4];
+    const h = r.item.height || Math.abs(tx[3]) || 12;
+    const w = r.item.width || 0;
+    const itemTop = tx[5] + ASCENT * h;      // top of glyph box (PDF coords)
+    const itemBottom = tx[5] - DESCENT * h;  // bottom of glyph box
+    let line = lines.get(yBase);
+    if (!line) {
+      line = { left: Infinity, right: -Infinity, top: -Infinity, bottom: Infinity };
+      lines.set(yBase, line);
+    }
+    if (x < line.left) line.left = x;
+    if (x + w > line.right) line.right = x + w;
+    if (itemTop > line.top) line.top = itemTop;
+    if (itemBottom < line.bottom) line.bottom = itemBottom;
+  }
+  const rects = [];
+  for (const line of lines.values()) {
+    const left = line.left / pageWidth;
+    const top = 1 - line.top / pageHeight;
+    const width = (line.right - line.left) / pageWidth;
+    const height = (line.top - line.bottom) / pageHeight;
+    if (width <= 0 || height <= 0) continue;
+    rects.push({ left, top, width, height });
+  }
+  return rects;
 }
 
 // Top-level resolver — picks the right resolver based on source kind.

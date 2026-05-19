@@ -845,7 +845,8 @@ body.sidebar-collapsed #sidebar-collapse::before { content: "›"; }
   font-family: ui-sans-serif, -apple-system, "SF Pro Text", "Helvetica Neue", system-ui;
   position: relative;
 }
-#snippets-pane .snippets-header { color: var(--pane-fg-dim); border-bottom: 1px solid var(--pane-border); }
+/* .snippets-header div was removed when the top tab strip merged into
+   the snippets-section-header. Rule kept dropped intentionally. */
 #snippets-pane .tab-btn { color: var(--pane-fg-dim); }
 #snippets-pane .tab-btn:hover { color: var(--accent); background: rgba(46, 165, 140, 0.08); }
 #snippets-pane .tab-btn.active {
@@ -1189,6 +1190,42 @@ body.pane-max #snippets-pane { border-left: none; }
 #snippets-pane.snippets-collapsed #view-stack { display: none; }
 #snippets-pane.snippets-collapsed #snippets-section-header { border-bottom: none; }
 #snippets-pane.snippets-collapsed #snippets-section-collapse { transform: rotate(-90deg); }
+/* Snippets section header carries multiple controls now (tabs + scope
+   toggle + summary + delete + collapse). Let them wrap to a second
+   line at narrow widths rather than overflowing. */
+#snippets-section-header { flex-wrap: wrap; row-gap: 4px; gap: 8px; }
+/* Tabs inside the section header — drop the original top-tab-strip
+   chrome (4px top radius, 2px underline) and adopt a compact pill that
+   fits the section-header rhythm. */
+#snippets-section-header .header-tabs {
+  display: inline-flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+#snippets-section-header .tab-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--pane-fg-dim);
+  font-family: inherit;
+  font-size: 9px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: color 100ms ease, background 100ms ease, border-color 100ms ease;
+}
+#snippets-section-header .tab-btn:hover {
+  color: var(--accent);
+  border-color: var(--pane-border);
+}
+#snippets-section-header .tab-btn.active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
 .snippets-section-actions {
   display: flex;
   gap: 4px;
@@ -1642,6 +1679,40 @@ body[data-theme="terminal"] {
   font-size: 12px;
   font-style: italic;
 }
+
+/* Doc-scope pasted-clips affordance — passive footer line in the
+   snippets list when the user has workspace-level pastes that aren't
+   visible in this doc's view. Click "view" → flip to workspace scope. */
+.doc-scope-pasted-hint {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  margin: 10px 6px 4px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 40%, var(--pane-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+  color: var(--pane-fg-dim);
+  font-size: 11px;
+}
+.doc-scope-pasted-hint-icon { font-size: 13px; line-height: 1; }
+.doc-scope-pasted-hint-label { flex: 1; }
+.doc-scope-pasted-hint-action {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--pane-border));
+  border-radius: 10px;
+  padding: 2px 10px;
+  font: inherit;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--accent);
+  cursor: pointer;
+}
+.doc-scope-pasted-hint-action:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
 .group-row {
   display: flex;
   align-items: center;
@@ -2074,15 +2145,9 @@ body.dragging-sticker * { cursor: grabbing !important; }
   container-type: inline-size;
   container-name: snippetspane;
 }
-.snippets-header {
-  padding: 6px 10px 6px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
+/* .snippets-header rules removed — div consolidated into
+   #snippets-section-header (which has its own pane-section-header chrome
+   plus the wrap + tab tweaks below). */
 
 /* Compact labels at narrow pane widths — keep one row of header-tools
    instead of wrapping to 3-4. data-short on each button supplies the
@@ -2199,60 +2264,26 @@ body.dragging-sticker * { cursor: grabbing !important; }
 #ai-settings-btn:hover { color: var(--accent); border-color: var(--accent); }
 #ai-settings-btn svg { display: block; }
 
-/* AI toggle button — premium-flavored chip. When pressed (AI expanded)
-   the button gains a filled accent background so it reads as "on". */
-#ai-toggle-btn {
+/* AI section — its own collapsible group (header / ask bar / drawer).
+   Replaces the old #ai-toggle-btn + body.ai-expanded mechanism. */
+#ai-section {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--accent) 4%, var(--pane-bg));
+  border-bottom: 1px solid var(--pane-border);
+}
+#ai-section.collapsed #ai-ask-bar,
+#ai-section.collapsed #ai-drawer,
+#ai-section.collapsed + #ai-drawer-resize { display: none !important; }
+#ai-section.collapsed #ai-section-header { border-bottom: none; }
+#ai-section.collapsed #ai-section-collapse { transform: rotate(-90deg); }
+/* Pull the accent star into the header to brand the section. */
+#ai-section-header .pane-section-title {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  color: var(--accent);
-  cursor: pointer;
-  font: inherit;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
+  gap: 5px;
 }
-#ai-toggle-btn svg { color: var(--accent); }
-#ai-toggle-btn .ai-toggle-label { letter-spacing: 0.8px; }
-#ai-toggle-btn .ai-toggle-plus {
-  font-size: 10px;
-  color: var(--accent-fg, #fff);
-  background: var(--accent);
-  border-radius: 50%;
-  width: 13px;
-  height: 13px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  margin-left: 1px;
-}
-#ai-toggle-btn:hover {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  border-color: var(--accent);
-}
-#ai-toggle-btn[aria-pressed="true"] {
-  background: var(--accent);
-  color: var(--accent-fg, #fff);
-  border-color: var(--accent);
-}
-#ai-toggle-btn[aria-pressed="true"] svg { color: var(--accent-fg, #fff); }
-#ai-toggle-btn[aria-pressed="true"] .ai-toggle-plus {
-  background: var(--accent-fg, #fff);
-  color: var(--accent);
-}
-
-/* Hide AI surfaces by default; show only when body.ai-expanded. */
-#ai-ask-bar { display: none; }
-body.ai-expanded #ai-ask-bar { display: flex; }
-/* Drawer is also gated — even if a query is in flight, collapse hides
-   it. (hideAiDrawer also called explicitly on collapse to clear state.) */
-body:not(.ai-expanded) #ai-drawer { display: none !important; }
 
 /* AI ask bar — lives at the top of the snippets pane. The bar is now
    a column: input row, then the loading indicator, then the (mostly
@@ -2388,8 +2419,21 @@ body:not(.ai-expanded) #ai-drawer { display: none !important; }
 body.pane-max .resize-handle-h { display: none; }
 body.resizing-v { cursor: ns-resize !important; user-select: none; }
 body.resizing-v * { cursor: ns-resize !important; }
-/* AI drawer header inherits chrome from .pane-section-header; only
-   the inline-text font-size + the slight panel tint differ. */
+/* Sub-header inside #ai-section — sits below the section header proper,
+   carries query text + accept-all/reject-all chrome. Slim divider line,
+   no own background tint (inherits the section's accent tint). */
+.pane-section-subhead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 12%, var(--pane-border));
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 12%, var(--pane-border));
+  flex-shrink: 0;
+  cursor: default;
+  user-select: none;
+}
+.pane-section-subhead .toolbar-spacer { flex: 1; }
 #ai-drawer-header {
   font-size: 11px;
   color: var(--pane-fg-dim);
@@ -2544,6 +2588,36 @@ mark.ai-preview-text:hover {
   0%   { box-shadow: 0 0 0 0 var(--accent); }
   40%  { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 40%, transparent); }
   100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+/* AI accept → fly-to-group ghost. A clone of the drawer card is
+   positioned absolutely on the body and animated toward the matching
+   group sticker so the user actually SEES the snippet land. The clone
+   discards its action buttons (decoration only). */
+.ai-fly-ghost {
+  background: var(--pane-bg, #fff);
+  border-radius: 10px;
+  border: 1.5px solid var(--accent, #ff3b8a);
+  box-shadow: 0 10px 28px -6px rgba(0, 0, 0, 0.28),
+              0 2px 6px rgba(0, 0, 0, 0.12);
+  padding: 6px 10px;
+  overflow: hidden;
+  /* Match the drawer card text rhythm so the takeoff feels continuous. */
+  font: inherit;
+  line-height: 1.35;
+  transform-origin: center;
+}
+
+/* The destination group row briefly glows + nudges as the ghost arrives —
+   a clear "received" signal that pairs with the ghost's "departure". */
+@keyframes ai-receive-pulse {
+  0%   { background: transparent; transform: scale(1); }
+  18%  { background: color-mix(in srgb, var(--accent) 38%, transparent); transform: scale(1.04); }
+  60%  { background: color-mix(in srgb, var(--accent) 18%, transparent); transform: scale(1.01); }
+  100% { background: transparent; transform: scale(1); }
+}
+.group-row.ai-receive-pulse {
+  animation: ai-receive-pulse 900ms ease-out;
 }
 .ai-suggestion-figure {
   font-family: ui-sans-serif, -apple-system, system-ui;
@@ -2905,12 +2979,12 @@ mark.ai-preview-text:hover {
 .snippet .text {
   font-family: ui-serif, "Iowan Old Style", "Charter", Georgia, serif;
   background: transparent;
-  padding: 1px 0 1px 10px;
+  padding: 6px 12px 6px 14px;
   border-radius: 0;
   border-left: 2px solid var(--border);
-  margin-bottom: 3px;
+  margin-bottom: 4px;
   font-size: 12.5px;
-  line-height: 1.45;
+  line-height: 1.5;
   color: var(--text);
   cursor: inherit;
   display: -webkit-box;
@@ -4646,6 +4720,12 @@ body[data-runtime="web"] #viewer-empty::after {
   pointer-events: none;
   opacity: 0.42;
   mix-blend-mode: multiply;
+  /* PDF.js's .textLayer has z-index: 0 (its spans z-index: 1). Without
+     an explicit value here, highlight-layer's mix-blend stacking context
+     can end up beneath textLayer span content depending on browser quirks.
+     z-index: 3 puts it above textLayer (0/1) and PDF canvas (static),
+     below the ai-preview-layer (z-index: 4) which is by design. */
+  z-index: 3;
 }
 .page-wrap .highlight-layer .hl {
   position: absolute;

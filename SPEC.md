@@ -2,7 +2,7 @@
 
 **Version:** 0.1 (DRAFT)
 **Status:** Working Draft
-**Date:** 2026-05-14
+**Date:** 2026-05-18
 **License:** CC BY 4.0
 
 ## Abstract
@@ -55,6 +55,7 @@ A **document** is a source file in one of the supported formats:
 | PDF | `"pdf"` | Paginated, byte-stable, fixed layout. |
 | Markdown / CommonMark | `"markdown"` | Reflowable plain text, paginated only on render. |
 | Microsoft Word | `"docx"` | Reflowable, binary XML. |
+| Image (PNG / JPEG) | `"image"` | Single-page raster, byte-stable, fixed dimensions; no extractable text. |
 
 Conformant implementations MUST support `pdf`. Other kinds are OPTIONAL but defined.
 
@@ -138,7 +139,7 @@ Unknown top-level fields MUST be preserved by readers on round-trip.
 }
 ```
 
-All fields OPTIONAL. `kind` MUST be one of `"pdf"`, `"markdown"`, `"docx"` if present. `contentHash` MUST be lowercase hex, OPTIONALLY prefixed with `sha256:` (Section 5).
+All fields OPTIONAL. `kind` MUST be one of `"pdf"`, `"markdown"`, `"docx"`, `"image"` if present. `contentHash` MUST be lowercase hex, OPTIONALLY prefixed with `sha256:` (Section 5).
 
 ### 3.3 Snippet
 
@@ -365,6 +366,8 @@ No match. The snippet is preserved in the sidecar; clients SHOULD render an "orp
 
 This algorithm applies only to snippets with `kind: "text"`. Image snippets (`kind: "image"`) are inherently positional — they identify a rectangle of source pixels, not a quoted phrase, and have no edit-tolerant fallback. Implementations MUST locate image snippets by `page` + `rects` directly, optionally verifying against `clipHash` (Section 3.3) when present.
 
+The algorithm also does not apply when the **source itself** has `kind: "image"` (§7.3) — there is no extractable text to anchor against. All snippets on an image source MUST be `kind: "image"`.
+
 ### 4.1 Normalization
 
 The following transforms apply when computing `textNormalized` and when matching:
@@ -467,6 +470,15 @@ To address URL-length and privacy concerns, an implementation MAY use a content-
 - `anchor` SHOULD be the nearest preceding heading chain joined by `" > "`, e.g., `"Methods > Statistical analysis"`. This is the section path used by Tier 3 resolution.
 - `flowPos` SHOULD be a stable ordinal indicating snippet order within the document (e.g., the text-node index in document order). This is the natural sort key replacing `page` for flow docs.
 
+### 7.3 Image (PNG / JPEG)
+
+- `page` MUST be 1.
+- `rects` MUST be fractional coordinates `[0..1]` in the image's natural-pixel dimensions (same convention as PDF).
+- `kind` MUST be `"image"` — text-quote snippets are not permitted because the source has no extractable text. An implementation MAY add OCR-derived text snippets in a future spec revision; v0.1 does not define that.
+- The anchor resolution algorithm (Section 4) does NOT run on image sources — rects are positional and byte-stable.
+- `contentHash` is the SHA-256 of the raw image bytes (Section 5). A `contentHash` mismatch indicates a different image; there is no fuzzy fallback.
+- Supported encodings in v0.1: PNG (`image/png`) and JPEG (`image/jpeg`). Other raster formats (WebP, HEIC, TIFF, animated GIF) are out of scope.
+
 ## 8. The MarkRank algorithm
 
 **MarkRank** is a centrality algorithm over the snippet graph: a PageRank variant that scores each snippet by how much "incoming attention" it receives from other snippets.
@@ -533,3 +545,4 @@ This specification draws on prior art including:
 
 - **0.1** (2026-05-08): Initial working draft.
 - **0.1** (2026-05-14): Added Section 2.9 / 3.9 — workspace **collections** (file-tier many-to-many grouping over members and notes); added optional `collections` field on `member` (§3.7) and `note` (§3.8); added optional `collections` array on workspace sidecar top-level (§3.6).
+- **0.1** (2026-05-18): Added `"image"` source kind (PNG / JPEG) — §2.1 document table, §3.2 source.kind enum, §4.0 applicability exemption, new §7.3 format notes. Snippets on image sources MUST be `kind: "image"`; anchoring algorithm does not run.

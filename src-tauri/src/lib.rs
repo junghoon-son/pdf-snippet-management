@@ -161,6 +161,7 @@ fn document_kind_from_ext(ext: &str) -> Option<&'static str> {
         "md" | "markdown" => Some("markdown"),
         "docx" => Some("docx"),
         "txt" | "text" => Some("text"),
+        "png" | "jpg" | "jpeg" => Some("image"),
         _ => None,
     }
 }

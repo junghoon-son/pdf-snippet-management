@@ -12,6 +12,8 @@ import {
   pulseSnippet,
 } from "./pdf-viewer.js";
 import * as FlowView from "./flow-viewer.js";
+import * as ImageView from "./image-viewer.js";
+import { detectKindFromPath, FLOW_EXTS, IMAGE_EXTS } from "./source-kind.js";
 import * as MapView from "./map-view.js";
 import * as LineageView from "./lineage-view.js";
 import { openGroupOverlay } from "./group-overlay.js";
@@ -145,7 +147,7 @@ async function locateMissingFile(oldPath, mode, folder) {
       newPath = await open({
         multiple: false,
         directory: false,
-        filters: [{ name: "Documents", extensions: ["pdf", "md", "markdown", "docx", "txt", "text"] }],
+        filters: [{ name: "Documents", extensions: ["pdf", "md", "markdown", "docx", "txt", "text", "png", "jpg", "jpeg"] }],
       });
     } else {
       const file = await pickBrowserFile([{ description: "Document", accept: { "application/octet-stream": [".pdf", ".md", ".markdown", ".docx"] } }]);
@@ -280,17 +282,7 @@ async function pickBrowserFile(types) {
   });
 }
 
-const FLOW_EXTS = ["md", "markdown", "txt", "text"];
-function detectKindFromPath(path) {
-  const m = (path || "").toLowerCase().match(/\.([a-z0-9]+)$/);
-  if (!m) return "pdf";
-  const ext = m[1];
-  if (ext === "pdf") return "pdf";
-  if (ext === "md" || ext === "markdown") return "markdown";
-  if (ext === "docx") return "docx";
-  if (ext === "txt" || ext === "text") return "text";
-  return "pdf";
-}
+// detectKindFromPath, FLOW_EXTS, IMAGE_EXTS imported from source-kind.js at file top.
 
 const fileListEl = document.getElementById("file-list");
 const snippetsListEl = document.getElementById("snippets-list");
@@ -661,7 +653,7 @@ document.getElementById("open-file").addEventListener("click", async () => {
   const path = await open({
     multiple: true,
     directory: false,
-    filters: [{ name: "Documents", extensions: ["pdf", "md", "markdown", "docx", "txt", "text"] }],
+    filters: [{ name: "Documents", extensions: ["pdf", "md", "markdown", "docx", "txt", "text", "png", "jpg", "jpeg"] }],
   });
   if (!path) return;
   const paths = Array.isArray(path) ? path : [path];
@@ -852,6 +844,8 @@ async function renderWorkspace() {
 function zoomIn() {
   if (state.source.kind === "pdf" && state.pdfDoc) {
     setScale(state.scale * SCALE_STEP);
+  } else if (state.source.kind === "image") {
+    setScale(state.scale * SCALE_STEP);
   } else if (state.flowDoc) {
     state.flowZoom = Math.min(FLOW_MAX_ZOOM, state.flowZoom * SCALE_STEP);
     applyFlowZoom();
@@ -859,6 +853,8 @@ function zoomIn() {
 }
 function zoomOut() {
   if (state.source.kind === "pdf" && state.pdfDoc) {
+    setScale(state.scale / SCALE_STEP);
+  } else if (state.source.kind === "image") {
     setScale(state.scale / SCALE_STEP);
   } else if (state.flowDoc) {
     state.flowZoom = Math.max(FLOW_MIN_ZOOM, state.flowZoom / SCALE_STEP);
@@ -868,6 +864,9 @@ function zoomOut() {
 function zoomFit() {
   if (state.source.kind === "pdf" && state.pdfDoc) {
     fitWidth();
+  } else if (state.source.kind === "image") {
+    const fit = ImageView.fitWidthScaleImage(viewerScroll.clientWidth - FIT_PADDING);
+    setScale(fit);
   } else if (state.flowDoc) {
     state.flowZoom = 1;
     applyFlowZoom();
@@ -1198,6 +1197,9 @@ async function aiAsk() {
   }
 
   aiInFlight = true;
+  // If the section is collapsed (default state), open it so the loading
+  // bar + drawer are actually visible while the query runs.
+  expandAiSection();
   aiSetBusy(true);
   aiSetStatus("Reading document…");
   document.getElementById("ai-ask-submit").disabled = true;
@@ -1260,6 +1262,17 @@ async function aiAsk() {
           figureDetections = await detectFiguresHybrid(state.pdfDoc, { targetWidth: 800 });
         }
       }
+    } else if (kind === "image") {
+      // Image sources have no extractable text + no layout to detect
+      // (the whole image IS the figure). Hand the source image to the
+      // Reader as a single "page image" and let it return image-kind
+      // highlights with rects.
+      aiSetStatus("Encoding image…");
+      const enc = await ImageView.getSourceImageBase64();
+      pageImages = [{ page: 1, base64: enc.base64, mediaType: enc.mediaType }];
+      // Synthetic docText so downstream checks don't trip; the Reader's
+      // image-mode prompt branch ignores docText anyway.
+      docText = `[image source: ${state.source?.filename || "image"}]`;
     } else {
       docText = extractFlowText(state.flowDoc, viewerContainer);
     }
@@ -1298,6 +1311,7 @@ async function aiAsk() {
       pageImages,
       figureDetections,
       plan: { wantsText, wantsFigures },
+      sourceKind: kind,
     });
 
     // Step 2 — resolve each highlight against the rendered document.
@@ -1877,6 +1891,85 @@ function renderAiDrawer() {
   }
 }
 
+// Visual feedback for AI accept — clones the source drawer card,
+// flies it to the matching group sticker (or to the snippets list as
+// a fallback), and pulses the target row on arrival. Gives the user a
+// tactile "yes, that landed in the group" confirmation that the bare
+// state mutation doesn't.
+function spawnFlyGhostForSuggestion(sug) {
+  const idx = aiSuggestions.indexOf(sug);
+  if (idx < 0) return null;
+  const card = document.querySelector(`#ai-drawer-list li[data-sug-idx="${idx}"]`);
+  if (!card) return null;
+  const rect = card.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return null;
+  const ghost = card.cloneNode(true);
+  ghost.classList.add("ai-fly-ghost");
+  ghost.removeAttribute("data-sug-idx");
+  // Strip interactive children — the ghost is decoration, not a control.
+  ghost.querySelectorAll("button").forEach((b) => b.remove());
+  Object.assign(ghost.style, {
+    position: "fixed",
+    left: `${rect.left}px`,
+    top: `${rect.top}px`,
+    width: `${rect.width}px`,
+    height: `${rect.height}px`,
+    margin: "0",
+    zIndex: "9999",
+    pointerEvents: "none",
+    willChange: "transform, opacity",
+  });
+  document.body.appendChild(ghost);
+  return ghost;
+}
+
+function flyGhostToGroup(ghost, groupId) {
+  if (!ghost) return;
+  // Double-rAF so resolveOrCreateGroup + renderGroups have a chance to
+  // mount a brand-new sticker before we query it.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const sourceRect = ghost.getBoundingClientRect();
+    let targetRect = null;
+    let targetRow = null;
+    if (groupId) {
+      const sticker = document.querySelector(
+        `#groups-list .group-row[data-group-id="${groupId}"] .group-row-sticker`,
+      );
+      if (sticker) {
+        targetRect = sticker.getBoundingClientRect();
+        targetRow = sticker.closest(".group-row");
+      }
+    }
+    if (!targetRect) {
+      // No group target — arc toward the top of the snippets list so the
+      // ghost still goes somewhere meaningful and the user sees motion.
+      const list = document.getElementById("snippets-list")
+        || document.getElementById("groups-panel");
+      if (list) {
+        const r = list.getBoundingClientRect();
+        targetRect = { left: r.left + r.width / 2 - 20, top: r.top + 28, width: 40, height: 40 };
+      }
+    }
+    if (!targetRect) { ghost.remove(); return; }
+    const dx = (targetRect.left + targetRect.width / 2) - (sourceRect.left + sourceRect.width / 2);
+    const dy = (targetRect.top + targetRect.height / 2) - (sourceRect.top + sourceRect.height / 2);
+    ghost.style.transition = "transform 620ms cubic-bezier(.42,.04,.3,1), opacity 620ms ease-out";
+    ghost.style.transform = `translate(${dx}px, ${dy}px) scale(0.06) rotate(7deg)`;
+    ghost.style.opacity = "0";
+    if (targetRow) {
+      // Pulse fires as the ghost arrives, not at takeoff — feels more
+      // like "received" than "sent".
+      setTimeout(() => {
+        targetRow.classList.add("ai-receive-pulse");
+        setTimeout(() => targetRow.classList.remove("ai-receive-pulse"), 900);
+      }, 420);
+    }
+  }));
+  ghost.addEventListener("transitionend", () => ghost.remove(), { once: true });
+  // Safety net — kill the ghost even if transitionend doesn't fire.
+  setTimeout(() => { if (ghost.isConnected) ghost.remove(); }, 1500);
+}
+
 // Refuse accept when the user has switched docs since the query ran.
 // Suggestions were resolved against the source doc's rects/pages; applying
 // them to a different doc would create snippets with rects that don't
@@ -1892,6 +1985,9 @@ function canAcceptSuggestion(sug) {
 
 async function acceptAiSuggestion(sug) {
   if (!canAcceptSuggestion(sug)) return;
+  // Capture the source card BEFORE state mutations + renderAiDrawer
+  // sweep it away — used by the fly-to-group confirmation animation.
+  const ghost = spawnFlyGhostForSuggestion(sug);
   sug.accepted = true;
   // Group hint → existing group (fuzzy-matched) or auto-create a new one.
   let groupIds = [];
@@ -1906,10 +2002,15 @@ async function acceptAiSuggestion(sug) {
     const label = sug.resolved?.label || sug.label || `Region p.${page || 1}`;
 
     // Happy path: we have a real rect on a real page → render the clip.
-    if (r && page && state.pdfDoc) {
+    // PDF and image sources use different region-crop helpers but the
+    // resulting PNG bytes are stored the same way.
+    const canRender = r && page && (state.pdfDoc || state.source?.kind === "image");
+    if (canRender) {
       const id = crypto.randomUUID();
       try {
-        const pngBytes = await renderRegionPng(state.pdfDoc, page, r, 2);
+        const pngBytes = state.source.kind === "image"
+          ? await ImageView.renderImageRegionPng(r)
+          : await renderRegionPng(state.pdfDoc, page, r, 2);
         const imagePath = await getStore().writeClip(state.currentPdfPath, id, pngBytes);
         const snippet = {
           id,
@@ -1929,6 +2030,7 @@ async function acceptAiSuggestion(sug) {
         refreshActiveView();
         applyAllHighlights();
         renderAiDrawer();
+        flyGhostToGroup(ghost, groupIds[0]);
         aiSetStatus(`Accepted: ${label}`);
         return;
       } catch (err) {
@@ -1962,6 +2064,7 @@ async function acceptAiSuggestion(sug) {
     applyAllHighlights();
     renderAiDrawer();
     paintAiPreviews();
+    flyGhostToGroup(ghost, groupIds[0]);
     return;
   }
 
@@ -1983,11 +2086,24 @@ async function acceptAiSuggestion(sug) {
   };
   state.snippets.push(snippet);
   undoStack.push({ type: "add", id: snippet.id });
+  // Diagnostic: empty rects = no highlight on the page. Common cause is
+  // the resolver returning null (page wasn't rendered in DOM AND
+  // pageTextContent didn't match). Surfacing this in the console makes
+  // the "highlights not working" case investigable instead of silent.
+  if (!snippet.rects || snippet.rects.length === 0) {
+    console.warn("[accept] text snippet has no rects — no page highlight will paint", {
+      id: snippet.id, page: snippet.page, hadResolved: !!sug.resolved, found: sug.found,
+      text: (snippet.text || "").slice(0, 80),
+    });
+  } else {
+    console.log("[accept] text snippet rects:", snippet.rects.length, "on page", snippet.page);
+  }
   persist();
   refreshActiveView();
   applyAllHighlights();
   renderAiDrawer();
   paintAiPreviews();
+  flyGhostToGroup(ghost, groupIds[0]);
   aiSetStatus(sug.resolved ? "Accepted" : "Accepted — ghost marker (locator failed; refine manually).");
 }
 function rejectAiSuggestion(sug) {
@@ -1999,32 +2115,43 @@ function rejectAiSuggestion(sug) {
 // AI is treated as a premium add-on — surfaces are hidden by default
 // so the snippets pane reads clean. Click the AI toggle (✨) in the
 // header to expand; click again to collapse. State persists.
-const AI_EXPANDED_KEY = "marklee-ai-expanded";
-function isAiExpanded() {
-  try { return localStorage.getItem(AI_EXPANDED_KEY) === "1"; } catch { return false; }
+// AI section collapse — replaces the old body.ai-expanded toggle that
+// drove the standalone ai-toggle-btn. The AI section is now its own
+// collapsible group in the right-panel chrome (mirroring Snippets and
+// Groups); the chevron in its header collapses to header-only.
+const AI_COLLAPSED_KEY = "marklee-ai-collapsed";
+function isAiCollapsed() {
+  try {
+    // Default: collapsed (preserves the old "no AI noise until asked" UX).
+    const v = localStorage.getItem(AI_COLLAPSED_KEY);
+    return v == null ? true : v === "1";
+  } catch { return true; }
 }
-function setAiExpanded(v) {
-  try { localStorage.setItem(AI_EXPANDED_KEY, v ? "1" : "0"); } catch {}
-  applyAiExpandedState();
+function setAiCollapsed(v) {
+  try { localStorage.setItem(AI_COLLAPSED_KEY, v ? "1" : "0"); } catch {}
+  applyAiCollapsedState();
 }
-function applyAiExpandedState() {
-  const on = isAiExpanded();
-  document.body.classList.toggle("ai-expanded", on);
-  const btn = document.getElementById("ai-toggle-btn");
-  if (btn) btn.setAttribute("aria-pressed", on ? "true" : "false");
-  // Collapsing also hides any open drawer + clears its preview overlays
-  if (!on) {
+function applyAiCollapsedState() {
+  const section = document.getElementById("ai-section");
+  if (!section) return;
+  const collapsed = isAiCollapsed();
+  section.classList.toggle("collapsed", collapsed);
+  if (collapsed) {
     const drawer = document.getElementById("ai-drawer");
     if (drawer && !drawer.hidden) hideAiDrawer();
   } else {
-    // Focus the ask input when expanding so the user can type immediately.
     setTimeout(() => document.getElementById("ai-ask-input")?.focus(), 50);
   }
 }
-applyAiExpandedState();
-document.getElementById("ai-toggle-btn").addEventListener("click", () => {
-  setAiExpanded(!isAiExpanded());
+applyAiCollapsedState();
+document.getElementById("ai-section-collapse").addEventListener("click", () => {
+  setAiCollapsed(!isAiCollapsed());
 });
+// Auto-expand the AI section when the user runs a query — otherwise
+// the loading bar + drawer would be hidden under the collapsed header.
+function expandAiSection() {
+  if (isAiCollapsed()) setAiCollapsed(false);
+}
 
 document.getElementById("ai-ask-submit").addEventListener("click", aiAsk);
 document.getElementById("ai-ask-input").addEventListener("keydown", (e) => {
@@ -2333,7 +2460,7 @@ document.addEventListener("keydown", (e) => {
   if (tag === "TEXTAREA" || tag === "INPUT") return;
   if (e.key === "t" || e.key === "T") setTool("select");
   else if (e.key === "r" || e.key === "R") {
-    if (state.source.kind === "pdf") setTool("rect");
+    if (state.source.kind === "pdf" || state.source.kind === "image") setTool("rect");
   }
 }, { capture: true });
 
@@ -3231,7 +3358,7 @@ async function loadAnyDocument(path) {
   const existing = await getStore().readAnnot(path);
   if (myToken !== docLoadToken) return;
 
-  let title = filename.replace(/\.(pdf|md|markdown|docx|txt|text)$/i, "");
+  let title = filename.replace(/\.(pdf|md|markdown|docx|txt|text|png|jpe?g)$/i, "");
   let author = "";
 
   if (kind === "pdf") {
@@ -3256,6 +3383,13 @@ async function loadAnyDocument(path) {
     // First non-empty line as the title.
     const firstLine = text.split(/\r?\n/).map((l) => l.trim()).find(Boolean);
     if (firstLine) title = firstLine.slice(0, 120);
+  } else if (kind === "image") {
+    // Image source — bytes stay raw, decoded by the image-viewer at
+    // render time. Stash in flowDoc so loaders that branch on
+    // flowDoc/pdfDoc presence still have a non-null reference.
+    const mime = /\.png$/i.test(path) ? "image/png" : "image/jpeg";
+    state.flowDoc = { kind, bytes: new Uint8Array(bytes), mime };
+    // No richer title source than the filename for images.
   }
 
   if (myToken !== docLoadToken) return;
@@ -3317,6 +3451,31 @@ async function loadAnyDocument(path) {
     state.flowZoom = loadZoomForDoc() ?? 1;
     applyFlowZoom();
     if (state.tool === "rect") setTool("select");
+  } else if (kind === "image") {
+    // First render decodes the bytes + reads natural dimensions, so we
+    // can compute a fit-to-width scale only after the page is mounted.
+    await ImageView.renderImagePage(
+      viewerContainer,
+      state.flowDoc.bytes,
+      state.flowDoc.mime,
+      1,
+    );
+    if (myToken !== docLoadToken) return;
+    const savedZoom = loadZoomForDoc();
+    const fit = ImageView.fitWidthScaleImage(viewerScroll.clientWidth - FIT_PADDING);
+    const initial = savedZoom != null ? savedZoom : fit;
+    state.scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, initial));
+    // Re-mount at the computed scale (cheap — same bytes, same Image).
+    await ImageView.renderImagePage(
+      viewerContainer,
+      state.flowDoc.bytes,
+      state.flowDoc.mime,
+      state.scale,
+    );
+    if (myToken !== docLoadToken) return;
+    const overflow = viewerScroll.scrollWidth - viewerScroll.clientWidth;
+    viewerScroll.scrollLeft = overflow > 0 ? overflow / 2 : 0;
+    viewerScroll.scrollTop = 0;
   }
   updateZoomLabel();
 
@@ -3370,18 +3529,24 @@ document.addEventListener("paste", async (e) => {
   }
   console.log("[paste] received", { types: cd.types, items: [...(cd.items || [])].map((it) => `${it.kind}/${it.type}`) });
 
-  // Image first — most clipboard images come from screenshots.
+  // Image paste is intentionally disabled — pasted image clips can't
+  // be selected for AI highlighting (the AI flow needs a doc context
+  // they don't have). Users who want to annotate an image should save
+  // it as a PNG/JPEG and Open File → image source kind (added in
+  // SPEC §7.3) gives the full workflow including AI vision queries.
+  // The clipboard.js createPastedImageSnippet helper is left in place
+  // so already-saved image pastes still render + delete cleanly.
   for (const item of cd.items || []) {
     if (item.kind === "file" && item.type?.startsWith("image/")) {
-      const blob = item.getAsFile();
-      if (!blob) continue;
       e.preventDefault();
-      try {
-        const bytes = new Uint8Array(await blob.arrayBuffer());
-        await createPastedImageSnippet(bytes, item.type);
-      } catch (err) {
-        console.error("[paste] image failed", err);
-      }
+      console.warn("[paste] image paste disabled — save and Open File to annotate");
+      // Use the AI-status pill as a generic toast — alert()/confirm()
+      // are blocked in the Tauri webview without the dialog plugin's
+      // ask/message commands being explicitly allowed.
+      aiSetStatus(
+        "Pasted images aren't annotatable. Save the image (PNG/JPEG) and Open File to add it as a document.",
+        "error",
+      );
       return;
     }
   }
@@ -3428,7 +3593,8 @@ async function revealInFinder(path) {
 
 async function setScale(next) {
   const clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, next));
-  if (!state.pdfDoc || Math.abs(clamped - state.scale) < 0.001) {
+  const isImage = state.source?.kind === "image";
+  if ((!state.pdfDoc && !isImage) || Math.abs(clamped - state.scale) < 0.001) {
     state.scale = clamped;
     updateZoomLabel();
     saveZoomForDoc(clamped);
@@ -3437,9 +3603,18 @@ async function setScale(next) {
   state.scale = clamped;
   updateZoomLabel();
   saveZoomForDoc(clamped);
-  await renderPages(state.pdfDoc, viewerContainer, state.scale);
+  if (isImage) {
+    await ImageView.renderImagePage(
+      viewerContainer,
+      state.flowDoc.bytes,
+      state.flowDoc.mime,
+      state.scale,
+    );
+  } else {
+    await renderPages(state.pdfDoc, viewerContainer, state.scale);
+  }
   applyAllHighlights();
-  // PDF re-render replaces page-wraps; re-paint AI preview overlays.
+  // Re-render replaces page-wraps; re-paint AI preview overlays.
   paintAiPreviews();
   syncHorizontalOverflow();
 }
@@ -3588,7 +3763,7 @@ function updateZoomLabel(overrideScale) {
 viewerContainer.addEventListener("mousedown", (e) => {
   if (e.detail >= 2) e.preventDefault();
   if (state.tool !== "rect") return;
-  if (state.source.kind !== "pdf") return;
+  if (state.source.kind !== "pdf" && state.source.kind !== "image") return;
   const wrap = e.target.closest?.(".page-wrap");
   if (!wrap) return;
   // If the click landed on an existing highlight, skip the rubber-band
@@ -3643,11 +3818,15 @@ window.addEventListener("mouseup", async (e) => {
 });
 
 async function createImageSnippet(page, fracRect) {
-  if (!state.pdfDoc || !state.currentPdfPath) return;
+  if (!state.currentPdfPath) return;
+  const isImageSource = state.source?.kind === "image";
+  if (!state.pdfDoc && !isImageSource) return;
   const id = crypto.randomUUID();
   let pngBytes;
   try {
-    pngBytes = await renderRegionPng(state.pdfDoc, page, fracRect, 2);
+    pngBytes = isImageSource
+      ? await ImageView.renderImageRegionPng(fracRect)
+      : await renderRegionPng(state.pdfDoc, page, fracRect, 2);
   } catch (err) {
     console.error("clip render failed", err);
     return;
@@ -4280,6 +4459,91 @@ function stopConnectorLoop() {
   }
 }
 
+// ─── PDF text-drag selection clamp ──────────────────────────────────
+//
+// Native browser selection extends across any text in document order —
+// when the cursor enters whitespace between text spans (or a vertical
+// gap between paragraphs), the focus snaps to the next text node it
+// can find, which on a multi-column page is often far away. The visible
+// effect: dragging over a gap suddenly highlights to the end of page.
+//
+// Fix: while a text-drag is in progress on a PDF page, manually pin
+// the selection's focus to whatever caretRangeFromPoint reports at the
+// current cursor position. If the cursor is over a non-text area,
+// caretRangeFromPoint returns null OR a position outside the active
+// page's textLayer — in either case we skip the extend, leaving the
+// selection where it was at the last text contact. WYSIWYG selection.
+//
+// Single-click word selection, shift+click extension, and right-click
+// menus stay on native paths (we only intercept primary-button drags
+// that originate inside a .textLayer).
+let _textDragAnchor = null; // { node, offset, wrap }
+
+function caretRangeAt(x, y) {
+  if (document.caretRangeFromPoint) return document.caretRangeFromPoint(x, y);
+  if (document.caretPositionFromPoint) {
+    const p = document.caretPositionFromPoint(x, y);
+    if (!p) return null;
+    const r = document.createRange();
+    r.setStart(p.offsetNode, p.offset);
+    r.collapse(true);
+    return r;
+  }
+  return null;
+}
+
+viewerContainer.addEventListener("mousedown", (e) => {
+  if (e.button !== 0 || e.shiftKey) return;
+  if (state.tool !== "select") return;
+  if (state.source?.kind !== "pdf") return;
+  const startEl = e.target instanceof Element ? e.target : null;
+  if (!startEl?.closest(".textLayer")) return;
+  const wrap = startEl.closest(".page-wrap");
+  if (!wrap) return;
+  const r = caretRangeAt(e.clientX, e.clientY);
+  if (!r) return;
+  _textDragAnchor = { node: r.startContainer, offset: r.startOffset, wrap };
+});
+
+window.addEventListener("mousemove", (e) => {
+  if (!_textDragAnchor) return;
+  // Cursor over whitespace / margin → no caret position. Don't extend
+  // the selection. Browser may already have tried to extend on its own
+  // before we get here; we just re-clamp to the last known good caret.
+  const r = caretRangeAt(e.clientX, e.clientY);
+  if (!r) {
+    // Pin the selection to the last anchor → anchor (collapse to start)
+    // would visibly shrink the selection; instead, leave whatever the
+    // native handler set since the previous mousemove. No-op here.
+    return;
+  }
+  // Only extend within the SAME page's textLayer. Cross-page selection
+  // is what produces the dramatic "to end of doc" runaway when the
+  // cursor strays into another page's region.
+  const node = r.startContainer;
+  if (!_textDragAnchor.wrap.contains(node)) return;
+  const parentTextLayer = (node.nodeType === 1 ? node : node.parentElement)
+    ?.closest(".textLayer");
+  if (!parentTextLayer) return;
+  // Clamp selection: anchor stays at mousedown caret, focus moves to
+  // wherever the cursor actually is. setBaseAndExtent overrides any
+  // runaway extension the native handler attempted.
+  const sel = window.getSelection();
+  if (!sel) return;
+  try {
+    sel.setBaseAndExtent(
+      _textDragAnchor.node, _textDragAnchor.offset,
+      node, r.startOffset,
+    );
+  } catch {
+    // setBaseAndExtent throws on detached / cross-document nodes —
+    // safest to drop the anchor and let native take over.
+    _textDragAnchor = null;
+  }
+});
+
+window.addEventListener("mouseup", () => { _textDragAnchor = null; });
+
 viewerContainer.addEventListener("mouseup", async () => {
   if (state.source.kind === "pdf") {
     const snip = getSelectionSnippet();
@@ -4374,11 +4638,13 @@ async function renderSnippets() {
     source = data.snippets;
     edgeSource = data.edges || [];
   } else {
-    // Doc scope: current doc's snippets + workspace-level pasted snippets so
-    // a user who just pasted doesn't see "nothing happened".
-    const pasted = (state.workspace?.pastedSnippets || []).map((s) =>
-      ({ ...s, _pdfPath: PASTED_PSEUDO_PATH }));
-    source = [...state.snippets, ...pasted];
+    // Doc scope: ONLY the active document's snippets. Pasted clips are
+    // workspace-level and intentionally not shown here — they don't
+    // belong to any one doc, so injecting them inflates this doc's
+    // counts and confuses the "in this doc" mental model. A passive
+    // affordance below tells the user how many pasted clips exist + how
+    // to view them. (Was: source = [...state.snippets, ...pasted].)
+    source = [...state.snippets];
     edgeSource = state.edges || [];
   }
   const rankScores = computeMarkRank(source, edgeSource);
@@ -4704,6 +4970,34 @@ async function renderSnippets() {
 
     snippetsListEl.appendChild(li);
   });
+  // Doc-scope footer affordance for pasted clips. Pasted lives on the
+  // workspace, not on any doc; rather than hiding them silently when
+  // the user just pasted (jarring), we surface a single thin line that
+  // doubles as a jump-to-workspace shortcut.
+  if (!isWorkspace) {
+    const pastedCount = (state.workspace?.pastedSnippets || []).length;
+    if (pastedCount > 0) {
+      const hint = document.createElement("li");
+      hint.className = "doc-scope-pasted-hint";
+      const icon = document.createElement("span");
+      icon.className = "doc-scope-pasted-hint-icon";
+      icon.textContent = "📋";
+      const label = document.createElement("span");
+      label.className = "doc-scope-pasted-hint-label";
+      label.textContent = `${pastedCount} pasted clip${pastedCount === 1 ? "" : "s"} in workspace`;
+      const action = document.createElement("button");
+      action.type = "button";
+      action.className = "doc-scope-pasted-hint-action";
+      action.textContent = "view";
+      action.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setMapScope("workspace");
+      });
+      hint.append(icon, label, action);
+      snippetsListEl.appendChild(hint);
+    }
+  }
   // Restore scroll position after the list rebuild. Clamp to the new
   // scrollable height in case the list shrank (e.g. delete + nothing
   // below to scroll to).
@@ -5076,12 +5370,8 @@ function switchView(view) {
   document.getElementById("map-view").hidden = !isMap;
   document.getElementById("lineage-view").hidden = !isLineage;
   document.getElementById("map-scope").hidden = false;
-  // Keep the collapsible section title in sync with the active view so
-  // the heading row reads naturally as the user tabs between modes.
-  const titleEl = document.getElementById("snippets-section-title");
-  if (titleEl) {
-    titleEl.textContent = isMap ? "Map" : isLineage ? "Lineage" : "Snippets";
-  }
+  // The active tab button already reflects the current view (.active
+  // class above) — no separate title element to update anymore.
   if (isMap) {
     requestAnimationFrame(async () => {
       if (!mapInitialized) {
@@ -5420,8 +5710,17 @@ async function addSnippetToGroupRemote(pdfPath, snippetId, groupId) {
     if (!snippet) return;
     snippet.groups = snippet.groups || [];
     if (!snippet.groups.includes(groupId)) snippet.groups.push(groupId);
-    await getStore().writeAnnot(pdfPath, af);
+    // expectedMtimeMs from the fresh read above so the optimistic check
+    // doesn't trip. If the target IS the active doc, also bump
+    // state.sidecarMtimeMs from the response — otherwise the next
+    // persistImmediate would use a stale expected and trigger a
+    // spurious mtime conflict (which in Tauri ends with a blocked
+    // confirm() and breaks the highlight-repaint chain).
+    const res = await getStore().writeAnnot(pdfPath, af, Number(af._mtimeMs) || -1);
     if (pdfPath === state.currentPdfPath) {
+      if (res && typeof res.mtimeMs === "number") {
+        state.sidecarMtimeMs = res.mtimeMs;
+      }
       const local = state.snippets.find((s) => s.id === snippetId);
       if (local) {
         local.groups = local.groups || [];
@@ -6108,16 +6407,15 @@ async function getSummaryData() {
     }
     return { snippets: data.snippets, sources: [...sources].filter(Boolean) };
   }
-  // Doc scope — include workspace-level pasted snippets too so summaries
-  // and exports surface them alongside the active doc's content.
+  // Doc scope — current doc's snippets only. Pasted clips are
+  // workspace-level (they belong to no single doc); exclude from
+  // doc-scope summaries so the summary reads as a clean digest of
+  // THIS doc. Workspace scope above still includes them.
   const docSnippets = state.snippets.map((s) => ({ ...s, _pdfPath: state.currentPdfPath }));
-  const pastedSnippets = (state.workspace?.pastedSnippets || [])
-    .map((s) => ({ ...s, _pdfPath: PASTED_PSEUDO_PATH }));
   const sources = [];
   if (state.currentPdfPath) sources.push(state.currentPdfPath);
-  if (pastedSnippets.length) sources.push(PASTED_PSEUDO_PATH);
   return {
-    snippets: [...docSnippets, ...pastedSnippets],
+    snippets: docSnippets,
     sources,
   };
 }
