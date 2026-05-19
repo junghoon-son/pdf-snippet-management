@@ -5,6 +5,7 @@
 
 import * as Anthropic from "./anthropic.js";
 import * as OpenAi from "./openai.js";
+import * as Gemini from "./gemini.js";
 
 const PROVIDER_STORAGE = "marklee-ai-provider";
 
@@ -39,6 +40,19 @@ const PROVIDER_DEFS = {
     ],
     keyPlaceholder: "sk-…",
     keyHint: "platform.openai.com → API Keys",
+  },
+  gemini: {
+    id: "gemini",
+    label: "Google Gemini",
+    module: Gemini,
+    defaultModel: "gemini-2.5-flash",
+    models: [
+      { id: "gemini-2.5-flash",       label: "Gemini 2.5 Flash (default — balanced, vision + PDF)", maxOutputTokens: 65536 },
+      { id: "gemini-2.5-flash-lite",  label: "Gemini 2.5 Flash Lite (fastest, cheapest)",           maxOutputTokens: 65536 },
+      { id: "gemini-2.0-flash",       label: "Gemini 2.0 Flash (older, stable)",                    maxOutputTokens: 8192  },
+    ],
+    keyPlaceholder: "AIza…",
+    keyHint: "aistudio.google.com → API key",
   },
 };
 

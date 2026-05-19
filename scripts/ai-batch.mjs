@@ -21,8 +21,13 @@ import { findInFlat, computeLineRects } from "../src/ai/resolver.js";
 import { READER_SYSTEM, READER_TOOL } from "../src/ai/reader-prompt.js";
 
 const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
+const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 const API_VERSION = "2023-06-01";
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+const DEFAULT_PROVIDER = "anthropic";
+const PROVIDER_DEFAULTS = {
+  anthropic: { model: "claude-sonnet-4-6", envKey: "ANTHROPIC_API_KEY" },
+  gemini:    { model: "gemini-2.5-flash",  envKey: "GEMINI_API_KEY" },
+};
 const MAX_OUTPUT_TOKENS = 16384;
 const CONTEXT_LEN = 40;
 
@@ -35,16 +40,23 @@ is written next to it. For folders, a single ai-batch-index.html
 links to every per-doc report.
 
 Options:
-  --json          Emit each doc's highlights as JSON to stdout (in addition
-                  to writing sidecars + HTML reports)
-  --dry-run       Skip sidecar writes (still writes HTML reports)
-  --no-html       Skip HTML reports
-  --model <id>    Anthropic model (default: ${DEFAULT_MODEL})
-  --group <name>  Tag every accepted snippet with this group (created if new)
-  --filter <ext>  Folder mode: limit to this extension (default: pdf)
-  -h, --help      Show this help
+  --provider <id>  anthropic (default) | gemini
+  --model <id>     Override model for the chosen provider
+                     anthropic default: ${PROVIDER_DEFAULTS.anthropic.model}
+                     gemini    default: ${PROVIDER_DEFAULTS.gemini.model}
+  --json           Emit each doc's highlights as JSON to stdout
+  --dry-run        Skip sidecar writes (still writes HTML reports)
+  --no-html        Skip HTML reports
+  --group <name>   Tag every accepted snippet with this group (created if new)
+  --filter <ext>   Folder mode: limit to this extension (default: pdf)
+  -h, --help       Show this help
 
-Requires ANTHROPIC_API_KEY in env.
+Requires the provider's API key in env:
+  ANTHROPIC_API_KEY  (provider=anthropic)
+  GEMINI_API_KEY     (provider=gemini)
+
+Both providers accept the PDF natively (no canvas / rendering needed
+on the CLI side). Gemini Flash is the cheaper batch option.
 `;
 
 // READER_SYSTEM + READER_TOOL imported from src/ai/reader-prompt.js
@@ -57,7 +69,8 @@ function parseArgs(argv) {
     json: false,
     dryRun: false,
     html: true,
-    model: DEFAULT_MODEL,
+    provider: DEFAULT_PROVIDER,
+    model: null,
     group: null,
     filter: "pdf",
   };
@@ -67,12 +80,18 @@ function parseArgs(argv) {
     if (arg === "--json") a.json = true;
     else if (arg === "--dry-run") a.dryRun = true;
     else if (arg === "--no-html") a.html = false;
+    else if (arg === "--provider") a.provider = argv[++i];
     else if (arg === "--model") a.model = argv[++i];
     else if (arg === "--group") a.group = argv[++i];
     else if (arg === "--filter") a.filter = argv[++i];
     else if (arg === "-h" || arg === "--help") return null;
     else rest.push(arg);
   }
+  if (!PROVIDER_DEFAULTS[a.provider]) {
+    process.stderr.write(`error: unknown --provider "${a.provider}". Use anthropic | gemini.\n`);
+    return null;
+  }
+  if (!a.model) a.model = PROVIDER_DEFAULTS[a.provider].model;
   [a.query, a.target] = rest;
   return a;
 }
@@ -83,9 +102,10 @@ async function main() {
     process.stderr.write(HELP);
     process.exit(args ? 1 : 0);
   }
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const envKey = PROVIDER_DEFAULTS[args.provider].envKey;
+  const apiKey = process.env[envKey];
   if (!apiKey) {
-    process.stderr.write("error: ANTHROPIC_API_KEY not set\n");
+    process.stderr.write(`error: ${envKey} not set (required for --provider ${args.provider})\n`);
     process.exit(1);
   }
 
@@ -146,6 +166,7 @@ async function processDoc(pdfPath, args, apiKey) {
     query: args.query,
     pdfBytes: bytes,
     apiKey,
+    provider: args.provider,
     model: args.model,
     docTitle,
   });
@@ -275,8 +296,8 @@ function buildImageSnippet(h) {
   };
 }
 
-async function callReader({ query, pdfBytes, apiKey, model, docTitle }) {
-  const lines = [
+async function callReader({ query, pdfBytes, apiKey, provider, model, docTitle }) {
+  const promptLines = [
     `Question: ${query}`,
     "Mode: TEXT-FIRST — prefer kind=text with verbatim quotes. Use kind=image only for genuine non-text content (figures, charts, diagrams).",
     "",
@@ -284,16 +305,17 @@ async function callReader({ query, pdfBytes, apiKey, model, docTitle }) {
     "",
     "No existing groups — propose 1-4 short title-case group names total.",
   ].filter(Boolean);
+  const pdfBase64 = pdfBytes.toString("base64");
+  if (provider === "gemini") {
+    return await callGeminiReader({ promptLines, pdfBase64, apiKey, model });
+  }
+  return await callAnthropicReader({ promptLines, pdfBase64, apiKey, model });
+}
+
+async function callAnthropicReader({ promptLines, pdfBase64, apiKey, model }) {
   const content = [
-    {
-      type: "document",
-      source: {
-        type: "base64",
-        media_type: "application/pdf",
-        data: pdfBytes.toString("base64"),
-      },
-    },
-    { type: "text", text: lines.join("\n") },
+    { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfBase64 } },
+    { type: "text", text: promptLines.join("\n") },
   ];
   const body = {
     model,
@@ -321,9 +343,55 @@ async function callReader({ query, pdfBytes, apiKey, model, docTitle }) {
   );
   if (!toolUse) {
     const txt = (json.content || []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
-    throw new Error(`model did not call record_highlights. Text: ${txt.slice(0, 200)}`);
+    throw new Error(`Anthropic: model did not call record_highlights. Text: ${txt.slice(0, 200)}`);
   }
   return toolUse.input?.highlights || [];
+}
+
+async function callGeminiReader({ promptLines, pdfBase64, apiKey, model }) {
+  // Gemini accepts PDFs via inline_data with mime_type "application/pdf"
+  // — same native-PDF advantage we use on the Anthropic path.
+  const parts = [
+    { inline_data: { mime_type: "application/pdf", data: pdfBase64 } },
+    { text: promptLines.join("\n") },
+  ];
+  const body = {
+    contents: [{ role: "user", parts }],
+    systemInstruction: { parts: [{ text: READER_SYSTEM }] },
+    tools: [{
+      functionDeclarations: [{
+        name: READER_TOOL.name,
+        description: READER_TOOL.description,
+        parameters: READER_TOOL.input_schema,
+      }],
+    }],
+    toolConfig: {
+      functionCallingConfig: { mode: "ANY", allowedFunctionNames: [READER_TOOL.name] },
+    },
+    generationConfig: { maxOutputTokens: MAX_OUTPUT_TOKENS },
+  };
+  const url = `${GEMINI_BASE}/${encodeURIComponent(model)}:generateContent`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`Gemini ${res.status}: ${detail || res.statusText}`);
+  }
+  const json = await res.json();
+  const parts2 = json.candidates?.[0]?.content?.parts || [];
+  const fc = parts2.find((p) => p.functionCall && p.functionCall.name === READER_TOOL.name);
+  if (!fc) {
+    const txt = parts2.filter((p) => typeof p.text === "string").map((p) => p.text).join("\n");
+    throw new Error(`Gemini: model did not call ${READER_TOOL.name}. Text: ${txt.slice(0, 200)}`);
+  }
+  // Gemini returns args as an object (not JSON string).
+  const input = typeof fc.functionCall.args === "string"
+    ? JSON.parse(fc.functionCall.args || "{}")
+    : (fc.functionCall.args || {});
+  return input.highlights || [];
 }
 
 async function applySidecar(pdfPath, newSnippets, groupName) {
@@ -370,12 +438,18 @@ function escapeHtml(s) {
 async function writeDocReport(pdfPath, result, args) {
   const reportPath = pdfPath.replace(/\.pdf$/i, ".ai-report.html");
   const filename = path.basename(pdfPath);
-  const html = renderDocHtml({ filename, ...result, model: args.model, group: args.group });
+  const html = renderDocHtml({
+    filename,
+    ...result,
+    provider: args.provider,
+    model: args.model,
+    group: args.group,
+  });
   await writeFile(reportPath, html);
   process.stderr.write(`[ai] wrote ${path.basename(reportPath)}\n`);
 }
 
-function renderDocHtml({ filename, query, records, snippetCount, accepted, orphan, model, group }) {
+function renderDocHtml({ filename, query, records, snippetCount, accepted, orphan, provider, model, group }) {
   const items = records.map((r, i) => renderRecord(r, i)).join("\n");
   const tag = group ? `<span class="tag">group: ${escapeHtml(group)}</span>` : "";
   return `<!doctype html><html><head><meta charset="utf-8">
@@ -415,7 +489,7 @@ footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e8e3d4; col
     <span>${accepted} accepted</span>
     <span>${orphan} orphan</span>
     <span>${snippetCount} written to sidecar</span>
-    <span>${escapeHtml(model || "")}</span>
+    <span>${escapeHtml(provider || "")} · ${escapeHtml(model || "")}</span>
     ${tag}
   </div>
 </header>
