@@ -7,9 +7,9 @@
  *     every file inside, and the browser remembers it for the session.
  *   - Document path is the file's name within the chosen root, e.g.
  *     "papers/draft.pdf" — we store paths as forward-slash-joined strings.
- *   - Sidecars go right next to source files (papers/draft.pdf.annot.json),
+ *   - Sidecars + clips go in a hidden per-directory ".marklee/" folder
+ *     (papers/.marklee/draft.pdf.annot.json, papers/.marklee/clips/<id>.png),
  *     matching the desktop convention.
- *   - Image clips go in a hidden subfolder ".{filename}.clips/".
  *   - Global groups live in IndexedDB (per-origin, survives reloads, not
  *     scoped to any particular folder).
  *
@@ -31,7 +31,7 @@ function kindFromName(name) {
   return m ? KIND_BY_EXT[m[1]] || null : null;
 }
 
-const GROUPS_DB = "pdf-annotator";
+const GROUPS_DB = "marklee";
 const GROUPS_STORE = "global-groups";
 const GROUPS_KEY = "groups.json";
 
@@ -79,7 +79,7 @@ export class FsaStore {
   }
 
   async readAnnot(relPath) {
-    const sidecarPath = `${relPath}.annot.json`;
+    const sidecarPath = sidecarPathFor(relPath);
     let af = null;
     let mtimeMs = 0;
     try {
@@ -105,7 +105,7 @@ export class FsaStore {
   // so this is best-effort on the FSA backend. Same return shape as the
   // Tauri store's writeAnnot for caller-side uniformity.
   async writeAnnot(relPath, annot, expectedMtimeMs = -1) {
-    const sidecarPath = `${relPath}.annot.json`;
+    const sidecarPath = sidecarPathFor(relPath);
     if (expectedMtimeMs !== -1) {
       let actual = 0;
       try {
@@ -135,8 +135,15 @@ export class FsaStore {
     return { ok: true, mtimeMs: newMtime };
   }
 
+  // Remove a document's sidecar. Used when an edit empties a document so
+  // we don't leave an empty husk behind.
+  async deleteAnnot(relPath) {
+    try { await this._deleteFile(sidecarPathFor(relPath)); } catch { /* absent */ }
+  }
+
   async readGlobalGroups() {
-    return (await idbGet(GROUPS_DB, GROUPS_STORE, GROUPS_KEY)) || [];
+    const groups = await idbGet(GROUPS_DB, GROUPS_STORE, GROUPS_KEY);
+    return groups || [];
   }
 
   async writeGlobalGroups(groups) {
@@ -222,10 +229,18 @@ function basename(p) {
   return p.split("/").pop() || p;
 }
 
-function clipDirFor(relPath) {
+// New sidecar location: <dir>/.marklee/<filename>.annot.json (relative to
+// the chosen root). Keeps source folders clean — see STORE_DIR rationale
+// in the Rust backend and the FsaStore header.
+function sidecarPathFor(relPath) {
   const dir = relPath.includes("/") ? relPath.slice(0, relPath.lastIndexOf("/")) : "";
   const name = basename(relPath);
-  return (dir ? `${dir}/` : "") + `.${name}.clips`;
+  return (dir ? `${dir}/` : "") + `.marklee/${name}.annot.json`;
+}
+
+function clipDirFor(relPath) {
+  const dir = relPath.includes("/") ? relPath.slice(0, relPath.lastIndexOf("/")) : "";
+  return (dir ? `${dir}/` : "") + ".marklee/clips";
 }
 
 async function walkDirectory(dir, prefix, visit) {

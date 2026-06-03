@@ -95,6 +95,26 @@ export async function persistImmediate() {
   const usedIds = new Set();
   for (const s of state.snippets) for (const g of s.groups || []) usedIds.add(g);
   const localGroups = (state.groupsMeta || []).filter((g) => usedIds.has(g.id));
+  // Don't litter the source folder with an empty sidecar. If this doc has
+  // no snippets, edges, or referenced groups (e.g. opened-but-unannotated,
+  // or after delete-all), delete any existing sidecar and skip the write.
+  const isEmpty =
+    (state.snippets?.length || 0) === 0 &&
+    (state.edges?.length || 0) === 0 &&
+    localGroups.length === 0;
+  if (isEmpty) {
+    const store = getStore();
+    if (typeof store.deleteAnnot === "function") {
+      try {
+        await store.deleteAnnot(state.currentPdfPath);
+      } catch (err) {
+        console.warn("[persist] deleteAnnot (empty doc) failed", err);
+      }
+    }
+    state.sidecarMtimeMs = 0;
+    flashSaveIndicator("saved");
+    return;
+  }
   const payload = {
     markleeVersion: "0.1",
     source: state.source,

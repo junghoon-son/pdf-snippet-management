@@ -2,8 +2,13 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import crypto from "node:crypto";
+import {
+  sidecarPath,
+  resolveSidecar,
+  ensureStoreDir,
+  groupsPath,
+} from "./marklee-paths.mjs";
 
 const HELP = `Usage:
   bun run annotate <command> [options]
@@ -120,17 +125,11 @@ async function writeJsonPretty(p, obj) {
   await writeFile(p, JSON.stringify(obj, null, 2));
 }
 
-function sidecarPath(pdfPath) {
-  return pdfPath + ".annot.json";
-}
-
-function globalGroupsPath() {
-  return path.join(process.env.HOME || os.homedir(), ".pdf-annotator", "groups.json");
-}
-
 async function readAnnot(pdfPath) {
   if (!existsSync(pdfPath)) die(`pdf not found: ${pdfPath}`);
-  const af = await loadJson(sidecarPath(pdfPath), {
+  // Prefer the new .marklee/ sidecar; fall back to a legacy next-to-file one.
+  const existing = resolveSidecar(pdfPath);
+  const af = await loadJson(existing || sidecarPath(pdfPath), {
     source: { path: pdfPath, filename: path.basename(pdfPath), title: "", author: "" },
     snippets: [],
     edges: [],
@@ -144,15 +143,16 @@ async function readAnnot(pdfPath) {
 }
 
 async function writeAnnot(pdfPath, af) {
+  await ensureStoreDir(pdfPath);
   await writeJsonPretty(sidecarPath(pdfPath), af);
 }
 
 async function readGlobalGroups() {
-  return await loadJson(globalGroupsPath(), []);
+  return await loadJson(groupsPath(), []);
 }
 
 async function writeGlobalGroups(groups) {
-  await writeJsonPretty(globalGroupsPath(), groups);
+  await writeJsonPretty(groupsPath(), groups);
 }
 
 function findGroupId(groups, idOrName) {

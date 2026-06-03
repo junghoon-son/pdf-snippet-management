@@ -147,11 +147,22 @@ fn sidecar_mtime_ms(p: &Path) -> u64 {
     d.as_millis() as u64
 }
 
+// Hidden per-directory store folder (the "@eaDir"/".thumbnails" pattern):
+// all sidecars and clips for documents in a directory live in
+// <dir>/.marklee/ instead of scattered next to each file. Keeps source
+// folders clean while staying local — the folder travels with the
+// documents when the directory is copied/moved.
+const STORE_DIR: &str = ".marklee";
+
+// Sidecar location: <dir>/.marklee/<filename>.annot.json
 fn sidecar_path(pdf_path: &str) -> PathBuf {
     let p = Path::new(pdf_path);
-    let mut s = p.as_os_str().to_owned();
-    s.push(".annot.json");
-    PathBuf::from(s)
+    let parent = p.parent().unwrap_or_else(|| Path::new(""));
+    let name = p
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("document");
+    parent.join(STORE_DIR).join(format!("{}.annot.json", name))
 }
 
 fn document_kind_from_ext(ext: &str) -> Option<&'static str> {
@@ -223,7 +234,8 @@ fn clip_dir_for(pdf_path: &str) -> Result<(PathBuf, String), String> {
         .file_name()
         .and_then(|n| n.to_str())
         .ok_or("PDF filename not utf8")?;
-    let rel = format!(".{}.clips", stem);
+    let _ = stem; // filename no longer used in the path; clip ids are unique
+    let rel = format!("{}/clips", STORE_DIR);
     Ok((parent.join(&rel), rel))
 }
 
@@ -304,10 +316,16 @@ fn copy_image_to_clipboard(pdf_path: String, image_path: String) -> Result<(), S
     Ok(())
 }
 
-fn global_groups_path() -> Result<PathBuf, String> {
+// Resolve the per-user data dir (~/.marklee), creating it if needed.
+fn marklee_dir() -> Result<PathBuf, String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let dir = Path::new(&home).join(".pdf-annotator");
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let new_dir = Path::new(&home).join(".marklee");
+    fs::create_dir_all(&new_dir).map_err(|e| e.to_string())?;
+    Ok(new_dir)
+}
+
+fn global_groups_path() -> Result<PathBuf, String> {
+    let dir = marklee_dir()?;
     Ok(dir.join("groups.json"))
 }
 
@@ -507,9 +525,7 @@ fn run_docling_layout(
 
 #[tauri::command]
 fn clipboard_doc_path() -> Result<String, String> {
-    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let dir = Path::new(&home).join(".marklee");
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let dir = marklee_dir()?;
     Ok(dir.join("clipboard").to_string_lossy().to_string())
 }
 
@@ -607,9 +623,24 @@ fn write_annot(
         }
     }
     let json = serde_json::to_vec_pretty(&payload).map_err(|e| e.to_string())?;
+    if let Some(dir) = p.parent() {
+        fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
     fs::write(&p, json).map_err(|e| e.to_string())?;
     let new_mtime = sidecar_mtime_ms(&p);
     Ok(WriteAnnotResult { ok: true, mtime_ms: Some(new_mtime), conflict: None })
+}
+
+// Remove a document's sidecar entirely. Called when an edit empties a
+// document (no snippets, edges, or groups) so we don't leave an empty
+// husk littering the folder.
+#[tauri::command]
+fn delete_annot(pdf_path: String) -> Result<(), String> {
+    let p = sidecar_path(&pdf_path);
+    if p.exists() {
+        fs::remove_file(&p).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 fn build_app_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<tauri::menu::Menu<R>> {
@@ -720,6 +751,7 @@ pub fn run() {
             write_file,
             read_annot,
             write_annot,
+            delete_annot,
             write_clip,
             read_clip,
             delete_clip,

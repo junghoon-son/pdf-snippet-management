@@ -29,6 +29,10 @@
  *       — On success, returns { ok: true, mtimeMs } so caller can cache
  *         the new mtime for the next write.
  *
+ *   deleteAnnot(path): Promise<void>
+ *       — Removes the document's sidecar (and any legacy next-to-file one).
+ *         Called when an edit empties a document so no empty husk is left.
+ *
  *   readGlobalGroups(): Promise<Array<GroupMeta>>
  *
  *   writeGlobalGroups(groups): Promise<void>

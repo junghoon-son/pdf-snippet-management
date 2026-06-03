@@ -18,6 +18,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import { findInFlat, computeLineRects } from "../src/ai/resolver.js";
+import { sidecarPath, resolveSidecar, ensureStoreDir } from "./marklee-paths.mjs";
 import { READER_SYSTEM, READER_TOOL } from "../src/ai/reader-prompt.js";
 
 const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
@@ -395,11 +396,14 @@ async function callGeminiReader({ promptLines, pdfBase64, apiKey, model }) {
 }
 
 async function applySidecar(pdfPath, newSnippets, groupName) {
-  const sidecarPath = pdfPath + ".annot.json";
+  // Read from wherever the sidecar currently lives (new .marklee/ or legacy
+  // next-to-file); always write back to the new .marklee/ location.
+  const readPath = resolveSidecar(pdfPath);
+  const outPath = sidecarPath(pdfPath);
   let existing = {};
-  if (existsSync(sidecarPath)) {
+  if (readPath) {
     try {
-      existing = JSON.parse(await readFile(sidecarPath, "utf-8"));
+      existing = JSON.parse(await readFile(readPath, "utf-8"));
     } catch {
       existing = {};
     }
@@ -424,7 +428,8 @@ async function applySidecar(pdfPath, newSnippets, groupName) {
   }
 
   existing.snippets.push(...newSnippets);
-  await writeFile(sidecarPath, JSON.stringify(existing, null, 2));
+  await ensureStoreDir(pdfPath);
+  await writeFile(outPath, JSON.stringify(existing, null, 2));
 }
 
 // ─── HTML reporting ─────────────────────────────────────────────────

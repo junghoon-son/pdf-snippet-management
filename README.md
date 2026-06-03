@@ -1,6 +1,6 @@
 # Marklee
 
-Portable, format-agnostic document annotation. Captures snippets from PDF, Markdown, and DOCX into JSON sidecars next to the source — no server, no account. Includes edit-tolerant text anchors, a directed lineage graph between snippets, and the **MarkRank** centrality algorithm for surfacing the most-referenced ideas in a corpus.
+Portable, format-agnostic document annotation. Captures snippets from PDF, Markdown, and DOCX into JSON sidecars next to the source — the free app never contacts a server: no account, no telemetry, no phone-home. Includes edit-tolerant text anchors, a directed lineage graph between snippets, and the **MarkRank** centrality algorithm for surfacing the most-referenced ideas in a corpus.
 
 See [`SPEC.md`](SPEC.md) for the format specification.
 
@@ -12,10 +12,10 @@ Built with Tauri 2 (Rust) + vanilla JS + PDF.js + cytoscape.
 - Drag a rectangle for image clips (rendered at 4× and saved as PNG sidecar)
 - Three views per doc: **list** (column-aligned group spines), **map** (force-directed snippet graph), **groups** (rename, delete, count)
 - Right-click any snippet → physics-bubble overlay to drop it into a group
-- Groups are global across all opened docs (`~/.pdf-annotator/groups.json`)
+- Groups are global across all opened docs (`~/.marklee/groups.json`)
 - Workspace concept: multiple files/folders persist across sessions
-- Snippets, comments, edges, and group refs persist next to each PDF as `<file>.pdf.annot.json`
-- Image clips persist next to each PDF as `<dir>/.<file>.pdf.clips/<id>.png`
+- Snippets, comments, edges, and group refs persist in a hidden `.marklee/` folder beside each PDF as `.marklee/<file>.pdf.annot.json`
+- Image clips persist in `<dir>/.marklee/clips/<id>.png`
 
 ## Prerequisites
 
@@ -55,7 +55,7 @@ The same frontend runs in a Chromium-family browser (Chrome / Edge / Brave / Arc
 bun run dev          # starts Vite at http://localhost:1420
 ```
 
-Open `http://localhost:1420` directly in Chrome (not via the Tauri window). The app detects the missing Tauri runtime and switches to the **File System Access API** storage backend. Click `+ folder` in the sidebar to grant the browser access to a folder; sidecars and image clips are written next to source files just like the desktop build. Safari and Firefox fall back to the OPFS stub (currently a placeholder).
+Open `http://localhost:1420` directly in Chrome (not via the Tauri window). The app detects the missing Tauri runtime and switches to the **File System Access API** storage backend. Click `+ folder` in the sidebar to grant the browser access to a folder; sidecars and image clips are written to a hidden `.marklee/` folder beside the source files just like the desktop build. Safari and Firefox fall back to the OPFS stub (currently a placeholder).
 
 For a built static site:
 
@@ -98,7 +98,7 @@ vite.config.js
 
 ## Sidecar JSON schema
 
-Each PDF gets a `<filename>.pdf.annot.json` next to it:
+Each PDF gets a sidecar in a hidden `.marklee/` folder beside it (`<dir>/.marklee/<filename>.pdf.annot.json`):
 
 ```json
 {
@@ -112,7 +112,7 @@ Each PDF gets a `<filename>.pdf.annot.json` next to it:
       "rects": [{ "left": 0.1, "top": 0.2, "width": 0.3, "height": 0.04 }],
       "comment": "...",
       "groups": ["group-uuid", ...],
-      "imagePath": ".paper.pdf.clips/abc.png"  // image kind only, relative to PDF dir
+      "imagePath": ".marklee/clips/abc.png"  // image kind only, relative to PDF dir
     }
   ],
   "edges":  [{ "id": "...", "source": "...", "target": "...", "label": "..." }],
@@ -120,7 +120,7 @@ Each PDF gets a `<filename>.pdf.annot.json` next to it:
 }
 ```
 
-Global group index lives at `~/.pdf-annotator/groups.json`.
+Global group index lives at `~/.marklee/groups.json`.
 
 ## Keyboard shortcuts
 
