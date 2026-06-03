@@ -3853,6 +3853,16 @@ async function createImageSnippet(page, fracRect) {
   await persist();
   refreshActiveView();
   applyAllHighlights();
+  flashNewSnippet(id);
+}
+
+// Give the just-captured snippet a snappy confirmation: pulse its highlight
+// in the document and bring its freshly-rendered card into view. Manual
+// capture paths only — bulk/AI/load paths intentionally skip this.
+function flashNewSnippet(id) {
+  pulseSnippet(id);
+  const card = snippetsListEl?.querySelector(`[data-snippet-id="${id}"]`);
+  if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 let hoverSnippetId = null;
@@ -4563,6 +4573,7 @@ viewerContainer.addEventListener("mouseup", async () => {
     await persist();
     refreshActiveView();
     applyAllHighlights();
+    flashNewSnippet(snip.id);
     window.getSelection().removeAllRanges();
     return;
   }
@@ -4597,6 +4608,7 @@ viewerContainer.addEventListener("mouseup", async () => {
     await persist();
     refreshActiveView();
     applyAllHighlights();
+    flashNewSnippet(snip.id);
     window.getSelection().removeAllRanges();
   }
 });
@@ -5312,6 +5324,8 @@ function applyAllHighlights() {
   });
   if (state.source.kind === "pdf") {
     applyHighlights(viewerContainer, visible);
+  } else if (state.source.kind === "image") {
+    ImageView.applyImageHighlights(viewerContainer, visible);
   } else if (state.source.kind === "markdown" || state.source.kind === "docx" || state.source.kind === "text") {
     FlowView.applyFlowHighlights(viewerContainer, visible);
   }
@@ -5370,6 +5384,12 @@ function switchView(view) {
   document.getElementById("map-view").hidden = !isMap;
   document.getElementById("lineage-view").hidden = !isLineage;
   document.getElementById("map-scope").hidden = false;
+  // Local-search bar (filter snippets) is only meaningful in the list
+  // view — in lineage/map the view has its own filter input, and the
+  // snippets list isn't even rendered. Hide it to avoid the "three
+  // input boxes stacked" feel that the user flagged.
+  const local = document.getElementById("local-search");
+  if (local) local.hidden = !isList;
   // The active tab button already reflects the current view (.active
   // class above) — no separate title element to update anymore.
   if (isMap) {
@@ -6659,21 +6679,59 @@ function renderSummaryGroupsPanel(orderedGids, sections, ungroupedCount) {
 // tracks the cursor and highlights the pill underneath, pointerup
 // performs the reorder. Small click-vs-drag threshold so a quick
 // click still scrolls to the section.
+// Summary pill drag-reorder — live DOM-swap with FLIP animation. The
+// dragged pill stays under the cursor and other pills slide out of the
+// way smoothly as the source crosses their midpoints. On drop the
+// final order is read from the DOM (already in the right place); a
+// single openSummary() pass syncs the content sections below.
 function wireSummaryGroupDrag(list) {
   let downGid = null;
   let startY = 0;
+  let startX = 0;
   let dragging = false;
   const DRAG_THRESHOLD = 4;
+  // Track the pill the cursor was last "over" so we don't re-swap on
+  // every pointermove frame while still over the same target — that
+  // would thrash and stutter the FLIP animation.
+  let lastOverGid = null;
+
+  const pills = () => [...list.querySelectorAll(".summary-group-pill[data-gid]")];
 
   const findPillAt = (clientX, clientY) => {
-    for (const li of list.querySelectorAll(".summary-group-pill")) {
-      if (!li.dataset.gid) continue;
+    for (const li of pills()) {
       const r = li.getBoundingClientRect();
       if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
         return li;
       }
     }
     return null;
+  };
+
+  // FLIP: capture each pill's rect → do DOM mutation → for every pill
+  // whose rect changed, set transform to the inverse of its delta and
+  // animate to identity. Gives the illusion of pills sliding into
+  // their new slots even though the layout flip was instant.
+  const captureRects = (els) => {
+    const m = new Map();
+    for (const el of els) m.set(el, el.getBoundingClientRect());
+    return m;
+  };
+  const flip = (els, before, durationMs = 180) => {
+    for (const el of els) {
+      const fromRect = before.get(el);
+      if (!fromRect) continue;
+      const after = el.getBoundingClientRect();
+      const dx = fromRect.left - after.left;
+      const dy = fromRect.top - after.top;
+      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
+      el.animate(
+        [
+          { transform: `translate(${dx}px, ${dy}px)` },
+          { transform: "translate(0, 0)" },
+        ],
+        { duration: durationMs, easing: "cubic-bezier(.22,.61,.36,1)", fill: "none" },
+      );
+    }
   };
 
   list.addEventListener("pointerdown", (e) => {
@@ -6685,53 +6743,75 @@ function wireSummaryGroupDrag(list) {
     if (!li || !li.dataset.gid) return;
     downGid = li.dataset.gid;
     startY = e.clientY;
+    startX = e.clientX;
     dragging = false;
-    // Capture the pointer to <ul> so pointermove/up keep flowing even
-    // when the cursor crosses out of any specific pill or out of the
-    // list entirely. Without this, WebKit drops move events the
-    // moment the cursor leaves the element where pointerdown fired.
+    lastOverGid = null;
     try { list.setPointerCapture(e.pointerId); } catch {}
-    // Visible immediate feedback so the user can tell pointerdown
-    // registered — otherwise the threshold delay can feel like
-    // nothing's happening.
     li.classList.add("press");
   });
 
   list.addEventListener("pointermove", (e) => {
     if (!downGid) return;
-    if (!dragging && Math.abs(e.clientY - startY) < DRAG_THRESHOLD) return;
+    const moved = Math.hypot(e.clientX - startX, e.clientY - startY);
+    if (!dragging && moved < DRAG_THRESHOLD) return;
+    const src = list.querySelector(`.summary-group-pill[data-gid="${downGid}"]`);
+    if (!src) return;
     if (!dragging) {
       dragging = true;
-      const src = list.querySelector(`.summary-group-pill[data-gid="${downGid}"]`);
-      src?.classList.add("dragging");
+      src.classList.add("dragging");
       document.body.classList.add("summary-reorder-active");
     }
     const over = findPillAt(e.clientX, e.clientY);
-    list.querySelectorAll(".drag-over").forEach((el) => el.classList.remove("drag-over"));
-    if (over && over.dataset.gid && over.dataset.gid !== downGid) {
-      over.classList.add("drag-over");
+    if (!over || over === src) {
+      lastOverGid = null;
+      return;
     }
+    // Use the cursor's position relative to the target's midpoint to
+    // decide whether to insert before or after. Crossing the midpoint
+    // (in either direction) is the trigger to actually swap.
+    const r = over.getBoundingClientRect();
+    const midY = r.top + r.height / 2;
+    const insertBefore = e.clientY < midY;
+    // Identity-guard: don't re-swap every frame while still hovering
+    // the same target on the same side. Only swap when (a) target
+    // changed, or (b) cursor crossed midpoint into the opposite half.
+    const overKey = over.dataset.gid + (insertBefore ? ":before" : ":after");
+    if (overKey === lastOverGid) return;
+    lastOverGid = overKey;
+    // No-op if the target swap would result in the same DOM order.
+    if (insertBefore && over.previousElementSibling === src) return;
+    if (!insertBefore && over.nextElementSibling === src) return;
+    const allPills = pills();
+    const before = captureRects(allPills);
+    if (insertBefore) {
+      list.insertBefore(src, over);
+    } else {
+      list.insertBefore(src, over.nextSibling);
+    }
+    flip(allPills, before);
   });
 
   const finish = (e) => {
     if (!downGid) return;
     const wasDragging = dragging;
-    const sourceGid = downGid;
     downGid = null;
     dragging = false;
+    lastOverGid = null;
     try { list.releasePointerCapture(e.pointerId); } catch {}
     document.body.classList.remove("summary-reorder-active");
-    list.querySelectorAll(".press, .dragging, .drag-over").forEach((el) =>
-      el.classList.remove("press", "dragging", "drag-over"));
+    list.querySelectorAll(".press, .dragging").forEach((el) =>
+      el.classList.remove("press", "dragging"));
     if (!wasDragging) return; // pure click — pill's own click handler runs separately
-    const over = findPillAt(e.clientX, e.clientY);
-    if (!over || !over.dataset.gid || over.dataset.gid === sourceGid) return;
+    // Read the final order from the DOM (the live-swap already put
+    // every pill in its correct slot), persist, then re-render so the
+    // content sections below the pill list pick up the new order too.
+    const finalOrder = pills().map((li) => li.dataset.gid);
     const meta = state.groupsMeta || [];
-    const fromIdx = meta.findIndex((g) => g.id === sourceGid);
-    const toIdx = meta.findIndex((g) => g.id === over.dataset.gid);
-    if (fromIdx === -1 || toIdx === -1) return;
-    const [moved] = meta.splice(fromIdx, 1);
-    meta.splice(toIdx, 0, moved);
+    const byId = new Map(meta.map((g) => [g.id, g]));
+    state.groupsMeta = finalOrder
+      .map((gid) => byId.get(gid))
+      .filter(Boolean)
+      .concat(meta.filter((g) => !finalOrder.includes(g.id)));
     saveWorkspace();
     openSummary();
   };
@@ -6928,6 +7008,18 @@ function renderHtmlExport({ title, sources, snippets, sections, ungrouped, image
     return d.innerHTML;
   };
 
+  // Snapshot the live theme's document-pane tokens so the exported HTML
+  // matches whatever theme is active (dark themes were unreadable before).
+  const cs = getComputedStyle(document.body);
+  const tok = (name, fallback) => (cs.getPropertyValue(name).trim() || fallback);
+  const pal = {
+    fg: tok("--pane-fg", "#1f1f1f"),
+    dim: tok("--pane-fg-dim", "#666"),
+    paper: tok("--pane-bg", "#f6f4ee"),
+    line: tok("--pane-border", "#e2dfd6"),
+    panel: tok("--pane-panel-2", "#ece9df"),
+  };
+
   const renderSnippet = (s, color) => {
     const path = s._pdfPath || "";
     const filename = path.split("/").pop() || "?";
@@ -6990,7 +7082,7 @@ function renderHtmlExport({ title, sources, snippets, sections, ungrouped, image
 <meta charset="utf-8">
 <title>${esc(title)}</title>
 <style>
-  :root { --fg: #1f1f1f; --dim: #666; --paper: #f6f4ee; --line: #e2dfd6; }
+  :root { --fg: ${pal.fg}; --dim: ${pal.dim}; --paper: ${pal.paper}; --line: ${pal.line}; --panel: ${pal.panel}; }
   body { font-family: ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif; max-width: 820px; margin: 56px auto; padding: 0 28px; color: var(--fg); line-height: 1.55; background: var(--paper); }
   h1 { font-family: ui-serif, "Iowan Old Style", Charter, Georgia, serif; font-size: 28px; margin: 0 0 6px; }
   .doc-meta { color: var(--dim); font-size: 13px; }
@@ -7004,10 +7096,10 @@ function renderHtmlExport({ title, sources, snippets, sections, ungrouped, image
   .snippet-meta { font-family: ui-monospace, "SF Mono", monospace; font-size: 11px; color: var(--dim); margin-bottom: 5px; letter-spacing: 0.2px; }
   .snippet-meta a { color: #0a6; text-decoration: none; }
   .snippet-meta a:hover { text-decoration: underline; }
-  .snippet-text { font-family: ui-serif, "Iowan Old Style", Charter, Georgia, serif; font-size: 14.5px; line-height: 1.55; color: #1f1f1f; }
-  .snippet-text.muted { color: #999; font-style: italic; }
+  .snippet-text { font-family: ui-serif, "Iowan Old Style", Charter, Georgia, serif; font-size: 14.5px; line-height: 1.55; color: var(--fg); }
+  .snippet-text.muted { color: var(--dim); font-style: italic; }
   .snippet-image img { max-width: 100%; border: 1px solid var(--line); border-radius: 3px; display: block; }
-  .snippet-comment { margin-top: 8px; padding: 8px 12px; background: #ece9df; border-radius: 4px; font-size: 12.5px; color: #2a2a2a; line-height: 1.5; }
+  .snippet-comment { margin-top: 8px; padding: 8px 12px; background: var(--panel); border-radius: 4px; font-size: 12.5px; color: var(--fg); line-height: 1.5; }
   footer { color: var(--dim); font-size: 11px; margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); font-family: ui-monospace, "SF Mono", monospace; }
   @media print { body { background: white; } .group-heading { background: white !important; border-color: #000 !important; } }
 </style>

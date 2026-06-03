@@ -1,0 +1,118 @@
+<!doctype html>
+<!-- DRAFT — pending pricing validation. No payment links are wired yet. -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Marklee — pricing (draft)</title>
+    <meta name="description" content="Marklee pricing: a free local app that never contacts a server, plus optional paid sync and team tiers for the genuinely server-shaped features." />
+    <meta name="robots" content="noindex" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="bg-mesh" aria-hidden="true"></div>
+
+    <span class="draft-banner">DRAFT — pending pricing validation</span>
+
+    <header class="hero">
+      <div class="container hero-nav">
+        <a class="brand" href="/">
+          <span class="brand-dot"></span>
+          <span class="brand-name">Marklee</span>
+        </a>
+        <nav class="nav">
+          <a href="/#what">What</a>
+          <a href="/#how">How</a>
+          <a href="/#uses">Uses</a>
+          <a href="/#why">Why</a>
+          <a href="/#themes">Themes</a>
+          <a href="/pricing.html">Pricing</a>
+          <a href="/spec">Spec</a>
+        </nav>
+      </div>
+    </header>
+
+    <section class="section">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-eyebrow">Pricing</span>
+          <h2>Free where it should be free.</h2>
+          <p class="section-lede">
+            The free app never contacts a server — no account, no telemetry, no
+            phone-home. Paid tiers cover the genuinely server-shaped features, and
+            only when you turn them on.
+          </p>
+        </div>
+
+        <div class="pricing-grid">
+
+          <!-- FREE -->
+          <article class="price-card">
+            <span class="price-badge">Marklee Local</span>
+            <h3>Free</h3>
+            <p class="price-sub">The whole app, on your machine.</p>
+            <p class="price-amount">$0<span class="price-unit"> forever</span></p>
+            <p class="price-note">No account. The free app never contacts a server.</p>
+            <ul>
+              <li>All themes, unlimited local annotations</li>
+              <li>JSON sidecars next to every document</li>
+              <li>Lineage graph + MarkRank centrality</li>
+              <li>BYO-key AI — Anthropic, OpenAI, Gemini, Ollama</li>
+              <li>Full CLI, including local verify</li>
+              <li>Local permalinks</li>
+              <li>ISO-32000 PDF export</li>
+            </ul>
+            <a class="btn ghost" href="/download/Marklee_0.1.0_aarch64.dmg">Download for Mac</a>
+          </article>
+
+          <!-- PRO -->
+          <article class="price-card featured">
+            <span class="price-badge">Marklee Sync</span>
+            <h3>Pro</h3>
+            <p class="price-sub">Your annotations, on every device.</p>
+            <p class="price-amount">$6<span class="price-unit"> / mo</span></p>
+            <p class="price-note">or $60 / yr</p>
+            <ul>
+              <li>Encrypted cross-device sync — client-encrypted; the server only ever sees ciphertext</li>
+              <li>Hosted short &amp; vanity permalinks, with revocation</li>
+              <li>Prepaid Managed-AI credit packs — the only AI path on web</li>
+              <li>Everything in Free</li>
+            </ul>
+            <!-- Payment link not wired (DRAFT). -->
+            <a class="btn primary" href="#" aria-disabled="true">Coming soon</a>
+          </article>
+
+          <!-- TEAM -->
+          <article class="price-card">
+            <span class="price-badge">Marklee Audit</span>
+            <h3>Team</h3>
+            <p class="price-sub">Shared workspaces with a verifiable trail.</p>
+            <p class="price-amount">$30<span class="price-unit"> / seat / mo</span></p>
+            <p class="price-note">Billed per seat.</p>
+            <ul>
+              <li>Shared workspaces</li>
+              <li>Hosted, tamper-evident audit log of the AI-verify pipeline</li>
+              <li>SSO — SAML / OIDC + SCIM provisioning</li>
+              <li>Pooled, admin-controlled AI credits</li>
+              <li>Private permalink namespace</li>
+              <li>Everything in Pro</li>
+            </ul>
+            <!-- Payment link not wired (DRAFT). -->
+            <a class="btn ghost" href="#" aria-disabled="true">Contact sales</a>
+          </article>
+
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div class="container">
+        <span>Marklee — portable annotations for documents.</span>
+        <span class="dim">
+          © 2026 · CC&nbsp;BY&nbsp;4.0 spec · MIT-licensed implementation ·
+          <a href="https://www.linkedin.com/in/jung-hoon-son/" target="_blank" rel="noopener">Jung Hoon Son</a>
+        </span>
+      </div>
+    </footer>
+  </body>
+</html>
