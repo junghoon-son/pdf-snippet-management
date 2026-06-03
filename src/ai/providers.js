@@ -13,7 +13,7 @@ const PROVIDER_STORAGE = "marklee-ai-provider";
 // need a generous output budget (e.g. the Reader's many-highlights mode)
 // resolve to the active model's cap via getMaxOutputTokens(); callers with
 // a tight budget (e.g. the Planner's short-plan call) pass their own
-// smaller value. Updated 2026-05-14 — bump as providers extend limits.
+// smaller value. Updated 2026-06-03 — bump as providers extend limits.
 const PROVIDER_DEFS = {
   anthropic: {
     id: "anthropic",
@@ -22,7 +22,7 @@ const PROVIDER_DEFS = {
     defaultModel: "claude-sonnet-4-6",
     models: [
       { id: "claude-sonnet-4-6",           label: "Claude Sonnet 4.6 (default — balanced)",   maxOutputTokens: 32768 },
-      { id: "claude-opus-4-7",             label: "Claude Opus 4.7 (slow, most thorough)",    maxOutputTokens: 24576 },
+      { id: "claude-opus-4-8",             label: "Claude Opus 4.8 (slow, most thorough)",    maxOutputTokens: 32768 },
       { id: "claude-haiku-4-5-20251001",   label: "Claude Haiku 4.5 (fast, cheap)",           maxOutputTokens: 32768 },
     ],
     keyPlaceholder: "sk-ant-…",
@@ -45,11 +45,12 @@ const PROVIDER_DEFS = {
     id: "gemini",
     label: "Google Gemini",
     module: Gemini,
-    defaultModel: "gemini-2.5-flash",
+    defaultModel: "gemini-3.5-flash",
     models: [
-      { id: "gemini-2.5-flash",       label: "Gemini 2.5 Flash (default — balanced, vision + PDF)", maxOutputTokens: 65536 },
-      { id: "gemini-2.5-flash-lite",  label: "Gemini 2.5 Flash Lite (fastest, cheapest)",           maxOutputTokens: 65536 },
-      { id: "gemini-2.0-flash",       label: "Gemini 2.0 Flash (older, stable)",                    maxOutputTokens: 8192  },
+      { id: "gemini-3.5-flash",       label: "Gemini 3.5 Flash (default — balanced, vision + PDF)", maxOutputTokens: 65536 },
+      { id: "gemini-3.1-flash-lite",  label: "Gemini 3.1 Flash-Lite (fastest, cheapest)",           maxOutputTokens: 65536 },
+      { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (preview — most capable)",             maxOutputTokens: 65536 },
+      { id: "gemini-2.5-flash",       label: "Gemini 2.5 Flash (previous gen, stable)",             maxOutputTokens: 65536 },
     ],
     keyPlaceholder: "AIza…",
     keyHint: "aistudio.google.com → API key",

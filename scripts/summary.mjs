@@ -2,7 +2,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
-import os from "node:os";
+import { resolveSidecar, groupsPath } from "./marklee-paths.mjs";
 
 const HELP = `Usage:
   bun run summary <file-or-dir> [options]
@@ -18,7 +18,8 @@ Options:
   -o <file>      Write to file instead of stdout
   -h, --help     Show this help
 
-Reads .annot.json sidecars next to documents and ~/.pdf-annotator/groups.json.
+Reads .annot.json sidecars from each document's .marklee/ folder and
+~/.marklee/groups.json.
 Output goes to stdout unless -o is given.
 `;
 
@@ -58,8 +59,7 @@ function escHtml(s) {
 }
 
 async function loadGlobalGroups() {
-  const home = process.env.HOME || os.homedir();
-  const p = path.join(home, ".pdf-annotator", "groups.json");
+  const p = groupsPath();
   if (!existsSync(p)) return [];
   try {
     return JSON.parse(await readFile(p, "utf8"));
@@ -69,8 +69,8 @@ async function loadGlobalGroups() {
 }
 
 async function loadAnnot(pdfPath) {
-  const sidecar = pdfPath + ".annot.json";
-  if (!existsSync(sidecar)) return null;
+  const sidecar = resolveSidecar(pdfPath);
+  if (!sidecar) return null;
   try {
     return JSON.parse(await readFile(sidecar, "utf8"));
   } catch {

@@ -56,34 +56,108 @@ const DQUOTE_CLASS = "[\"\\u201C\\u201D\\u201E\\u201F\\u2033]";
 const SQUOTE_CLASS = "[\\u0027\\u2018\\u2019\\u201A\\u201B\\u2032]";
 const ELLIPSIS_CLASS = "(?:\\u2026|\\.{3})";
 
+// Among `matches` (each [start,end] in `flat`), return the one the
+// caller's context windows uniquely identify, or null if the set is
+// ambiguous. Mirrors the disambiguation convention in
+// flow-viewer.js#locateSnippet: a single match wins outright; with
+// several, an exact prefix+span+suffix probe is preferred, otherwise
+// the best context-similarity score breaks the tie. SPEC §4 Tier 2:
+// repeated text with no context to disambiguate falls through to
+// Tier 4 (Orphaned) rather than guessing the first hit.
+function disambiguate(flat, matches, opts) {
+  if (matches.length === 0) return null;
+  if (matches.length === 1) return matches[0];
+  const cb = (opts && opts.contextBefore) || "";
+  const ca = (opts && opts.contextAfter) || "";
+  if (!cb && !ca) return null; // ambiguous, no context → orphaned
+  let best = null;
+  let bestScore = -Infinity;
+  let tied = false;
+  for (const [s, e] of matches) {
+    const beforeWin = flat.slice(Math.max(0, s - CONTEXT_LEN), s);
+    const afterWin = flat.slice(e, e + CONTEXT_LEN);
+    const score = contextScore(beforeWin, cb) + contextScore(afterWin, ca);
+    if (score > bestScore) { bestScore = score; best = [s, e]; tied = false; }
+    else if (score === bestScore) { tied = true; }
+  }
+  // Still ambiguous (no context signal distinguished a winner) → orphaned.
+  if (tied || bestScore <= 0) return null;
+  return best;
+}
+
+// Suffix-overlap similarity for `contextBefore`, prefix-overlap for
+// `contextAfter` is approximated by counting matching characters from
+// the adjoining edge inward. Higher = better aligned. 0 when either
+// side is empty so an absent context window contributes no signal.
+function contextScore(window, expected) {
+  if (!expected || !window) return 0;
+  const wlen = window.length, elen = expected.length;
+  const max = Math.min(wlen, elen);
+  // Align on the edge adjacent to the span: the END of a before-window
+  // and the START of an after-window. Score both alignments and take the
+  // larger so one helper serves both sides without the caller branching.
+  let head = 0;
+  for (let k = 0; k < max; k++) {
+    if (window[k] === expected[k]) head++; else break;
+  }
+  let tail = 0;
+  for (let k = 1; k <= max; k++) {
+    if (window[wlen - k] === expected[elen - k]) tail++; else break;
+  }
+  return Math.max(head, tail);
+}
+
 // Try to find `quote` in `flat`. Returns [start,end] in the ORIGINAL
 // `flat` coordinate space, or null. Iterates over tiers from strict to
-// loose; first hit wins. Designed for LLM quotes which routinely differ
+// loose; the first tier with a unambiguous match wins. Designed for LLM
+// quotes which routinely differ
 // from the source by whitespace, dash/quote normalization, ligatures,
 // soft hyphens, line-end hyphenation, leading numbering, and case.
-export function findInFlat(flat, quote) {
+//
+// `opts.contextBefore` / `opts.contextAfter` (when supplied) disambiguate
+// repeated quotes. SPEC §4 requires a span to resolve to EXACTLY ONE
+// occurrence: when the quote appears more than once and context cannot
+// pick a unique winner, we return null (orphaned) instead of silently
+// anchoring to the first hit.
+export function findInFlat(flat, quote, opts) {
   if (!flat || !quote) return null;
 
-  // (1) Exact substring.
-  let i = flat.indexOf(quote);
-  if (i !== -1) return [i, i + quote.length];
+  // (1) Exact substring — collect ALL occurrences, then disambiguate.
+  const exact = allIndexOf(flat, quote);
+  if (exact.length) {
+    const hit = disambiguate(flat, exact.map((i) => [i, i + quote.length]), opts);
+    if (hit) return hit;
+    if (exact.length > 1) return null; // ambiguous exact match → orphaned
+  }
 
   // (2) Whitespace + dash/quote-tolerant regex.
   const re = buildFuzzyRegex(quote);
   if (re) {
-    const m = re.exec(flat);
-    if (m) return [m.index, m.index + m[0].length];
+    const matches = allRegexMatches(flat, re);
+    if (matches.length) {
+      const hit = disambiguate(flat, matches, opts);
+      if (hit) return hit;
+      if (matches.length > 1) return null;
+    }
   }
 
   // (3) Strip leading numbering prefix and retry exact + fuzzy regex.
   const stripped = quote.replace(/^\s*(?:\d{1,3}|[IVXLivxl]{1,5}|[a-zA-Z])[.)]\s+/, "");
   if (stripped && stripped !== quote) {
-    const i2 = flat.indexOf(stripped);
-    if (i2 !== -1) return [i2, i2 + stripped.length];
+    const exact2 = allIndexOf(flat, stripped);
+    if (exact2.length) {
+      const hit = disambiguate(flat, exact2.map((i) => [i, i + stripped.length]), opts);
+      if (hit) return hit;
+      if (exact2.length > 1) return null;
+    }
     const re2 = buildFuzzyRegex(stripped);
     if (re2) {
-      const m = re2.exec(flat);
-      if (m) return [m.index, m.index + m[0].length];
+      const matches = allRegexMatches(flat, re2);
+      if (matches.length) {
+        const hit = disambiguate(flat, matches, opts);
+        if (hit) return hit;
+        if (matches.length > 1) return null;
+      }
     }
   }
 
@@ -95,11 +169,17 @@ export function findInFlat(flat, quote) {
   const flatMap = normalizeWithMap(flat);
   const quoteNorm = normalizeWithMap(quote).norm;
   if (quoteNorm) {
-    const j = flatMap.norm.indexOf(quoteNorm);
-    if (j !== -1) {
-      const origStart = flatMap.origOf[j] ?? 0;
-      const origEnd = flatMap.origOf[j + quoteNorm.length] ?? flat.length;
-      if (origEnd > origStart) return [origStart, origEnd];
+    const normHits = allIndexOf(flatMap.norm, quoteNorm);
+    if (normHits.length) {
+      const spans = [];
+      for (const j of normHits) {
+        const origStart = flatMap.origOf[j] ?? 0;
+        const origEnd = flatMap.origOf[j + quoteNorm.length] ?? flat.length;
+        if (origEnd > origStart) spans.push([origStart, origEnd]);
+      }
+      const hit = disambiguate(flat, spans, opts);
+      if (hit) return hit;
+      if (spans.length > 1) return null;
     }
     // (5) Substring anchor — find the first ~60 normalized chars of the
     //     quote; if anchored, expand by the quote's normalized length.
@@ -193,6 +273,37 @@ export function normalizeWithMap(s) {
   }
   origOf.push(src.length);
   return { norm: out.join(""), origOf };
+}
+
+// All non-overlapping start indices of `needle` in `hay`. Empty needle
+// yields none (callers already guard empties upstream).
+function allIndexOf(hay, needle) {
+  const out = [];
+  if (!needle) return out;
+  let from = 0;
+  while (true) {
+    const i = hay.indexOf(needle, from);
+    if (i === -1) break;
+    out.push(i);
+    from = i + needle.length; // non-overlapping, mirrors first-match step
+  }
+  return out;
+}
+
+// All non-overlapping [start,end] matches of `re` (non-global) in `hay`.
+// We re-exec from past each hit so callers can detect repeated quotes.
+function allRegexMatches(hay, re) {
+  const out = [];
+  let pos = 0;
+  while (pos <= hay.length) {
+    const m = re.exec(hay.slice(pos));
+    if (!m) break;
+    const start = pos + m.index;
+    const end = start + m[0].length;
+    out.push([start, end]);
+    pos = end > start ? end : start + 1; // avoid zero-width spin
+  }
+  return out;
 }
 
 function buildFuzzyRegex(s) {

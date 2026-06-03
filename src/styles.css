@@ -3452,9 +3452,19 @@ body.dragging-snippet .group-row:hover {
   position: absolute;
   pointer-events: none;
   background: rgba(78, 201, 176, 0.85);
-  mix-blend-mode: multiply;
   border-radius: 1px;
-  animation: pulse-hl 700ms ease-out forwards;
+  /* Two stacked one-shots: the marker "lays down" left-to-right (clip-path),
+     then the color settles from the live ink to the resting highlight. */
+  animation:
+    hl-laydown 320ms cubic-bezier(0.22, 1, 0.36, 1) forwards,
+    pulse-hl 700ms ease-out forwards;
+}
+/* mix-blend multiply only reads as "real marker" over a light page; on dark
+   themes it darkens the ink into the page, so gate it to light/playful. */
+body:not([data-theme-family="dark"]) .page-wrap .hl-pulse { mix-blend-mode: multiply; }
+@keyframes hl-laydown {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0); }
 }
 @keyframes pulse-hl {
   0% { background: rgba(78, 201, 176, 0.85); }
@@ -4228,7 +4238,10 @@ body.dragging-snippet .group-row:hover {
   transition: background 100ms ease, border-color 100ms ease, transform 100ms ease;
 }
 .summary-group-pill:hover {
-  border-color: var(--g-color);
+  /* Soften the accent border at hover — full var(--g-color) at 1px
+     reads as a heavy 2px against light backgrounds (cream / pink theme).
+     50% mix keeps the color cue but feels like a hint, not a frame. */
+  border-color: color-mix(in srgb, var(--g-color) 55%, transparent);
   background: color-mix(in srgb, var(--g-color) 6%, var(--card-bg, #fff));
 }
 .summary-group-pill:active,
@@ -4238,11 +4251,24 @@ body.dragging-snippet .group-row:hover {
   border-color: var(--g-color);
   transform: scale(0.985);
 }
-.summary-group-pill.dragging { opacity: 0.45; }
-.summary-group-pill.drag-over {
-  border-top: 2px solid var(--accent);
-  padding-top: 4px;
+/* Dragging pill — slight lift (transform + shadow) so it visually
+   floats over the rest of the row while live-swapping. Opacity stays
+   high so the user can see what they're moving, not a faded ghost. */
+.summary-group-pill.dragging {
+  opacity: 0.92;
+  transform: scale(1.02);
+  box-shadow: 0 4px 14px -4px rgba(0, 0, 0, 0.22), 0 2px 4px rgba(0, 0, 0, 0.08);
+  z-index: 2;
+  position: relative;
+  cursor: grabbing;
+  /* Disable the transition on the pill itself during drag — the FLIP
+     animation handles the slide; the inline transform would fight it. */
+  transition: none;
 }
+/* .drag-over rule removed — the old border-top + padding-top indicator
+   caused a 4px layout jump on the target. Live DOM-swap is the new
+   indicator: target pills literally move out of the way as the source
+   crosses their midpoint. */
 .summary-group-pill-dot {
   width: 9px;
   height: 9px;
@@ -4263,12 +4289,23 @@ body.dragging-snippet .group-row:hover {
   color: var(--text-dim);
 }
 .summary-group-pill-arrows {
-  display: none;
+  /* Always rendered + reserving layout space (visibility, not display)
+     so hover doesn't trigger a layout shift that truncates the name
+     mid-word. Invisible by default; opacity flips to 1 on row hover. */
+  display: flex;
   flex-direction: column;
   gap: 1px;
   margin-left: 4px;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 100ms ease;
 }
-.summary-group-pill:hover .summary-group-pill-arrows { display: flex; }
+.summary-group-pill:hover .summary-group-pill-arrows {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
 .summary-group-pill-arrow {
   background: transparent;
   border: 1px solid var(--border);
@@ -4371,22 +4408,31 @@ body.dragging-snippet .group-row:hover {
   line-height: 1.4;
 }
 
-/* Big, prominent group headings — these are the navigation anchors
-   in a long printed summary, so they need to scream. */
+/* Eyebrow-style group label — small uppercase tag that sits as
+   context above the snippet block, not as a heading that competes
+   with it. The snippet content is the focal point; the group is a
+   tag, not a chapter title. Color (set inline via groupColor on the
+   element) tints both the • bullet and the text — at this size the
+   ink load is gentle. */
 .summary-group-header {
   font-family: -apple-system, system-ui, sans-serif;
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.1px;
-  text-transform: none;
-  margin: 22px 0 8px;
-  padding: 6px 0 4px;
-  border-bottom: 2px solid currentColor;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+  margin: 18px 0 4px;
+  padding: 0;
+  /* Thin half-opacity rule underneath — keeps the visual cue that a
+     new section is starting without a heavy 2px slab. */
+  border-bottom: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  padding-bottom: 3px;
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
+  opacity: 0.85;
 }
 .summary-group-header:first-child { margin-top: 4px; }
+.summary-group-header:hover { opacity: 1; }
 
 /* Print: hide everything except the summary content. The modal lives
    inside <body>, so we hide siblings via the body class set when the
@@ -4589,6 +4635,12 @@ body.dragging-snippet .group-row:hover {
   gap: 16px;
   min-width: min-content;
 }
+/* Image sources are often wide — the PDF-tuned 24/48 padding wastes a
+   lot of horizontal room and pushes the image small. Tighten it so the
+   image gets the viewport. */
+body[data-source-kind="image"] #viewer-container {
+  padding: 10px 14px;
+}
 
 .page-wrap {
   position: relative;
@@ -4633,14 +4685,14 @@ body[data-runtime="web"] #viewer-empty::after {
   max-width: 760px;
   margin: 24px auto 64px;
   padding: 36px 56px;
-  background: #fbf9f3;
+  background: var(--pane-bg);
   border: 1px solid var(--border);
   border-radius: 6px;
   box-shadow: 0 2px 10px rgba(80, 70, 40, 0.12);
   font-family: ui-serif, "Iowan Old Style", Charter, Georgia, serif;
   font-size: 15px;
   line-height: 1.65;
-  color: #1f1f1f;
+  color: var(--pane-fg);
 }
 .flow-doc .flow-plaintext {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
@@ -4655,7 +4707,7 @@ body[data-runtime="web"] #viewer-empty::after {
 }
 .flow-doc h1, .flow-doc h2, .flow-doc h3, .flow-doc h4, .flow-doc h5, .flow-doc h6 {
   font-family: ui-sans-serif, -apple-system, system-ui;
-  color: #1a1a1a;
+  color: var(--pane-fg);
   margin: 1.6em 0 0.5em;
   line-height: 1.25;
 }
@@ -4674,7 +4726,7 @@ body[data-runtime="web"] #viewer-empty::after {
   border-radius: 3px;
 }
 .flow-doc pre {
-  background: #efece4;
+  background: var(--pane-panel-2);
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 12px 14px;
@@ -4695,7 +4747,7 @@ body[data-runtime="web"] #viewer-empty::after {
 .flow-doc li { margin: 0.25em 0; }
 .flow-doc table { border-collapse: collapse; margin: 0.8em 0; }
 .flow-doc th, .flow-doc td { border: 1px solid var(--border); padding: 6px 10px; }
-.flow-doc th { background: #efece4; }
+.flow-doc th { background: var(--pane-panel-2); }
 .flow-doc img { max-width: 100%; }
 .flow-doc hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }
 
@@ -4876,4 +4928,17 @@ body.tool-select #viewer-pane:hover::after { opacity: 1; }
 .tool-dock-btn.active .tool-dock-key {
   background: rgba(255, 255, 255, 0.22);
   opacity: 0.9;
+}
+
+/* Honor reduced-motion: kill the infinite/decorative loops outright
+   (ai-loading-slide, dir-bob, bubble-pulse, link-flow, dot-breathe) and
+   collapse long animations/transitions to near-instant, while leaving
+   short functional transitions intact enough to still convey state. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

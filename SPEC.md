@@ -13,7 +13,7 @@ The anchoring algorithm doubles as a **verifier**: any text claimed to come from
 
 The format also defines a centrality algorithm — **MarkRank** — that scores each annotation by graph centrality. The algorithm is to Marklee what PageRank is to the web: a normative ranking function over the data the format encodes.
 
-The format is local-first and file-based: no server, no account, no proprietary blob. Sidecars are plain JSON next to the source document, version-controllable, scriptable from a CLI, and self-describing.
+The format is local-first and file-based: no proprietary blob. The free local application contacts no server — no account, no telemetry, no phone-home; data leaves the machine only via paid, opt-in features the user explicitly enables. Sidecars are plain JSON in a hidden `.marklee/` folder beside the source document, version-controllable, scriptable from a CLI, and self-describing.
 
 ## 1. Scope
 
@@ -61,7 +61,7 @@ Conformant implementations MUST support `pdf`. Other kinds are OPTIONAL but defi
 
 ### 2.2 Sidecar
 
-A **sidecar** is a JSON file located at `<document-path>.annot.json` containing all annotations for one document. Sidecars are independent — moving a document and its sidecar together MUST preserve all annotations.
+A **sidecar** is a JSON file containing all annotations for one document. It lives in a hidden per-directory folder beside the source: `<document-directory>/.marklee/<filename>.annot.json` (e.g. `papers/.marklee/draft.pdf.annot.json`). This keeps source directories uncluttered while remaining local — the `.marklee/` folder travels with its documents when the directory is copied or moved. Sidecars are independent — moving a document together with its `.marklee/` folder MUST preserve all annotations.
 
 ### 2.3 Snippet
 
@@ -97,7 +97,7 @@ A Marklee sidecar is one of two kinds, distinguished by a top-level `kind` field
 
 | `kind` | Stored where | Contains |
 |---|---|---|
-| `"document"` | `<document-path>.annot.json` next to a source file | annotations anchored to that source |
+| `"document"` | `<document-directory>/.marklee/<filename>.annot.json` | annotations anchored to that source |
 | `"workspace"` | implementation-defined (RECOMMENDED `~/.marklee/workspaces/<id>.json` or in a user-chosen workspace directory) | workspace metadata, notes, references to documents |
 
 A reader MUST inspect `kind` and select the appropriate schema. Pre-0.1-draft files without `kind` MUST be treated as `kind: "document"` for backward compatibility.
@@ -151,7 +151,7 @@ All fields OPTIONAL. `kind` MUST be one of `"pdf"`, `"markdown"`, `"docx"`, `"im
   "text":            "load-bearing quote",
   "textNormalized":  "load-bearing quote",
   "rects":           [{ "left": 0.1, "top": 0.2, "width": 0.3, "height": 0.04 }],
-  "imagePath":       ".file.pdf.clips/abc.png",
+  "imagePath":       ".marklee/clips/abc.png",
   "clipUrl":         "https://cdn.example.com/clip.png",
   "clipHash":        "sha256:ab12...",
   "contextBefore":   "preceding 40 chars",
@@ -275,7 +275,7 @@ A **note** is an annotation at the workspace level — text or image content the
   "id":          "uuid",
   "kind":        "text",
   "text":        "...",
-  "imagePath":   ".clipboard.clips/abc.png",
+  "imagePath":   ".marklee/clips/abc.png",
   "imageHash":   "sha256:...",
   "comment":     "user note",
   "groups":      ["group-uuid"],

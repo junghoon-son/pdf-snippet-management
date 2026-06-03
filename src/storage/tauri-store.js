@@ -54,6 +54,12 @@ export class TauriStore {
     });
   }
 
+  // Remove a document's sidecar (new + legacy locations). Used when an
+  // edit empties a document so we don't leave an empty husk behind.
+  async deleteAnnot(path) {
+    await invoke("delete_annot", { pdfPath: path });
+  }
+
   async readGlobalGroups() {
     return await invoke("read_global_groups");
   }

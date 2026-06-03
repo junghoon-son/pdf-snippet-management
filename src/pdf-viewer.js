@@ -334,7 +334,10 @@ function repaintPage(ps) {
   _pageHashes.set(pageNum, hashItems(items, _hoverSnippetId));
 }
 
-function paintHighlightCanvas(canvas, items) {
+// Exported so image-viewer.js can paint highlights into an image
+// source's highlight-layer with the identical drawing logic (text
+// fill, image-kind fill + dashed outline, ghost markers).
+export function paintHighlightCanvas(canvas, items) {
   const ctx = canvas.getContext("2d");
   const W = canvas.width;
   const H = canvas.height;

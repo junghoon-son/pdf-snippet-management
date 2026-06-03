@@ -21,6 +21,7 @@ export class OpfsStore {
   readDocumentBytes() { return this._todo(); }
   readAnnot() { return this._todo(); }
   writeAnnot() { return this._todo(); }
+  deleteAnnot() { return this._todo(); }
   readGlobalGroups() { return this._todo(); }
   writeGlobalGroups() { return this._todo(); }
   writeClip() { return this._todo(); }
