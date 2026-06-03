@@ -17,7 +17,7 @@ const BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 const PROVIDER_ID = "gemini";
 const LEGACY_KEY_STORAGE = "marklee-gemini-key";
 const MODEL_STORAGE = "marklee-gemini-model";
-const DEFAULT_MODEL = "gemini-2.5-flash";
+const DEFAULT_MODEL = "gemini-3.5-flash";
 
 const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
 
