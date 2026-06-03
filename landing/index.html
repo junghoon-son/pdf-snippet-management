@@ -41,9 +41,8 @@
             <span class="hero-accent">with the document</span>.
           </h1>
           <p class="lede">
-            A portable, format-agnostic annotation format for PDF, Markdown, and DOCX.
-            Local-first sidecar JSON. Edit-tolerant text anchors. A directed lineage graph
-            between snippets. <strong>MarkRank</strong> centrality over your reading.
+            Portable JSON annotations for PDF, Markdown, DOCX. Edit-tolerant anchors.
+            A lineage graph between snippets, ranked by <strong>MarkRank</strong>.
           </p>
           <div class="cta">
             <a class="btn primary" href="/download/Marklee_0.1.0_aarch64.dmg">
@@ -104,8 +103,8 @@
           <div class="point-eyebrow">The whole point</div>
           <h2 class="point-h2">Look — there it is. <span class="point-arrow" aria-hidden="true">←</span></h2>
           <p class="point-lede">
-            Every other tool gives you the answer and leaves you to find where it came from.
-            Marklee gives you the answer <em>and points at the passage in the source.</em>
+            Every other tool gives you the answer and makes you re-find the source.
+            Marklee gives you both.
           </p>
           <div class="point-grid">
             <div class="point-row">
@@ -122,8 +121,8 @@
             </div>
           </div>
           <p class="point-footnote">
-            The location is part of the data. Not in your head. Not in a separate vault note.
-            Not lost to a vector database search. <em>On the page.</em>
+            The location is data — not a memory, not a vault note, not a vector search.
+            <em>On the page.</em>
           </p>
         </div>
       </div>
@@ -135,10 +134,10 @@
           <span class="section-eyebrow">Why this matters</span>
           <h2 class="audit-h2">Prove it. Don't paraphrase it.</h2>
           <p class="audit-lede">
-            In the age of AI extractors, the answer is cheap — <strong>provenance is what costs you</strong>. For compliance review, audit work, legal due diligence, scientific review, contract redlining: being wrong has a consequence. You don't want a summary. You want a summary you can verify <em>in the actual document</em>.
+            Answers are cheap; <strong>provenance is what costs you</strong>. For compliance, audit, legal, scientific, or contract work — being wrong has consequences. You don't want a summary. You want one you can verify <em>in the actual document</em>.
           </p>
           <p class="audit-body">
-            Marklee snippets are excerpts of the real text and the real pixels. Summaries cite them by reference, not paraphrase. Every claim links back to a page coordinate, an image clip, a quoted passage you can re-open in the source. The document stays the source of truth; the annotation layer stays auditable.
+            Snippets are excerpts of the real text and pixels. Every claim links to a page coordinate or quoted passage, re-openable in the source. The document stays the source of truth.
           </p>
           <div class="audit-uses">
             <span>compliance review</span>
@@ -171,9 +170,9 @@
             </div>
             <h3>Portable annotations</h3>
             <p>
-              Plain JSON sidecars next to the source. No server, no account.
-              Email someone <code>paper.pdf</code> + <code>paper.pdf.annot.json</code> —
-              they get your annotations, fully.
+              Plain JSON sidecars next to the source. Email someone
+              <code>paper.pdf</code> + <code>paper.pdf.annot.json</code> — they get
+              your annotations, fully.
             </p>
           </div>
 
@@ -219,9 +218,8 @@
             </div>
             <h3>Permalinks</h3>
             <p>
-              Share one annotation as a URL. Hash + anchor + optional text/context;
-              the receiver opens the source PDF and lands on the right region.
-              Like HTML <code>#:~:text=</code> Text Fragments — for documents.
+              Share a snippet as a URL — hash + anchor + optional text. The receiver
+              opens the source and lands on the region. Text Fragments, for documents.
             </p>
           </div>
 
@@ -235,9 +233,8 @@
             </div>
             <h3>Cross-format</h3>
             <p>
-              One snippet schema covers PDF, Markdown, DOCX, and plain text.
-              Lineage view mixes a page-3 PDF quote with a §Methods Markdown snippet
-              on the same canvas.
+              One snippet schema across PDF, Markdown, DOCX, and plain text. Lineage
+              view mixes them on one canvas.
             </p>
           </div>
 
@@ -254,9 +251,8 @@
             </div>
             <h3>Bundled figure detector</h3>
             <p>
-              An Apache-2.0 RT-DETR ONNX model ships with the app — figure and table
-              bounding boxes resolve in Rust on CPU. No Python, no API key, no cloud.
-              Hooks in as the backend for the "find the figure I'm thinking of" flow.
+              An Apache-2.0 RT-DETR ONNX model ships with the app — figure/table boxes
+              resolve in Rust on CPU. No Python, no API key, no cloud.
             </p>
           </div>
 
@@ -272,9 +268,8 @@
             </div>
             <h3>Open spec</h3>
             <p>
-              Every implementation detail in <a href="/spec">SPEC.md</a> + a JSON
-              Schema you can validate sidecars against in CI. The format is the
-              contract; the tools are interchangeable.
+              Every detail in <a href="/spec">SPEC.md</a> + a JSON Schema for CI
+              validation. The format is the contract; tools are interchangeable.
             </p>
           </div>
         </div>
@@ -286,11 +281,7 @@
         <div class="section-head">
           <span class="section-eyebrow">How it works</span>
           <h2>Highlight, anchor, share.</h2>
-          <p class="section-lede">
-            Three views from inside Marklee. Drop your own screenshots into the
-            placeholders below — see the comments in <code>landing/index.html</code>
-            for what to capture and the suggested aspect.
-          </p>
+          <p class="section-lede">Three views from inside Marklee.</p>
         </div>
 
         <!-- ──────────────────────────────────────────────────────────────────
@@ -310,9 +301,8 @@
           <div class="how-text">
             <h3>① Capture by selection or drop</h3>
             <p>
-              Drag-select text in any document to make a snippet. Drag a sticker from
-              the groups panel onto a snippet to tag it. Paste from anywhere — text or
-              image — directly into the workspace.
+              Drag-select text in any document. Drop a sticker to tag it. Paste text
+              or images directly into the workspace.
             </p>
           </div>
           <!-- IDEAL: full Marklee window. Show: a PDF open with 3-4 highlights of
@@ -331,10 +321,9 @@
           <div class="how-text">
             <h3>② See your reading as a graph</h3>
             <p>
-              The lineage view turns the snippets into a directed labeled graph —
-              docs on the left, snippets in the middle, groups on the right. Edges
-              you draw between snippets show your reasoning. <strong>MarkRank</strong>
-              ranks them by graph centrality.
+              The lineage view shows snippets as a directed labeled graph — docs,
+              snippets, and groups in three columns. Edges encode your reasoning;
+              <strong>MarkRank</strong> ranks by centrality.
             </p>
           </div>
           <!-- IDEAL: the lineage view alone with a populated graph — at least 2
@@ -352,10 +341,9 @@
           <div class="how-text">
             <h3>③ Share a single annotation as a URL</h3>
             <p>
-              Click <em>share</em> on any snippet. The Marklee Permalink format
-              encodes hash + page + anchor + optional text/context. The receiver
-              opens the source and lands on the right region — even if the source
-              has been lightly edited since.
+              Click <em>share</em> on any snippet. The Permalink encodes hash + page
+              + anchor; the receiver opens the source and lands on the region —
+              even if the source has been edited.
             </p>
           </div>
           <!-- IDEAL: zoomed-in shot of a snippet card with the share button hovered,
@@ -425,9 +413,8 @@
           <span class="section-eyebrow">Where it shines</span>
           <h2>Five reading workflows that get easier.</h2>
           <p class="section-lede">
-            Marklee was built for situations where annotations need to live with the
-            file, survive edits, and link to other ideas — not be locked inside a
-            proprietary reader.
+            Built for annotations that live with the file, survive edits, and link
+            to each other.
           </p>
         </div>
         <div class="usecases">
@@ -448,10 +435,9 @@
             </svg>
             <h3>Literature review</h3>
             <p>
-              Pull together quotes from twelve PDFs into a single workspace. Drag
-              snippets from each into themed folders — <em>methods</em>,
-              <em>limitations</em>, <em>open questions</em>. MarkRank surfaces the
-              ideas the corpus references most.
+              Quotes from a dozen PDFs into one workspace, dragged into themed
+              folders — <em>methods</em>, <em>limitations</em>, <em>open questions</em>.
+              MarkRank surfaces the most-cited ideas.
             </p>
           </article>
 
@@ -470,9 +456,9 @@
             </svg>
             <h3>Contract review</h3>
             <p>
-              Anchor concerns to specific clauses with the exact quoted text plus
-              context window. When the counterparty edits the surrounding language,
-              your comments still resolve — the four-tier algorithm finds them.
+              Anchor concerns to clauses with quoted text + context. When the
+              counterparty edits around them, comments still resolve — the four-tier
+              algorithm finds them.
             </p>
           </article>
 
@@ -491,10 +477,9 @@
             </svg>
             <h3>Research synthesis</h3>
             <p>
-              Connect a quote in paper A to a counter-claim in paper B with a
-              labeled edge — <em>supports</em>, <em>contradicts</em>,
-              <em>elaborates</em>. The lineage view shows your evolving argument as a
-              graph, not a flat list.
+              Connect a quote in paper A to a counter-claim in paper B with a labeled
+              edge — <em>supports</em>, <em>contradicts</em>, <em>elaborates</em>.
+              Your argument as a graph, not a list.
             </p>
           </article>
 
@@ -513,9 +498,8 @@
             </svg>
             <h3>Mixed-format research</h3>
             <p>
-              A workspace that mixes PDF papers, Markdown notes, a DOCX policy
-              memo, and plain-text scratch files — all annotated with the same
-              snippet schema. Cross-document lineage works regardless of source kind.
+              PDF, Markdown, DOCX, and plain text in one workspace — same snippet
+              schema everywhere. Cross-format lineage just works.
             </p>
           </article>
 
@@ -533,9 +517,8 @@
             </svg>
             <h3>Shareable citations</h3>
             <p>
-              Right-click any highlight → <em>copy share link</em>. The URL encodes
-              the document hash plus the anchor; the recipient opens the same source
-              and lands on the exact passage. No server, no account, no expiry.
+              Right-click any highlight → <em>copy share link</em>. URL encodes the
+              document hash + anchor. No server, no account, no expiry.
             </p>
           </article>
 
@@ -549,9 +532,8 @@
           <span class="section-eyebrow">Why a new format</span>
           <h2>Edit-tolerant anchoring is the gap.</h2>
           <p class="section-lede">
-            Existing annotation formats either lock you into a server, hard-code
-            byte offsets that break, or stop at one document type. Marklee fills
-            the space between them.
+            Existing formats lock you into a server, hard-code byte offsets, or stop
+            at one document type. Marklee fills the gap.
           </p>
         </div>
         <div class="compare">
@@ -642,18 +624,12 @@
       <div class="container small">
         <h2>Status</h2>
         <p>
-          v0.1, working draft. Spec stable enough to write tools against;
-          format may change incompatibly until 1.0. Reference implementation is the
-          desktop app on this page — including a bundled RT-DETR ONNX figure detector
-          (Apache-2.0) so figure / table capture works out of the box, with no Python
-          or cloud dependency. The web build (browser-mode + permalink bootstrap)
-          and Chrome extension are next.
+          v0.1 working draft. Spec stable enough to write tools against; format may
+          change incompatibly until 1.0. Web build and Chrome extension are next.
         </p>
         <p>
-          Built local-first because the data model demands it. Nothing about Marklee
-          requires a server, and nothing it does will ever require an account. AI
-          features (Claude / OpenAI for "find me the passage about X") are opt-in,
-          BYO-key, and collapsed away by default — non-users never see the surface.
+          Local-first by design — no server, no account, ever. AI features
+          (Claude / OpenAI / Gemini) are opt-in and BYO-key.
         </p>
         <div class="cta">
           <a class="btn primary" href="/download/Marklee_0.1.0_aarch64.dmg">
@@ -667,7 +643,10 @@
     <footer class="footer">
       <div class="container">
         <span>Marklee — portable annotations for documents.</span>
-        <span class="dim">© 2026 · CC&nbsp;BY&nbsp;4.0 spec · MIT-licensed reference implementation</span>
+        <span class="dim">
+          © 2026 · CC&nbsp;BY&nbsp;4.0 spec · MIT-licensed implementation ·
+          <a href="https://www.linkedin.com/in/jung-hoon-son/" target="_blank" rel="noopener">Jung Hoon Son</a>
+        </span>
       </div>
     </footer>
 
