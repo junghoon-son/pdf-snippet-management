@@ -7,6 +7,8 @@
 // No textLayer: image sources have no extractable text (see SPEC §7.3).
 // The anchoring algorithm doesn't run on this kind of source.
 
+import { paintHighlightCanvas } from "./pdf-viewer.js";
+
 // One-source-at-a-time state — same lifecycle as pdf-viewer.js (cleared
 // on each renderImagePage call). Holds the natural-pixel dimensions
 // so re-renders at a different scale don't need to re-decode the bytes.
@@ -122,6 +124,36 @@ export async function getSourceImageBase64() {
   c.getContext("2d").drawImage(_imgEl, 0, 0);
   const dataUrl = c.toDataURL("image/png");
   return { base64: dataUrl.split(",")[1], mediaType: "image/png" };
+}
+
+// Paint snippet highlights onto the image source's single page-wrap.
+// PDF sources route through pdf-viewer.js's applyHighlights (which
+// iterates its private pageStates Map); image sources have no such
+// registry, so we do the bucketing here and hand off to the shared
+// paintHighlightCanvas. Image documents are single-page, so every
+// snippet is treated as page 1.
+export function applyImageHighlights(container, snippets) {
+  const wrap = container.querySelector('.page-wrap[data-page="1"]');
+  if (!wrap) return;
+  const layer = wrap.querySelector(".highlight-layer");
+  if (!layer) return;
+  const items = [];
+  for (const s of snippets || []) {
+    const rects = s.rects || [];
+    if (rects.length > 0) {
+      for (const r of rects) items.push({ rect: r, snippet: s });
+    } else {
+      // No resolved rect — synthesize a thin marker strip at the top
+      // so the snippet still registers visually (mirrors the PDF path's
+      // ghost treatment).
+      items.push({
+        rect: { left: 0.04, top: 0.02, width: 0.92, height: 0.025 },
+        snippet: s,
+        ghost: true,
+      });
+    }
+  }
+  paintHighlightCanvas(layer, items);
 }
 
 // Pick the scale that fits the image to the given available pixel width
