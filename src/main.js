@@ -71,6 +71,7 @@ import {
   deleteUserTemplate,
   isBuiltinTemplate,
 } from "./group-templates.js";
+import { buildDownloadBlob, triggerDownload } from "./storage/download.js";
 
 // Lazy, guarded shim for the Tauri open dialog. The static import was removed
 // so the bundle loads in a plain browser; every caller is already inside an
@@ -87,15 +88,6 @@ document.body.dataset.runtime = IS_TAURI ? "tauri" : "web";
 
 async function saveFile({ suggestedName, mimeType, content }) {
   const isText = typeof content === "string";
-  if (IS_TAURI) {
-    const { save } = await import("@tauri-apps/plugin-dialog");
-    const { invoke } = await import("@tauri-apps/api/core");
-    const chosen = await save({ defaultPath: suggestedName });
-    if (!chosen) return null;
-    const bytes = isText ? new TextEncoder().encode(content) : new Uint8Array(content);
-    await invoke("write_file", { path: chosen, bytes: Array.from(bytes) });
-    return chosen;
-  }
   if ("showSaveFilePicker" in window) {
     try {
       const ext = suggestedName.includes(".") ? "." + suggestedName.split(".").pop() : "";
@@ -112,17 +104,7 @@ async function saveFile({ suggestedName, mimeType, content }) {
       throw err;
     }
   }
-  const blob = isText
-    ? new Blob([content], { type: mimeType })
-    : (content instanceof Blob ? content : new Blob([content], { type: mimeType }));
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = suggestedName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  triggerDownload(buildDownloadBlob({ content, mimeType }), suggestedName);
   return suggestedName;
 }
 
@@ -3608,10 +3590,11 @@ document.addEventListener("paste", async (e) => {
 // in Wave 3 of the hardening roadmap. Imports at the top of this file.
 
 async function revealInFinder(path) {
-  if (!IS_TAURI) {
-    console.warn("[reveal] only supported in Tauri build");
-    return;
-  }
+  // Desktop-only (Finder/Explorer reveal). On web there is no OS file path to
+  // reveal, so this is intentionally a no-op — the breadcrumb / recent-row
+  // click handlers still call it but nothing happens. Kept as a function so
+  // those call sites don't need conditional wiring.
+  if (!IS_TAURI) return;
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("reveal_in_finder", { path });
