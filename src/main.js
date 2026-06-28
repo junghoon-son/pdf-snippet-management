@@ -1,3 +1,4 @@
+import { debug } from "./debug.js";
 import "pdfjs-dist/web/pdf_viewer.css";
 import {
   loadDocument as loadPdfDocument,
@@ -200,7 +201,7 @@ async function locateMissingFile(oldPath, mode, folder) {
   await loadPdf(newPath);
   if (migrated) flashButton(null, ""); // no-op; alert below instead
   if (hasOldAnnotations && migrated) {
-    console.log(`Annotations migrated from ${oldPath} → ${newPath}`);
+    debug(`Annotations migrated from ${oldPath} → ${newPath}`);
   }
 }
 
@@ -653,32 +654,32 @@ function closeWorkspace(id) {
 
 document.getElementById("ws-tab-add").addEventListener("click", newWorkspace);
 
-const importBtn = document.getElementById(“import-pdf”);
-importBtn.addEventListener(“click”, async () => {
+const importBtn = document.getElementById("import-pdf");
+importBtn.addEventListener("click", async () => {
   const file = await pickBrowserFile([
-    { description: “Documents”, accept: { “application/octet-stream”: [“.pdf”, “.md”, “.markdown”, “.docx”, “.txt”, “.text”, “.png”, “.jpg”, “.jpeg”] } },
+    { description: "Documents", accept: { "application/octet-stream": [".pdf", ".md", ".markdown", ".docx", ".txt", ".text", ".png", ".jpg", ".jpeg"] } },
   ]);
   if (!file) return;
   await importFiles([file]);
 });
 
 // Drag-and-drop anywhere on the app imports the dropped files.
-const dropTarget = document.getElementById(“app”);
-[“dragenter”, “dragover”].forEach((evt) =>
+const dropTarget = document.getElementById("app");
+["dragenter", "dragover"].forEach((evt) =>
   dropTarget.addEventListener(evt, (e) => {
-    if (!e.dataTransfer?.types?.includes(“Files”)) return;
+    if (!e.dataTransfer?.types?.includes("Files")) return;
     e.preventDefault();
-    e.dataTransfer.dropEffect = “copy”;
-    document.body.dataset.dragging = “1”;
+    e.dataTransfer.dropEffect = "copy";
+    document.body.dataset.dragging = "1";
   }),
 );
-[“dragleave”, “drop”].forEach((evt) =>
+["dragleave", "drop"].forEach((evt) =>
   dropTarget.addEventListener(evt, (e) => {
-    if (evt === “dragleave” && e.relatedTarget && dropTarget.contains(e.relatedTarget)) return;
+    if (evt === "dragleave" && e.relatedTarget && dropTarget.contains(e.relatedTarget)) return;
     delete document.body.dataset.dragging;
   }),
 );
-dropTarget.addEventListener(“drop”, async (e) => {
+dropTarget.addEventListener("drop", async (e) => {
   const files = e.dataTransfer?.files;
   if (!files || files.length === 0) return;
   e.preventDefault();
@@ -1225,7 +1226,7 @@ async function aiAsk() {
     });
     const wantsFigures = plan.needsFigures || getIncludeFigures();
     const wantsText = plan.needsText;
-    console.log("[ai] plan:", plan, "→ runFigures:", wantsFigures, "runText:", wantsText);
+    debug("[ai] plan:", plan, "→ runFigures:", wantsFigures, "runText:", wantsText);
     if (kind === "pdf") {
       docText = await extractPdfText(state.pdfDoc);
       // Always pull per-page positioned text content. Used to resolve
@@ -1250,7 +1251,7 @@ async function aiAsk() {
               state.source?.contentHash,
               (i, total, page) => aiSetStatus(`ONNX layout ${i}/${total} pages…`)
             );
-            console.log("[ai] onnx detection:", figureDetections);
+            debug("[ai] onnx detection:", figureDetections);
           } catch (err) {
             console.warn("[ai] ONNX failed, falling back:", err);
             aiSetStatus(`ONNX failed (${err.message || err}); falling back.`, "error");
@@ -1321,8 +1322,8 @@ async function aiAsk() {
     if (figureDetections) {
       for (const d of figureDetections) detectionByPage.set(d.page, d.candidates || []);
     }
-    console.log("[ai] raw highlights from model:", highlights);
-    console.log("[ai] figure detections by page:", detectionByPage);
+    debug("[ai] raw highlights from model:", highlights);
+    debug("[ai] figure detections by page:", detectionByPage);
     // Candidate-kind whitelist for fallback paths (B-snap and C-largest).
     // Layout detectors classify each region; only figure/table/chart-ish
     // kinds are valid for an image-snippet anchor. Header/title/text
@@ -2095,7 +2096,7 @@ async function acceptAiSuggestion(sug) {
       text: (snippet.text || "").slice(0, 80),
     });
   } else {
-    console.log("[accept] text snippet rects:", snippet.rects.length, "on page", snippet.page);
+    debug("[accept] text snippet rects:", snippet.rects.length, "on page", snippet.page);
   }
   persist();
   refreshActiveView();
@@ -3500,7 +3501,7 @@ document.addEventListener("paste", async (e) => {
     console.warn("[paste] no clipboardData on event");
     return;
   }
-  console.log("[paste] received", { types: cd.types, items: [...(cd.items || [])].map((it) => `${it.kind}/${it.type}`) });
+  debug("[paste] received", { types: cd.types, items: [...(cd.items || [])].map((it) => `${it.kind}/${it.type}`) });
 
   // Image paste is intentionally disabled — pasted image clips can't
   // be selected for AI highlighting (the AI flow needs a doc context
@@ -6167,7 +6168,7 @@ function setupPermalinkBootstrap() {
   const parsed = parsePermalink(qs);
   if (!parsed) return;
   pendingPermalink = parsed;
-  console.log("[marklee] permalink detected", parsed);
+  debug("[marklee] permalink detected", parsed);
   // Try to resolve immediately against any already-loaded doc.
   const ok = resolvePendingPermalink();
   if (ok) return;

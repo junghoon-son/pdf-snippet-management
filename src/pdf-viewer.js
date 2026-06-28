@@ -1,3 +1,4 @@
+import { debug } from "./debug.js";
 import * as pdfjsLib from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 
@@ -267,7 +268,7 @@ export function applyHighlights(container, snippets) {
   for (const [p, items] of _pageBuckets) {
     bucketSummary.push(`p${p}:${items.length}`);
   }
-  console.log("[hl] applyHighlights", {
+  debug("[hl] applyHighlights", {
     snippetCount: _lastSnippets.length,
     pageStatesSize: pageStates.size,
     buckets: bucketSummary.join(" ") || "(none)",
@@ -277,10 +278,10 @@ export function applyHighlights(container, snippets) {
     const items = _pageBuckets.get(pageNum) || [];
     const hash = hashItems(items, _hoverSnippetId);
     if (_pageHashes.get(pageNum) === hash) {
-      if (items.length) console.log(`[hl] page ${pageNum} skip (hash unchanged), ${items.length} items`);
+      if (items.length) debug(`[hl] page ${pageNum} skip (hash unchanged), ${items.length} items`);
       continue;
     }
-    console.log(`[hl] page ${pageNum} paint ${items.length} item(s)`, items.map((it) => ({
+    debug(`[hl] page ${pageNum} paint ${items.length} item(s)`, items.map((it) => ({
       id: it.snippet.id?.slice(0, 4),
       kind: it.snippet.kind,
       ghost: !!it.ghost,
@@ -341,7 +342,7 @@ export function paintHighlightCanvas(canvas, items) {
   const ctx = canvas.getContext("2d");
   const W = canvas.width;
   const H = canvas.height;
-  console.log(`[hl] paintHighlightCanvas W=${W} H=${H} items=${items.length} canvasInDom=${!!canvas.isConnected}`);
+  debug(`[hl] paintHighlightCanvas W=${W} H=${H} items=${items.length} canvasInDom=${!!canvas.isConnected}`);
   ctx.clearRect(0, 0, W, H);
   if (items.length === 0) return;
 

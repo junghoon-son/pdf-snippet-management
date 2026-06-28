@@ -13,6 +13,7 @@
 // Dependencies injected via setup({...}) so this module doesn't reach
 // into main.js's globals.
 
+import { debug } from "./debug.js";
 import {
   getProviderDef,
   getProviderId,
@@ -34,7 +35,7 @@ export function setup(injected) {
 // A separate aiSetBusy() handles the visual "work-in-flight" indicator
 // via the loading bar below the ask input.
 export function aiSetStatus(msg, state = "idle") {
-  if (msg) console.log(`[ai${state === "error" ? ":err" : ""}] ${msg}`);
+  if (msg) debug(`[ai${state === "error" ? ":err" : ""}] ${msg}`);
   const el = document.getElementById("ai-ask-status");
   if (!el) return;
   if (state === "error" && msg) {

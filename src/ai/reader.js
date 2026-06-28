@@ -4,6 +4,7 @@
 // forces verbatim quoting + structured fields. Caller passes a query
 // and the doc as plain text; gets back an array of suggestions.
 
+import { debug } from "../debug.js";
 import { callMessages, getMaxOutputTokens } from "./providers.js";
 import { READER_SYSTEM, READER_TOOL } from "./reader-prompt.js";
 
@@ -87,14 +88,14 @@ export async function runReader({ query, docText, docTitle, groupNames, pageImag
   // Diagnostic: log every content block from the model so we can see
   // text + tool_use side by side. If the highlights array is empty,
   // any accompanying text block usually explains why.
-  console.log("[ai] full model response content blocks:", res.content);
+  debug("[ai] full model response content blocks:", res.content);
   const toolUse = (res.content || []).find((c) => c.type === "tool_use" && c.name === "record_highlights");
   const textBlocks = (res.content || [])
     .filter((c) => c.type === "text")
     .map((c) => c.text)
     .join("\n").trim();
   if (textBlocks) {
-    console.log("[ai] model text alongside tool call:", textBlocks);
+    debug("[ai] model text alongside tool call:", textBlocks);
   }
   if (!toolUse) {
     throw new Error(textBlocks || "The model did not return any highlights.");
