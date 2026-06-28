@@ -1,5 +1,4 @@
 import "pdfjs-dist/web/pdf_viewer.css";
-import { open } from "@tauri-apps/plugin-dialog";
 import {
   loadDocument as loadPdfDocument,
   renderPages,
@@ -17,7 +16,7 @@ import { detectKindFromPath, FLOW_EXTS, IMAGE_EXTS } from "./source-kind.js";
 import * as MapView from "./map-view.js";
 import * as LineageView from "./lineage-view.js";
 import { openGroupOverlay } from "./group-overlay.js";
-import { setStore, getStore } from "./storage/store.js";
+import { setStore, getStore, autoDetectStore } from "./storage/store.js";
 import {
   setup as setupClipboard,
   createPastedTextSnippet,
@@ -65,7 +64,6 @@ import {
   PROVIDER_IDS, getProviderId, setProviderId, getProviderDef,
   getProviderHasKey, setProviderApiKey,
   getProviderModel, setProviderModel,
-  initAllProviderKeys,
 } from "./ai/providers.js";
 import {
   GROUP_TEMPLATES,
@@ -76,16 +74,21 @@ import {
   isBuiltinTemplate,
 } from "./group-templates.js";
 
+// Lazy, guarded shim for the Tauri open dialog. The static import was removed
+// so the bundle loads in a plain browser; every caller is already inside an
+// IS_TAURI branch, so this import only ever runs under the desktop runtime.
+async function tauriOpen(opts) {
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  return open(opts);
+}
+
 const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
+// TODO(Task 3): remove fsaStore once Task 3 wires the OPFS folder-import path.
 const fsaStore = IS_TAURI ? null : new FsaStore();
-setStore(IS_TAURI ? new TauriStore() : fsaStore);
 document.body.dataset.runtime = IS_TAURI ? "tauri" : "web";
 
-// Hydrate every provider's encrypted-key cache before the rest of the
-// module evaluates — top-level await pauses execution here, so all UI
-// bindings below see the cached keys via the sync hasApiKey() /
-// getApiKey() accessors. Single round-trip; the Tauri command is fast.
-await initAllProviderKeys();
+setStore(await autoDetectStore());
+await getStore().init?.();
 
 async function saveFile({ suggestedName, mimeType, content }) {
   const isText = typeof content === "string";
@@ -144,7 +147,7 @@ async function locateMissingFile(oldPath, mode, folder) {
   let newPath = null;
   try {
     if (IS_TAURI) {
-      newPath = await open({
+      newPath = await tauriOpen({
         multiple: false,
         directory: false,
         filters: [{ name: "Documents", extensions: ["pdf", "md", "markdown", "docx", "txt", "text", "png", "jpg", "jpeg"] }],
@@ -650,7 +653,7 @@ document.getElementById("open-file").addEventListener("click", async () => {
     alert("In the browser build, click “+ folder” to pick a directory — individual file picking is not yet supported.");
     return;
   }
-  const path = await open({
+  const path = await tauriOpen({
     multiple: true,
     directory: false,
     filters: [{ name: "Documents", extensions: ["pdf", "md", "markdown", "docx", "txt", "text", "png", "jpg", "jpeg"] }],
@@ -668,7 +671,7 @@ document.getElementById("open-file").addEventListener("click", async () => {
 document.getElementById("open-folder").addEventListener("click", async () => {
   let dir;
   if (IS_TAURI) {
-    dir = await open({ multiple: false, directory: true });
+    dir = await tauriOpen({ multiple: false, directory: true });
     if (!dir) return;
   } else {
     try {
@@ -3237,7 +3240,7 @@ async function exportGroups() {
 async function importGroups() {
   let bytes;
   if (IS_TAURI) {
-    const path = await open({
+    const path = await tauriOpen({
       multiple: false,
       directory: false,
       filters: [{ name: "JSON", extensions: ["json"] }],

@@ -68,18 +68,40 @@ export function getStore() {
   return activeStore;
 }
 
+/**
+ * Pure backend-precedence decision. `env` is a plain capability object so this
+ * is unit-testable with no real window/navigator.
+ *   { isTauri, hasOpfs, hasFsa } -> "tauri" | "opfs" | "fsa" | null
+ * On web (non-Tauri) OPFS is preferred over FSA: it is persistent and works in
+ * every Chromium/Safari/Firefox build, whereas FSA needs an explicit picker.
+ */
+export function pickStore(env) {
+  if (env.isTauri) return "tauri";
+  if (env.hasOpfs) return "opfs";
+  if (env.hasFsa) return "fsa";
+  return null;
+}
+
 export async function autoDetectStore() {
-  if (typeof window !== "undefined" && window.__TAURI_INTERNALS__) {
-    const { TauriStore } = await import("./tauri-store.js");
-    return new TauriStore();
+  const env = {
+    isTauri: typeof window !== "undefined" && !!window.__TAURI_INTERNALS__,
+    hasOpfs: typeof navigator !== "undefined" && !!navigator.storage?.getDirectory,
+    hasFsa: typeof window !== "undefined" && "showDirectoryPicker" in window,
+  };
+  switch (pickStore(env)) {
+    case "tauri": {
+      const { TauriStore } = await import("./tauri-store.js");
+      return new TauriStore();
+    }
+    case "opfs": {
+      const { OpfsStore } = await import("./opfs-store.js");
+      return new OpfsStore();
+    }
+    case "fsa": {
+      const { FsaStore } = await import("./fsa-store.js");
+      return new FsaStore();
+    }
+    default:
+      throw new Error("No supported storage backend in this environment.");
   }
-  if (typeof window !== "undefined" && "showDirectoryPicker" in window) {
-    const { FsaStore } = await import("./fsa-store.js");
-    return new FsaStore();
-  }
-  if (typeof navigator !== "undefined" && navigator.storage?.getDirectory) {
-    const { OpfsStore } = await import("./opfs-store.js").catch(() => ({}));
-    if (OpfsStore) return new OpfsStore();
-  }
-  throw new Error("No supported storage backend in this environment.");
 }
