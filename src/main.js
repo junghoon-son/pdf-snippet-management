@@ -12,7 +12,7 @@ import {
 } from "./pdf-viewer.js";
 import * as FlowView from "./flow-viewer.js";
 import * as ImageView from "./image-viewer.js";
-import { detectKindFromPath, FLOW_EXTS, IMAGE_EXTS } from "./source-kind.js";
+import { detectKindFromPath, FLOW_EXTS, IMAGE_EXTS, fileToDescriptor, sanitizeImportName } from "./source-kind.js";
 import * as MapView from "./map-view.js";
 import * as LineageView from "./lineage-view.js";
 import { openGroupOverlay } from "./group-overlay.js";
@@ -40,8 +40,6 @@ import {
   openAiSettings,
   closeAiSettings,
 } from "./ai-panel.js";
-import { TauriStore } from "./storage/tauri-store.js";
-import { FsaStore } from "./storage/fsa-store.js";
 import { computeMarkRank, rankPercentiles } from "./markrank.js";
 import { buildPermalink, parsePermalink } from "./marklee-permalink.js";
 import { runReader } from "./ai/reader.js";
@@ -83,12 +81,9 @@ async function tauriOpen(opts) {
 }
 
 const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
-// TODO(Task 3): remove fsaStore once Task 3 wires the OPFS folder-import path.
-const fsaStore = IS_TAURI ? null : new FsaStore();
-document.body.dataset.runtime = IS_TAURI ? "tauri" : "web";
-
 setStore(await autoDetectStore());
 await getStore().init?.();
+document.body.dataset.runtime = IS_TAURI ? "tauri" : "web";
 
 async function saveFile({ suggestedName, mimeType, content }) {
   const isText = typeof content === "string";
@@ -285,7 +280,34 @@ async function pickBrowserFile(types) {
   });
 }
 
-// detectKindFromPath, FLOW_EXTS, IMAGE_EXTS imported from source-kind.js at file top.
+// detectKindFromPath, FLOW_EXTS, IMAGE_EXTS, fileToDescriptor, sanitizeImportName
+// imported from source-kind.js at file top.
+
+// Web upload model: a chosen/dropped File -> bytes -> store.importDocument
+// -> canonical path registered in the workspace library -> loadPdf.
+// Documents land in OPFS (or FSA) and survive across sessions; the
+// library list is rebuilt from store.listDocuments() on every boot.
+async function importFiles(files) {
+  const list = Array.from(files || []).filter(Boolean);
+  if (list.length === 0) return;
+  let lastPath = null;
+  for (const file of list) {
+    try {
+      const { name } = fileToDescriptor(file);
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const desc = await getStore().importDocument(name, bytes);
+      if (!state.workspace.files.includes(desc.path)) state.workspace.files.push(desc.path);
+      lastPath = desc.path;
+    } catch (err) {
+      console.error("[import] failed for", file?.name, err);
+      alert(`Couldn't import ${sanitizeImportName(file?.name)}:\n${err?.message || err}`);
+    }
+  }
+  if (!lastPath) return;
+  saveWorkspace();
+  await renderWorkspace();
+  await loadPdf(lastPath);
+}
 
 const fileListEl = document.getElementById("file-list");
 const snippetsListEl = document.getElementById("snippets-list");
@@ -648,53 +670,36 @@ function closeWorkspace(id) {
 
 document.getElementById("ws-tab-add").addEventListener("click", newWorkspace);
 
-document.getElementById("open-file").addEventListener("click", async () => {
-  if (!IS_TAURI) {
-    alert("In the browser build, click “+ folder” to pick a directory — individual file picking is not yet supported.");
-    return;
-  }
-  const path = await tauriOpen({
-    multiple: true,
-    directory: false,
-    filters: [{ name: "Documents", extensions: ["pdf", "md", "markdown", "docx", "txt", "text", "png", "jpg", "jpeg"] }],
-  });
-  if (!path) return;
-  const paths = Array.isArray(path) ? path : [path];
-  for (const p of paths) {
-    if (!state.workspace.files.includes(p)) state.workspace.files.push(p);
-  }
-  saveWorkspace();
-  await renderWorkspace();
-  if (paths[0]) await loadPdf(paths[0]);
+const importBtn = document.getElementById(“import-pdf”);
+importBtn.addEventListener(“click”, async () => {
+  const file = await pickBrowserFile([
+    { description: “Documents”, accept: { “application/octet-stream”: [“.pdf”, “.md”, “.markdown”, “.docx”, “.txt”, “.text”, “.png”, “.jpg”, “.jpeg”] } },
+  ]);
+  if (!file) return;
+  await importFiles([file]);
 });
 
-document.getElementById("open-folder").addEventListener("click", async () => {
-  let dir;
-  if (IS_TAURI) {
-    dir = await tauriOpen({ multiple: false, directory: true });
-    if (!dir) return;
-  } else {
-    try {
-      const picked = await fsaStore.pickRoot();
-      dir = picked.name;
-    } catch (err) {
-      if (err && err.name !== "AbortError") alert(`Folder access failed: ${err.message || err}`);
-      return;
-    }
-    state.workspace.folders = [];
-  }
-  let folder = state.workspace.folders.find((f) => f.path === dir);
-  const docs = await getStore().listDocuments(dir);
-  const pdfs = docs.map((d) => d.path);
-  if (!folder) {
-    folder = { path: dir, pdfs };
-    state.workspace.folders.push(folder);
-  } else {
-    folder.pdfs = pdfs;
-  }
-  saveWorkspace();
-  await renderWorkspace();
-  if (folder.pdfs.length > 0) await loadPdf(folder.pdfs[0]);
+// Drag-and-drop anywhere on the app imports the dropped files.
+const dropTarget = document.getElementById(“app”);
+[“dragenter”, “dragover”].forEach((evt) =>
+  dropTarget.addEventListener(evt, (e) => {
+    if (!e.dataTransfer?.types?.includes(“Files”)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = “copy”;
+    document.body.dataset.dragging = “1”;
+  }),
+);
+[“dragleave”, “drop”].forEach((evt) =>
+  dropTarget.addEventListener(evt, (e) => {
+    if (evt === “dragleave” && e.relatedTarget && dropTarget.contains(e.relatedTarget)) return;
+    delete document.body.dataset.dragging;
+  }),
+);
+dropTarget.addEventListener(“drop”, async (e) => {
+  const files = e.dataTransfer?.files;
+  if (!files || files.length === 0) return;
+  e.preventDefault();
+  await importFiles(files);
 });
 
 document.getElementById("clear-workspace").addEventListener("click", () => {
@@ -723,6 +728,14 @@ function closeCurrentPdf() {
 
 async function renderWorkspace() {
   fileListEl.innerHTML = "";
+  const isEmptyLibrary =
+    state.workspace.folders.length === 0 && state.workspace.files.length === 0;
+  if (isEmptyLibrary && !IS_TAURI) {
+    const li = document.createElement("li");
+    li.className = "ws-empty";
+    li.textContent = "No documents yet — click Import PDF or drop a file here.";
+    fileListEl.appendChild(li);
+  }
   for (const folder of state.workspace.folders) {
     const section = document.createElement("li");
     section.className = "ws-folder";
@@ -2883,6 +2896,20 @@ document.getElementById("clear-recents").addEventListener("click", () => {
 
 renderRecents();
 renderWorkspaceTabs();
+
+// On web, the library list is the set of documents the store has
+// persisted (OPFS/FSA). Rebuild it on boot so previously imported
+// files reappear across sessions. Tauri keeps its folder-based model.
+if (!IS_TAURI && getStore().capabilities().kind !== "tauri") {
+  try {
+    const docs = await getStore().listDocuments();
+    state.workspace.folders = [];
+    state.workspace.files = docs.map((d) => d.path);
+  } catch (err) {
+    console.warn("[boot] listDocuments failed", err);
+  }
+}
+
 renderWorkspace();
 renderGroups();
 renderClipped();
@@ -6276,8 +6303,8 @@ function setupAppMenu() {
 function handleAppMenu(id) {
   const click = (sel) => document.querySelector(sel)?.click();
   switch (id) {
-    case "file_open":              click("#open-file"); break;
-    case "file_open_folder":       click("#open-folder"); break;
+    case "file_open":              click("#import-pdf"); break;
+    case "file_open_folder":       click("#import-pdf"); break;
     case "file_summary":           openSummary(); break;
     case "file_export_summary":    openSummary(); setTimeout(exportSummaryHtml, 80); break;
     case "edit_undo":              undo(); break;

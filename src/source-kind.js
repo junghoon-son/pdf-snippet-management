@@ -18,3 +18,27 @@ export function detectKindFromPath(path) {
   if (IMAGE_EXTS.includes(ext)) return "image";
   return "pdf";
 }
+
+// Strip directory components and unsafe characters from an uploaded
+// file's name so it can be a flat OPFS key. Collapses path separators,
+// drops control/reserved chars, trims dots/spaces, and guarantees a
+// non-empty result. Pure — no DOM, no I/O.
+export function sanitizeImportName(name) {
+  const base = String(name || "").split(/[\\/]/).pop() || "";
+  const cleaned = base
+    .replace(/[\x00-\x1f<>"|?*]/g, "")
+    .replace(/:/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/^[. ]+|[. ]+$/g, "")
+    .trim();
+  return cleaned || "untitled";
+}
+
+// Map a picked/dropped File (or any object with a .name) to the
+// {name, kind} descriptor the store import path needs. The store
+// supplies the canonical `path`; kind is derived from the sanitized
+// name so it matches loadAnyDocument's routing.
+export function fileToDescriptor(file) {
+  const name = sanitizeImportName(file && file.name);
+  return { name, kind: detectKindFromPath(name) };
+}
