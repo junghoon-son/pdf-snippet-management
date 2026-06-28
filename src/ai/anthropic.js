@@ -1,79 +1,26 @@
 // Minimal Anthropic Messages API client for Marklee.
 //
-// API key is stored encrypted at rest via the Rust-side commands
-// set_provider_key / get_provider_key (AES-256-GCM with a machine-
-// bound key — see src-tauri/src/secrets.rs). An in-memory cache
-// keeps getApiKey() / hasApiKey() synchronous; main.js awaits
-// initApiKeyStore() at startup before any AI UI is reachable.
+// Phase 1 (browser-only shell) has no backend and AI is disabled, so the
+// key store is gone. callMessages() and the request-building code below
+// are kept intact for Phase 2, where credentials arrive via a server proxy
+// rather than BYOK. getApiKey()/hasApiKey() report an empty in-memory cache.
 
 const API_URL = "https://api.anthropic.com/v1/messages";
 const API_VERSION = "2023-06-01";
-const PROVIDER_ID = "anthropic";
-const LEGACY_KEY_STORAGE = "marklee-anthropic-key"; // pre-encryption plaintext
 const MODEL_STORAGE = "marklee-anthropic-model";
 const CONSENT_STORAGE = "marklee-ai-consent";
 const FIGURES_STORAGE = "marklee-ai-figures";
 const DEFAULT_MODEL = "claude-sonnet-4-6";
 
-const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
-
+// Phase 1: AI is disabled (see src/ai/feature-flags.js) and there is no
+// backend yet, so the BYOK key surface is gone. The in-memory cache stays
+// empty; Phase 2 will supply credentials via the server proxy. The legacy
+// Tauri set_provider_key / get_provider_key paths and the localStorage
+// fallback were removed.
 let _cachedKey = "";
-let _hydrated = false;
-
-async function _invoke(cmd, args) {
-  const { invoke } = await import("@tauri-apps/api/core");
-  return invoke(cmd, args);
-}
-
-// Called once from main.js startup. Hydrates the in-memory cache from
-// the encrypted store, migrating any pre-encryption plaintext key from
-// localStorage on first run.
-export async function initApiKeyStore() {
-  if (_hydrated) return;
-  _hydrated = true;
-  if (!IS_TAURI) {
-    // Dev web preview only — no encrypted store available.
-    try { _cachedKey = localStorage.getItem(LEGACY_KEY_STORAGE) || ""; } catch {}
-    return;
-  }
-  let k = "";
-  try {
-    k = (await _invoke("get_provider_key", { provider: PROVIDER_ID })) || "";
-  } catch (err) {
-    console.warn("[anthropic] get_provider_key failed:", err);
-  }
-  if (!k) {
-    let legacy = "";
-    try { legacy = localStorage.getItem(LEGACY_KEY_STORAGE) || ""; } catch {}
-    if (legacy) {
-      try {
-        await _invoke("set_provider_key", { provider: PROVIDER_ID, key: legacy });
-        try { localStorage.removeItem(LEGACY_KEY_STORAGE); } catch {}
-        k = legacy;
-      } catch (err) {
-        console.warn("[anthropic] legacy key migration failed:", err);
-      }
-    }
-  }
-  _cachedKey = k;
-}
 
 export function getApiKey() { return _cachedKey; }
 export function hasApiKey() { return !!_cachedKey; }
-
-export async function setApiKey(key) {
-  const v = key || "";
-  if (!IS_TAURI) {
-    try {
-      if (v) localStorage.setItem(LEGACY_KEY_STORAGE, v);
-      else localStorage.removeItem(LEGACY_KEY_STORAGE);
-    } catch {}
-    _cachedKey = v;
-    return;
-  }
-  await _invoke("set_provider_key", { provider: PROVIDER_ID, key: v });
-  _cachedKey = v;
-}
 
 export function getModel() {
   try { return localStorage.getItem(MODEL_STORAGE) || DEFAULT_MODEL; } catch { return DEFAULT_MODEL; }

@@ -14,66 +14,16 @@
 //     + `allowedFunctionNames`.
 
 const BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
-const PROVIDER_ID = "gemini";
-const LEGACY_KEY_STORAGE = "marklee-gemini-key";
 const MODEL_STORAGE = "marklee-gemini-model";
 const DEFAULT_MODEL = "gemini-3.5-flash";
 
-const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
-
+// Phase 1: AI disabled, no backend — BYOK key store removed (see
+// src/ai/anthropic.js for the rationale). Phase 2 supplies credentials via
+// the server proxy.
 let _cachedKey = "";
-let _hydrated = false;
-
-async function _invoke(cmd, args) {
-  const { invoke } = await import("@tauri-apps/api/core");
-  return invoke(cmd, args);
-}
-
-export async function initApiKeyStore() {
-  if (_hydrated) return;
-  _hydrated = true;
-  if (!IS_TAURI) {
-    try { _cachedKey = localStorage.getItem(LEGACY_KEY_STORAGE) || ""; } catch {}
-    return;
-  }
-  let k = "";
-  try {
-    k = (await _invoke("get_provider_key", { provider: PROVIDER_ID })) || "";
-  } catch (err) {
-    console.warn("[gemini] get_provider_key failed:", err);
-  }
-  if (!k) {
-    let legacy = "";
-    try { legacy = localStorage.getItem(LEGACY_KEY_STORAGE) || ""; } catch {}
-    if (legacy) {
-      try {
-        await _invoke("set_provider_key", { provider: PROVIDER_ID, key: legacy });
-        try { localStorage.removeItem(LEGACY_KEY_STORAGE); } catch {}
-        k = legacy;
-      } catch (err) {
-        console.warn("[gemini] legacy key migration failed:", err);
-      }
-    }
-  }
-  _cachedKey = k;
-}
 
 export function getApiKey() { return _cachedKey; }
 export function hasApiKey() { return !!_cachedKey; }
-
-export async function setApiKey(key) {
-  const v = key || "";
-  if (!IS_TAURI) {
-    try {
-      if (v) localStorage.setItem(LEGACY_KEY_STORAGE, v);
-      else localStorage.removeItem(LEGACY_KEY_STORAGE);
-    } catch {}
-    _cachedKey = v;
-    return;
-  }
-  await _invoke("set_provider_key", { provider: PROVIDER_ID, key: v });
-  _cachedKey = v;
-}
 
 export function getModel() {
   try { return localStorage.getItem(MODEL_STORAGE) || DEFAULT_MODEL; } catch { return DEFAULT_MODEL; }

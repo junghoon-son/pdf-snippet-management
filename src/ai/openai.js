@@ -5,69 +5,17 @@
 // reader.js doesn't branch on provider.
 
 const API_URL = "https://api.openai.com/v1/chat/completions";
-const PROVIDER_ID = "openai";
-const LEGACY_KEY_STORAGE = "marklee-openai-key"; // pre-encryption plaintext
 const MODEL_STORAGE = "marklee-openai-model";
 const DEFAULT_MODEL = "gpt-4o";
 
-const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
-
+// Phase 1: AI disabled, no backend — BYOK key store removed (see
+// src/ai/anthropic.js for the rationale). Phase 2 supplies credentials via
+// the server proxy.
 let _cachedKey = "";
-let _hydrated = false;
-
-async function _invoke(cmd, args) {
-  const { invoke } = await import("@tauri-apps/api/core");
-  return invoke(cmd, args);
-}
-
-// See src/ai/anthropic.js — same pattern. Hydrates the in-memory key
-// cache from the encrypted store on startup, migrating any plaintext
-// localStorage holdover from earlier versions.
-export async function initApiKeyStore() {
-  if (_hydrated) return;
-  _hydrated = true;
-  if (!IS_TAURI) {
-    try { _cachedKey = localStorage.getItem(LEGACY_KEY_STORAGE) || ""; } catch {}
-    return;
-  }
-  let k = "";
-  try {
-    k = (await _invoke("get_provider_key", { provider: PROVIDER_ID })) || "";
-  } catch (err) {
-    console.warn("[openai] get_provider_key failed:", err);
-  }
-  if (!k) {
-    let legacy = "";
-    try { legacy = localStorage.getItem(LEGACY_KEY_STORAGE) || ""; } catch {}
-    if (legacy) {
-      try {
-        await _invoke("set_provider_key", { provider: PROVIDER_ID, key: legacy });
-        try { localStorage.removeItem(LEGACY_KEY_STORAGE); } catch {}
-        k = legacy;
-      } catch (err) {
-        console.warn("[openai] legacy key migration failed:", err);
-      }
-    }
-  }
-  _cachedKey = k;
-}
 
 export function getApiKey() { return _cachedKey; }
 export function hasApiKey() { return !!_cachedKey; }
 
-export async function setApiKey(key) {
-  const v = key || "";
-  if (!IS_TAURI) {
-    try {
-      if (v) localStorage.setItem(LEGACY_KEY_STORAGE, v);
-      else localStorage.removeItem(LEGACY_KEY_STORAGE);
-    } catch {}
-    _cachedKey = v;
-    return;
-  }
-  await _invoke("set_provider_key", { provider: PROVIDER_ID, key: v });
-  _cachedKey = v;
-}
 export function getModel() {
   try { return localStorage.getItem(MODEL_STORAGE) || DEFAULT_MODEL; } catch { return DEFAULT_MODEL; }
 }

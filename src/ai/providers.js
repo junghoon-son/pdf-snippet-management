@@ -62,17 +62,6 @@ const FALLBACK_MAX_OUTPUT_TOKENS = 4096;
 
 export const PROVIDER_IDS = Object.keys(PROVIDER_DEFS);
 
-// Hydrate every provider's encrypted-key cache before the UI consults
-// hasApiKey()/getApiKey(). Called once from main.js startup.
-export async function initAllProviderKeys() {
-  await Promise.all(
-    PROVIDER_IDS.map((id) => {
-      const mod = PROVIDER_DEFS[id].module;
-      return mod.initApiKeyStore ? mod.initApiKeyStore() : Promise.resolve();
-    })
-  );
-}
-
 export function getProviderId() {
   try { return localStorage.getItem(PROVIDER_STORAGE) || "anthropic"; } catch { return "anthropic"; }
 }
@@ -98,9 +87,6 @@ export function hasApiKey() {
 export function getApiKey() {
   return activeProvider().module.getApiKey();
 }
-export function setApiKey(key) {
-  return activeProvider().module.setApiKey(key);
-}
 export function getModel() {
   return activeProvider().module.getModel();
 }
@@ -123,9 +109,6 @@ export function getMaxOutputTokens() {
 // providers' current state at once).
 export function getProviderHasKey(id) {
   return getProviderDef(id).module.hasApiKey();
-}
-export function setProviderApiKey(id, key) {
-  return getProviderDef(id).module.setApiKey(key);
 }
 export function getProviderModel(id) {
   return getProviderDef(id).module.getModel();

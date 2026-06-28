@@ -101,12 +101,10 @@
               AI
             </span>
             <span class="toolbar-spacer"></span>
-            <button id="ai-settings-btn" title="AI settings">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            </button>
             <button id="ai-section-collapse" class="pane-section-collapse" title="Collapse / expand AI section">▾</button>
           </div>
-          <div id="ai-ask-bar">
+          <!-- Phase 1: AI Ask surface + BYOK settings hidden behind AI_ENABLED (src/ai/feature-flags.js). Re-enabled in Phase 2 behind the server proxy. -->
+          <div id="ai-ask-bar" hidden>
             <div class="ai-ask-row">
               <input id="ai-ask-input" placeholder="Ask about this document…   ⌘↵ to send" autocomplete="off" />
               <button id="ai-ask-submit" title="Ask">↵</button>
@@ -299,62 +297,6 @@
           <button id="ws-import-cancel">cancel</button>
           <button id="ws-import-confirm">import selected</button>
         </footer>
-      </div>
-    </div>
-    <div id="ai-settings-modal" hidden>
-      <div class="modal-backdrop"></div>
-      <div class="modal-card">
-        <header class="modal-header">
-          <div class="modal-title">
-            <h2>AI settings</h2>
-            <span class="ws-import-meta">Bring your own API key. The key stays in this app — not sent anywhere except the provider you select.</span>
-          </div>
-          <button id="ai-settings-close" title="Close (Esc)">×</button>
-        </header>
-        <div class="modal-body">
-          <label class="ai-field">
-            <span>Provider</span>
-            <select id="ai-settings-provider">
-              <option value="anthropic">Anthropic Claude</option>
-              <option value="openai">OpenAI</option>
-              <option value="gemini">Google Gemini</option>
-              <option value="marklee-managed" disabled>Marklee Managed (coming soon)</option>
-            </select>
-          </label>
-          <label class="ai-field">
-            <span>API key <em id="ai-settings-key-state">— not set</em></span>
-            <input id="ai-settings-key" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false" />
-          </label>
-          <label class="ai-field">
-            <span>Model</span>
-            <select id="ai-settings-model"></select>
-          </label>
-          <label class="ai-field ai-field-row">
-            <input id="ai-settings-consent" type="checkbox" />
-            <span>I understand each query sends the full document text to the selected provider.</span>
-          </label>
-          <label class="ai-field ai-field-row">
-            <input id="ai-settings-figures" type="checkbox" />
-            <span>Include figures (vision pass — renders each PDF page as an image; cost scales with page count).</span>
-          </label>
-          <fieldset class="ai-fieldset">
-            <legend>Layout detector</legend>
-            <label class="ai-field ai-field-row">
-              <input id="ai-settings-onnx" type="checkbox" />
-              <span>
-                Use <strong>RT-DETR v2 (ONNX)</strong> for figure / table detection — fast, Rust-native, no Python.
-                <em class="ai-field-note">First run downloads ~171&nbsp;MB (docling-project/docling-layout-heron, Apache-2.0).</em>
-              </span>
-            </label>
-          </fieldset>
-          <div class="ai-settings-actions">
-            <button id="ai-settings-save" class="primary">Save</button>
-            <button id="ai-settings-clear" title="Forget the stored key for the current provider">Clear key</button>
-          </div>
-          <p class="ai-settings-note" id="ai-settings-key-hint">
-            Get a key at <code>console.anthropic.com</code> → API Keys.
-          </p>
-        </div>
       </div>
     </div>
     <script type="module" src="/src/main.js"></script>

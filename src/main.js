@@ -60,9 +60,10 @@ import {
 } from "./ai/anthropic.js";
 import {
   PROVIDER_IDS, getProviderId, setProviderId, getProviderDef,
-  getProviderHasKey, setProviderApiKey,
+  getProviderHasKey,
   getProviderModel, setProviderModel,
 } from "./ai/providers.js";
+import { isAiEnabled } from "./ai/feature-flags.js";
 import {
   GROUP_TEMPLATES,
   findTemplate,
@@ -1171,14 +1172,14 @@ function captionAnchorRect(viewerContainer, page, label) {
 // aiSetStatus, aiSetBusy moved to src/ai-panel.js in Wave 3.
 
 async function aiAsk() {
+  if (!isAiEnabled()) return; // Phase 1: AI disabled — no server proxy yet.
   if (aiInFlight) return;
   const input = document.getElementById("ai-ask-input");
   const query = (input.value || "").trim();
   if (!query) return;
 
   if (!hasApiKey()) {
-    aiSetStatus("Set your Anthropic API key in AI settings.", "error");
-    openAiSettings();
+    aiSetStatus("AI is not available yet.", "error");
     return;
   }
   if (!hasConsented()) {
@@ -2151,15 +2152,17 @@ function expandAiSection() {
   if (isAiCollapsed()) setAiCollapsed(false);
 }
 
-document.getElementById("ai-ask-submit").addEventListener("click", aiAsk);
-document.getElementById("ai-ask-input").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    aiAsk();
-  } else if (e.key === "Escape") {
-    e.target.blur();
-  }
-});
+if (isAiEnabled()) {
+  document.getElementById("ai-ask-submit").addEventListener("click", aiAsk);
+  document.getElementById("ai-ask-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      aiAsk();
+    } else if (e.key === "Escape") {
+      e.target.blur();
+    }
+  });
+}
 document.getElementById("ai-drawer-close").addEventListener("click", hideAiDrawer);
 document.getElementById("ai-drawer-accept-all").addEventListener("click", () => {
   // Single-shot guard so the user sees the error once, not per-suggestion.
@@ -2179,52 +2182,10 @@ document.getElementById("ai-drawer-reject-all").addEventListener("click", () => 
 });
 
 // ── AI settings modal ────────────────────────────────────────────
-// openAiSettings, closeAiSettings, rebuildAiModelDropdown,
-// updateAiKeyFieldForProvider moved to src/ai-panel.js in Wave 3.
-// DOM event bindings (ai-settings-btn click, provider change, save,
-// clear) stay here so the wiring is centralized.
-document.getElementById("ai-settings-btn").addEventListener("click", openAiSettings);
-document.getElementById("ai-settings-close").addEventListener("click", closeAiSettings);
-document.getElementById("ai-settings-modal").querySelector(".modal-backdrop").addEventListener("click", closeAiSettings);
-document.getElementById("ai-settings-key").addEventListener("input", (e) => {
-  e.target.dataset.touched = "1";
-});
-document.getElementById("ai-settings-provider").addEventListener("change", (e) => {
-  // Switching the dropdown previews that provider's models + key state
-  // but doesn't persist until Save. To keep things simple we DO persist
-  // the provider choice immediately so the model dropdown reflects it.
-  const id = e.target.value;
-  setProviderId(id);
-  rebuildAiModelDropdown(id);
-  updateAiKeyFieldForProvider(id);
-});
-document.getElementById("ai-settings-save").addEventListener("click", async () => {
-  const provId = document.getElementById("ai-settings-provider").value;
-  setProviderId(provId);
-  const keyEl = document.getElementById("ai-settings-key");
-  if (keyEl.dataset.touched === "1") {
-    const v = keyEl.value.trim();
-    if (v) {
-      try { await setProviderApiKey(provId, v); }
-      catch (err) { aiSetStatus("Failed to save API key: " + (err.message || err), "error"); return; }
-    }
-  }
-  setProviderModel(provId, document.getElementById("ai-settings-model").value);
-  setConsented(document.getElementById("ai-settings-consent").checked);
-  setIncludeFigures(document.getElementById("ai-settings-figures").checked);
-  setOnnxLayoutEnabled(document.getElementById("ai-settings-onnx").checked);
-  closeAiSettings();
-  if (!hasApiKey()) aiSetStatus("No API key set for the selected provider.", "error");
-  else aiSetStatus("Settings saved.");
-});
-document.getElementById("ai-settings-clear").addEventListener("click", async () => {
-  const provId = document.getElementById("ai-settings-provider").value;
-  try { await setProviderApiKey(provId, ""); }
-  catch (err) { aiSetStatus("Failed to clear API key: " + (err.message || err), "error"); }
-  document.getElementById("ai-settings-key").value = "";
-  document.getElementById("ai-settings-key").dataset.touched = "1";
-  document.getElementById("ai-settings-key-state").textContent = "— not set";
-});
+// Phase 1: the BYOK key UI and its DOM bindings were removed. The settings
+// modal (#ai-settings-modal) no longer exists in index.html. ai-panel.js
+// (openAiSettings/closeAiSettings/rebuildAiModelDropdown/updateAiKeyFieldForProvider)
+// is kept intact for Phase 2 but is no longer wired to any trigger.
 function toggleMaximizePane() {
   document.body.classList.toggle("pane-max");
   setTimeout(() => {
