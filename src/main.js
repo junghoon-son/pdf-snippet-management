@@ -48,6 +48,7 @@ import { planQuery } from "./ai/planner.js";
 import { extractPdfText, extractFlowText, extractPdfPageImages, extractPdfPageTextContent, findCaptionRectInPageContent } from "./ai/doc-text.js";
 import { resolveQuoteToSnippet } from "./ai/resolver.js";
 import { detectFiguresPerPage, detectFiguresHybrid } from "./ai/figure-detect.js";
+import { runGeminiSegment } from "./ai/gemini-segment.js";
 import {
   isOnnxLayoutEnabled, setOnnxLayoutEnabled,
   runOnnxLayout,
@@ -1255,6 +1256,17 @@ async function aiAsk() {
           } catch (err) {
             console.warn("[ai] ONNX failed, falling back:", err);
             aiSetStatus(`ONNX failed (${err.message || err}); falling back.`, "error");
+            figureDetections = await detectFiguresHybrid(state.pdfDoc, { targetWidth: 800 });
+          }
+        } else if (!IS_TAURI) {
+          // Web: Gemini Flash segmentation via the authenticated /api/ai/segment
+          // proxy; fall back to the pure-JS detector if it errors.
+          aiSetStatus(`Detecting figures with Gemini on ${pageImages.length} page(s)…`);
+          try {
+            figureDetections = await runGeminiSegment(pageImages);
+            debug("[ai] gemini segmentation:", figureDetections);
+          } catch (err) {
+            console.warn("[ai] Gemini segmentation failed, falling back:", err);
             figureDetections = await detectFiguresHybrid(state.pdfDoc, { targetWidth: 800 });
           }
         } else {

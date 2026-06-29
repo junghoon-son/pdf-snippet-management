@@ -35,3 +35,5 @@ landing/spec/spec.css
 landing/spec.md
 landing/_headers
 landing/_redirects
+.vercel
+.env*.local

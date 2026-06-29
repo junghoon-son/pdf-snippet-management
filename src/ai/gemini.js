@@ -65,11 +65,32 @@ function translateContent(content) {
 // declaration shape. The JSON Schema for parameters is mostly
 // compatible — Gemini accepts standard JSON Schema with type/properties/
 // required/enum/items. The Reader tool's schema works directly.
+// Gemini's functionDeclaration parameters use an OpenAPI-subset schema that
+// does NOT accept `type` as an array — JSON Schema's nullable-union form
+// (e.g. ["string","null"]) is rejected. Collapse each such union to a single
+// type plus `nullable: true`, recursively (covers nested object props + array
+// items). Other keywords (enum, required, properties, items) pass through.
+function geminifySchema(node) {
+  if (Array.isArray(node)) return node.map(geminifySchema);
+  if (!node || typeof node !== "object") return node;
+  const out = {};
+  for (const [k, v] of Object.entries(node)) {
+    if (k === "type" && Array.isArray(v)) {
+      const nonNull = v.filter((t) => t !== "null");
+      out.type = nonNull[0] || "string";
+      if (nonNull.length !== v.length) out.nullable = true;
+    } else {
+      out[k] = geminifySchema(v);
+    }
+  }
+  return out;
+}
+
 function translateTool(tool) {
   return {
     name: tool.name,
     description: tool.description,
-    parameters: tool.input_schema,
+    parameters: geminifySchema(tool.input_schema),
   };
 }
 

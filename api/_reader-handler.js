@@ -30,8 +30,16 @@ export async function handleReader({ token, body, secretKey, geminiKey, model })
     // Throws on an invalid/expired signature. Allowlist enforcement happened
     // at sign-up, so any valid session is an authorized beta user.
     await verifyToken(token, { secretKey });
-  } catch {
-    return { status: 401, json: { error: "invalid or expired session" } };
+  } catch (e) {
+    // Surface the real reason so 401s are diagnosable (token-expired vs
+    // invalid-signature/instance-mismatch vs jwks issues).
+    return {
+      status: 401,
+      json: {
+        error: "invalid or expired session",
+        reason: e?.reason || e?.message || String(e),
+      },
+    };
   }
 
   const useModel = model || DEFAULT_MODEL;
