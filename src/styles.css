@@ -4942,3 +4942,27 @@ body.tool-select #viewer-pane:hover::after { opacity: 1; }
     scroll-behavior: auto !important;
   }
 }
+
+/* ── Brand (Marklee) ──────────────────────────────────────────────────
+   The top bar reserves 76px for macOS traffic lights on the desktop build.
+   The web build has none, so that space carries the wordmark instead. */
+#ws-brand { display: none; align-items: center; gap: 7px; padding: 0 12px 0 8px; flex: 0 0 auto; user-select: none; }
+body[data-runtime="web"] #ws-brand { display: flex; }
+body[data-runtime="web"] #ws-traffic-spacer { display: none; }
+#ws-brand .ml-mark { width: 20px; height: 20px; display: block; flex: none; overflow: visible; }
+#ws-brand .ml-word {
+  font-family: Georgia, "Iowan Old Style", Charter, serif;
+  font-weight: 600; font-size: 14.5px; letter-spacing: -0.01em;
+  color: var(--text); line-height: 1;
+}
+/* "Mark" as a highlighted chip: dark ink on gold reads on every theme
+   (a lower-half wash breaks on dark themes, where the text is light). The
+   dynamic highlighter swipe lives in the mark glyph instead. */
+#ws-brand .ml-hl {
+  background: #ffd75a;
+  color: #231f17;
+  padding: 0 3px;
+  border-radius: 3px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}

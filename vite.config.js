@@ -1,9 +1,44 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 
 const host = process.env.TAURI_DEV_HOST;
 
-export default defineConfig(({ command }) => ({
+// Dev-only middleware that runs the authenticated AI proxy locally, so
+// `bun run dev` exercises the exact same handler the Vercel function uses
+// (api/_reader-handler.js). Reads secrets from .env.local via loadEnv.
+function aiProxyDevPlugin(env) {
+  return {
+    name: "ai-proxy-dev",
+    configureServer(server) {
+      server.middlewares.use("/api/ai/reader", async (req, res, next) => {
+        if (req.method !== "POST") return next();
+        try {
+          let raw = "";
+          for await (const chunk of req) raw += chunk;
+          const auth = req.headers.authorization || "";
+          const { handleReader } = await import("./api/_reader-handler.js");
+          const result = await handleReader({
+            token: auth.startsWith("Bearer ") ? auth.slice(7) : "",
+            body: raw ? JSON.parse(raw) : {},
+            secretKey: env.CLERK_SECRET_KEY,
+            geminiKey: env.GEMINI_API_KEY,
+            model: env.GEMINI_MODEL,
+          });
+          res.statusCode = result.status;
+          res.setHeader("content-type", "application/json");
+          res.end(JSON.stringify(result.json));
+        } catch (err) {
+          res.statusCode = 500;
+          res.setHeader("content-type", "application/json");
+          res.end(JSON.stringify({ error: "dev proxy error: " + (err?.message || "unknown") }));
+        }
+      });
+    },
+  };
+}
+
+export default defineConfig(({ command, mode }) => ({
   clearScreen: false,
+  plugins: [aiProxyDevPlugin(loadEnv(mode, process.cwd(), ""))],
   server: {
     port: 1420,
     strictPort: true,

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Marklee">
+  <rect x="3" y="3" width="58" height="58" rx="14" fill="#fffefa" stroke="#e8e3d4" stroke-width="2"/>
+  <rect x="12" y="38" width="40" height="13" rx="2.5" fill="#ffd75a" transform="rotate(-2 32 44)"/>
+  <text x="32" y="42" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="34" fill="#231f17">M</text>
+</svg>

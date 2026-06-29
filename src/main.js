@@ -87,6 +87,10 @@ const IS_TAURI = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
 setStore(await autoDetectStore());
 await getStore().init?.();
 document.body.dataset.runtime = IS_TAURI ? "tauri" : "web";
+// Web beta: AI runs only through the authenticated Gemini proxy
+// (/api/ai/reader), so pin the active provider to gemini regardless of any
+// stale localStorage choice from the old multi-provider desktop build.
+if (!IS_TAURI) setProviderId("gemini");
 
 async function saveFile({ suggestedName, mimeType, content }) {
   const isText = typeof content === "string";
@@ -1179,14 +1183,10 @@ async function aiAsk() {
   const query = (input.value || "").trim();
   if (!query) return;
 
-  if (!hasApiKey()) {
-    aiSetStatus("AI is not available yet.", "error");
-    return;
-  }
   if (!hasConsented()) {
     const ok = window.confirm(
-      "This query will send the full text of the open document to Anthropic.\n\n" +
-      "Tick the consent box in AI settings (or just continue here) to skip this prompt next time."
+      "This query will send the open document's content to our AI service (Google Gemini) for analysis.\n\n" +
+      "Continue here to proceed; this prompt won't show again."
     );
     if (!ok) return;
     setConsented(true);

@@ -76,10 +76,6 @@ function translateTool(tool) {
 // Call Gemini's generateContent endpoint. Returns the normalized
 // Anthropic-shaped envelope so reader.js doesn't branch on provider.
 export async function callMessages({ system, messages, tools, model, maxTokens = 4096 }) {
-  const key = getApiKey();
-  if (!key) throw new Error("No Gemini API key configured. Open AI settings → API key.");
-  const useModel = model || getModel();
-
   // Map roles: Anthropic uses "assistant", Gemini uses "model".
   const contents = (messages || []).map((m) => ({
     role: m.role === "assistant" ? "model" : "user",
@@ -107,12 +103,19 @@ export async function callMessages({ system, messages, tools, model, maxTokens =
     }
   }
 
-  const url = `${BASE_URL}/${encodeURIComponent(useModel)}:generateContent`;
-  const res = await fetch(url, {
+  // Web beta: route through our authenticated proxy (/api/ai/reader), which
+  // holds the Gemini key server-side and pins the model. We send the caller's
+  // Clerk session token; the proxy rejects anyone not signed in (= not on the
+  // allowlist). The `model` arg is intentionally unused — the server pins it.
+  const token = await window.Clerk?.session?.getToken?.();
+  if (!token) {
+    throw new Error("You're signed out — refresh and sign in to use AI.");
+  }
+  const res = await fetch("/api/ai/reader", {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-goog-api-key": key,
+      authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(body),
   });
@@ -120,7 +123,7 @@ export async function callMessages({ system, messages, tools, model, maxTokens =
   if (!res.ok) {
     let detail = "";
     try { detail = JSON.stringify(await res.json()); } catch { detail = await res.text().catch(() => ""); }
-    throw new Error(`Gemini ${res.status}: ${detail || res.statusText}`);
+    throw new Error(`AI proxy ${res.status}: ${detail || res.statusText}`);
   }
 
   const json = await res.json();

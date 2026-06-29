@@ -4,11 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Marklee</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
     <div id="workspace-tabs">
       <div id="ws-traffic-spacer"></div>
+      <div id="ws-brand" aria-label="Marklee" title="Marklee">
+        <svg class="ml-mark" viewBox="0 0 64 64" aria-hidden="true"><rect x="3" y="3" width="58" height="58" rx="14" fill="#fffefa" stroke="#e8e3d4" stroke-width="2"/><rect x="12" y="38" width="40" height="13" rx="2.5" fill="#ffd75a" transform="rotate(-2 32 44)"/><text x="32" y="42" text-anchor="middle" font-family="Georgia, serif" font-weight="700" font-size="34" fill="#231f17">M</text></svg>
+        <span class="ml-word"><span class="ml-hl">Mark</span>lee</span>
+      </div>
       <div id="ws-tabs-list"></div>
       <button id="ws-tab-add" title="New workspace">+</button>
       <button id="help-btn" title="How to group + shortcuts">?</button>
@@ -103,8 +108,8 @@
             <span class="toolbar-spacer"></span>
             <button id="ai-section-collapse" class="pane-section-collapse" title="Collapse / expand AI section">▾</button>
           </div>
-          <!-- Phase 1: AI Ask surface + BYOK settings hidden behind AI_ENABLED (src/ai/feature-flags.js). Re-enabled in Phase 2 behind the server proxy. -->
-          <div id="ai-ask-bar" hidden>
+          <!-- AI Ask surface — enabled (AI_ENABLED), routed through the authenticated /api/ai/reader proxy. -->
+          <div id="ai-ask-bar">
             <div class="ai-ask-row">
               <input id="ai-ask-input" placeholder="Ask about this document…   ⌘↵ to send" autocomplete="off" />
               <button id="ai-ask-submit" title="Ask">↵</button>
@@ -299,6 +304,7 @@
         </footer>
       </div>
     </div>
-    <script type="module" src="/src/main.js"></script>
+    <!-- Web entry is the auth gate; it dynamically imports main.js after sign-in. -->
+    <script type="module" src="/src/entry.js"></script>
   </body>
 </html>
