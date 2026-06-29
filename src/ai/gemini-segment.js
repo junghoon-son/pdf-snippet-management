@@ -7,7 +7,7 @@
 // batching keeps each request well under Vercel's ~4.5MB serverless body cap.
 // pageCap bounds cost (1 call/page/query) and request size on large docs.
 
-export async function runGeminiSegment(pageImages, { pageCap = 10, batchSize = 4 } = {}) {
+export async function runGeminiSegment(pageImages, { pageCap = 50, batchSize = 4 } = {}) {
   const token = await window.Clerk?.session?.getToken?.();
   if (!token) throw new Error("You're signed out — sign in to use AI.");
 

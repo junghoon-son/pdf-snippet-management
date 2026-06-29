@@ -46,6 +46,16 @@ export class OpfsStore {
       throw new Error("OPFS not available in this environment");
     }
     this.root = await navigator.storage.getDirectory();
+    // Ask the browser to mark this origin's storage PERSISTENT so OPFS is not
+    // auto-evicted under storage pressure (the scariest silent-data-loss case).
+    // Best-effort: granting depends on the browser's engagement heuristics, and
+    // it does NOT survive the user manually clearing site data — export is the
+    // backup for that. Non-blocking; ignore the result.
+    try {
+      await navigator.storage.persist?.();
+    } catch {
+      /* persistence not available; OPFS still works, just evictable */
+    }
   }
 
   hasRoot() {

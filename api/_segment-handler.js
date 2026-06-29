@@ -12,7 +12,7 @@ import { verifyToken } from "@clerk/backend";
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 const DEFAULT_MODEL = "gemini-2.5-flash";
-const MAX_PAGES = 12; // cost guard — one Gemini vision call per page
+const MAX_PAGES = 50; // cost guard — one Gemini vision call per page
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 const DETECT_PROMPT =

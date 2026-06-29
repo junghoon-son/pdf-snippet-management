@@ -49,6 +49,7 @@ import { extractPdfText, extractFlowText, extractPdfPageImages, extractPdfPageTe
 import { resolveQuoteToSnippet } from "./ai/resolver.js";
 import { detectFiguresPerPage, detectFiguresHybrid } from "./ai/figure-detect.js";
 import { runGeminiSegment } from "./ai/gemini-segment.js";
+import { exportWorkspace, importWorkspace } from "./workspace-export.js";
 import {
   isOnnxLayoutEnabled, setOnnxLayoutEnabled,
   runOnnxLayout,
@@ -697,6 +698,33 @@ document.getElementById("clear-workspace").addEventListener("click", () => {
   saveWorkspace();
   closeCurrentPdf();
   renderWorkspace();
+});
+
+document.getElementById("export-workspace")?.addEventListener("click", async () => {
+  try {
+    const n = await exportWorkspace(state.workspace.files || []);
+    if (!n) alert("No annotations to export yet — annotate a document first.");
+  } catch (e) {
+    alert("Export failed: " + (e?.message || e));
+  }
+});
+
+document.getElementById("import-workspace")?.addEventListener("click", async () => {
+  const file = await pickBrowserFile([
+    { description: "Marklee export", accept: { "application/json": [".json"] } },
+  ]);
+  if (!file) return;
+  try {
+    const { docs, snippets } = await importWorkspace(file);
+    alert(
+      `Imported ${snippets} annotation(s) across ${docs} document(s).\n\n` +
+        "If a document isn't in your library, re-import its PDF and the annotations re-attach automatically."
+    );
+    await renderWorkspace();
+    if (state.currentPdfPath) await loadPdf(state.currentPdfPath);
+  } catch (e) {
+    alert("Import failed: " + (e?.message || e));
+  }
 });
 
 function closeCurrentPdf() {
