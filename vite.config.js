@@ -39,7 +39,12 @@ function aiProxyDevPlugin(env) {
       });
       serve("/api/ai/segment", async ({ token, body }) => {
         const { handleSegment } = await import("./api/_segment-handler.js");
-        return handleSegment({ token, pages: body?.pages, ...creds });
+        return handleSegment({
+          token,
+          pages: body?.pages,
+          ...creds,
+          model: env.GEMINI_SEGMENT_MODEL || env.GEMINI_MODEL,
+        });
       });
     },
   };
