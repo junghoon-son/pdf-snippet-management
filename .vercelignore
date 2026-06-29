@@ -1,0 +1,13 @@
+# Vercel doesn't read .gitignore — exclude everything the web build doesn't
+# need so the upload stays under the file-count limit. The Rust desktop build
+# (src-tauri/target) is the big offender (tens of thousands of files).
+src-tauri
+landing
+dist
+docs
+spec
+schema
+.superpowers
+.claude
+scratchpad
+*.dmg
