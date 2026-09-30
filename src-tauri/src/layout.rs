@@ -1,22 +1,26 @@
 // RT-DETR v2 document layout detector via ONNX Runtime.
 //
-// Model: docling-project/docling-layout-heron-onnx (Apache 2.0) — the
-// official Docling project layout model, 42.9M params, ~171 MB ONNX.
-// Same 17-class taxonomy as the older Kreuzberg export (Caption,
-// Footnote, Formula, ListItem, PageFooter, PageHeader, Picture,
-// SectionHeader, Table, Text, Title, DocumentIndex, Code,
-// CheckboxSelected, CheckboxUnselected, Form, KeyValueRegion) but
-// trained as RT-DETR v2 with improved accuracy.
+// Default model: docling-project/docling-layout-heron-onnx (Apache 2.0) —
+// the official Docling project layout model, 42.9M params, ~171 MB ONNX.
+// A higher-accuracy heron-101 export (ResNet-101, 78% mAP on canonical
+// DocLayNet) takes priority when present in the cache dir or pointed to
+// by MARKLEE_LAYOUT_ONNX — generate it with scripts/export-layout-onnx.py.
+// Both share the same 17-class taxonomy (Caption, Footnote, Formula,
+// ListItem, PageFooter, PageHeader, Picture, SectionHeader, Table, Text,
+// Title, DocumentIndex, Code, CheckboxSelected, CheckboxUnselected, Form,
+// KeyValueRegion) and the same input/output contract (uint8 CHW image +
+// orig_target_sizes → labels/boxes/scores, boxes in original-image px).
 //
-// Preprocessing differences from Kreuzberg:
+// Preprocessing notes:
+// Preprocessing notes:
 //   * Plain resize to 640×640 (NOT aspect-preserving letterbox).
-//   * Input is float32 RGB in [0, 255] — the model's exported graph
-//     handles normalization internally (preprocessor_config.json has
-//     do_normalize: false, do_rescale: false). No ImageNet mean/std
-//     applied on our side.
-//   * orig_target_sizes follows HF's textbook (h, w) convention.
-//   * Post-processor returns boxes in original-image pixel coords;
-//     no manual un-letterbox needed (we never padded).
+//   * Input is uint8 RGB — the exported graph rescales to [0,1]
+//     internally (preprocessor_config.json: do_rescale: true,
+//     do_normalize: false). No ImageNet mean/std.
+//   * orig_target_sizes follows the (w, h) convention — NOT HF's
+//     textbook (h, w); the official heron export has the same quirk.
+//   * Boxes come back in original-image pixel coords; no manual
+//     un-letterbox needed (we never padded).
 //
 // We surface Picture / Table / Formula regions as figure candidates.
 
@@ -59,9 +63,17 @@ fn figure_kind_for(class_id: u32) -> Option<&'static str> {
     }
 }
 
+// Model selection, in priority order:
+//   1. MARKLEE_LAYOUT_ONNX env var → explicit path override.
+//   2. A heron-101 export dropped into the model cache dir (see
+//      scripts/export-layout-onnx.py — higher accuracy: 78% mAP vs
+//      heron's 75.1% on DocLayNet-v2, same input/output contract).
+//   3. First-run download of the official heron ONNX from HF.
 const MODEL_URL: &str =
     "https://huggingface.co/docling-project/docling-layout-heron-onnx/resolve/main/model.onnx";
 const MODEL_FILE: &str = "docling-heron-rtdetrv2.onnx";
+const MODEL_FILE_101: &str = "docling-heron101-rtdetrv2.onnx";
+const MODEL_ENV: &str = "MARKLEE_LAYOUT_ONNX";
 const INPUT_SIZE: u32 = 640;
 const CONF_THRESH: f32 = 0.40;
 const IOU_THRESH: f32 = 0.55;
@@ -105,14 +117,29 @@ impl LayoutEngine {
         Ok(dir)
     }
 
-    /// First-run download. Returns absolute path to the cached .onnx.
+    /// Resolve the model file: env override → locally provisioned
+    /// heron-101 → first-run download of official heron.
+    /// Treats any file >1MB as complete (anti-truncation).
     fn ensure_model() -> Result<PathBuf, String> {
+        fn usable(p: &PathBuf) -> bool {
+            std::fs::metadata(p).map(|m| m.len() > 1024 * 1024).unwrap_or(false)
+        }
+
+        if let Ok(custom) = std::env::var(MODEL_ENV) {
+            let p = PathBuf::from(custom);
+            if usable(&p) {
+                return Ok(p);
+            }
+        }
+
         let dir = Self::cache_dir()?;
+        let preferred = dir.join(MODEL_FILE_101);
+        if usable(&preferred) {
+            return Ok(preferred);
+        }
+
         let path = dir.join(MODEL_FILE);
-        // Treat any file >1MB as a complete download (anti-truncation).
-        if path.exists()
-            && std::fs::metadata(&path).map(|m| m.len() > 1024 * 1024).unwrap_or(false)
-        {
+        if usable(&path) {
             return Ok(path);
         }
         // Download via ureq. Hugging Face redirects to S3; ureq follows.
@@ -180,31 +207,12 @@ impl LayoutEngine {
         //   1. image tensor (1×3×640×640, uint8)
         //   2. orig_target_sizes — int64 [1, 2] of (width, height) for
         //      the original image. Note: this is (w, h), NOT the
-        //      textbook HF (h, w) — confirmed empirically by the
-        //      diagnostic dump (raw box x-maxes were ≈1288 for a
-        //      1024×1303 input, only fitting in [0, 1303]; y-maxes
-        //      ≈1003, fitting in [0, 1024]). Kreuzberg's export had
-        //      the same axis-swap quirk.
+        //      textbook HF (h, w) — confirmed empirically (raw box
+        //      x-maxes were ≈1288 for a 1024×1303 input, only fitting
+        //      in [0, 1303]; y-maxes ≈1003, fitting in [0, 1024]).
+        //      Kreuzberg's export had the same axis-swap quirk.
         let mut guard = self.session.lock().map_err(|e| e.to_string())?;
         let session = guard.as_mut().ok_or("session not initialized")?;
-
-        // Log session input/output metadata on first call so we know
-        // exactly what dtype and shape heron's ONNX expects (uint8 vs
-        // float32, with/without target_sizes, etc).
-        static SESSION_LOGGED: std::sync::Once = std::sync::Once::new();
-        SESSION_LOGGED.call_once(|| {
-            use std::io::Write;
-            let mut s = String::from("[heron-diag] session metadata\n");
-            for (i, inp) in session.inputs.iter().enumerate() {
-                s.push_str(&format!("[heron-diag]   input[{}] name={:?} type={:?}\n", i, inp.name, inp.input_type));
-            }
-            for (i, out) in session.outputs.iter().enumerate() {
-                s.push_str(&format!("[heron-diag]   output[{}] name={:?} type={:?}\n", i, out.name, out.output_type));
-            }
-            eprintln!("{}", s);
-            let _ = std::fs::File::create("/tmp/marklee-heron-session.log")
-                .and_then(|mut f| f.write_all(s.as_bytes()));
-        });
 
         let input_tensor = Tensor::from_array(input).map_err(|e| e.to_string())?;
         let target_sizes_arr = ndarray::Array2::<i64>::from_shape_vec(
@@ -213,19 +221,12 @@ impl LayoutEngine {
         ).map_err(|e| e.to_string())?;
         let target_sizes = Tensor::from_array(target_sizes_arr)
             .map_err(|e| e.to_string())?;
-        let outputs = match session.run(ort::inputs![input_tensor, target_sizes]) {
-            Ok(o) => o,
-            Err(e) => {
-                let msg = format!("[heron-diag] session.run failed: {}\n", e);
-                eprintln!("{}", msg);
-                let _ = std::fs::write("/tmp/marklee-heron-runerr.log", &msg);
-                return Err(format!("inference failed: {}", e));
-            }
-        };
+        let outputs = session
+            .run(ort::inputs![input_tensor, target_sizes])
+            .map_err(|e| format!("inference failed: {}", e))?;
 
-        // Confirmed (via session.inputs/outputs log): heron returns 3
-        // outputs — labels (i64 [1, 300]), boxes (f32 [1, 300, 4]),
-        // scores (f32 [1, 300]). Same shape as Kreuzberg.
+        // heron returns 3 outputs — labels (i64 [1, 300]), boxes
+        // (f32 [1, 300, 4]), scores (f32 [1, 300]).
         if outputs.len() < 3 {
             return Err(format!("expected 3 outputs, got {}", outputs.len()));
         }
@@ -247,83 +248,6 @@ impl LayoutEngine {
             .try_extract_array::<f32>()
             .map_err(|e| format!("scores extract failed: {}", e))?
             .into_owned();
-
-        // One-shot diagnostic dump so we can verify the post-processor's
-        // coordinate space — comparing raw box max against orig_w/orig_h
-        // tells us whether (h, w) vs (w, h) is right and whether the
-        // coords are pixels vs normalized. Writes to /tmp AND to the
-        // model cache dir; also eprints so it lands in tauri-dev.log.
-        static DUMPED: std::sync::Once = std::sync::Once::new();
-        DUMPED.call_once(|| {
-            use std::io::Write;
-            eprintln!("[heron-diag] entering one-shot diagnostic dump");
-            let path: std::path::PathBuf = std::path::PathBuf::from("/tmp/marklee-heron.log");
-            let alt_path: Option<std::path::PathBuf> = Self::cache_dir()
-                .ok()
-                .map(|d| d.join("layout.log"));
-            let bshape = boxes.shape();
-            let n = if bshape.len() == 3 { bshape[1] } else { bshape[0] };
-            let mut s = String::new();
-            s.push_str(&format!(
-                "[heron] shapes — labels: {:?} boxes: {:?} scores: {:?}\n",
-                labels.shape(), boxes.shape(), scores.shape()
-            ));
-            s.push_str(&format!(
-                "[heron] orig dims: {}×{} (w×h), INPUT_SIZE={}\n",
-                orig_w, orig_h, INPUT_SIZE
-            ));
-            let mut max_b0 = f32::MIN; let mut max_b1 = f32::MIN;
-            let mut max_b2 = f32::MIN; let mut max_b3 = f32::MIN;
-            for i in 0..n.min(50) {
-                let (b0, b1, b2, b3) = if bshape.len() == 3 {
-                    (boxes[[0, i, 0]], boxes[[0, i, 1]], boxes[[0, i, 2]], boxes[[0, i, 3]])
-                } else {
-                    (boxes[[i, 0]], boxes[[i, 1]], boxes[[i, 2]], boxes[[i, 3]])
-                };
-                max_b0 = max_b0.max(b0); max_b1 = max_b1.max(b1);
-                max_b2 = max_b2.max(b2); max_b3 = max_b3.max(b3);
-            }
-            s.push_str(&format!(
-                "[heron] raw box channel maxes — b0(x1?)={:.2} b1(y1?)={:.2} b2(x2?)={:.2} b3(y2?)={:.2}\n",
-                max_b0, max_b1, max_b2, max_b3
-            ));
-            s.push_str("[heron] interpretation guide:\n");
-            s.push_str(&format!(
-                "[heron]   - if b0/b2 ∈ [0, ~{}] and b1/b3 ∈ [0, ~{}] → pixel coords (x1,y1,x2,y2), our math is right\n",
-                orig_w, orig_h
-            ));
-            s.push_str(&format!(
-                "[heron]   - if b0/b2 ∈ [0, ~{}] and b1/b3 ∈ [0, ~{}] → axis-swapped, flip target_sizes\n",
-                orig_h, orig_w
-            ));
-            s.push_str("[heron]   - if all maxes ≤ 1 → normalized, post-processor not baked, decode needed\n");
-            let bshape3 = bshape.len() == 3;
-            let dump_n = n.min(8);
-            for i in 0..dump_n {
-                let (b0, b1, b2, b3) = if bshape3 {
-                    (boxes[[0, i, 0]], boxes[[0, i, 1]], boxes[[0, i, 2]], boxes[[0, i, 3]])
-                } else {
-                    (boxes[[i, 0]], boxes[[i, 1]], boxes[[i, 2]], boxes[[i, 3]])
-                };
-                let conf = if scores.shape().len() == 2 { scores[[0, i]] } else { scores[[i]] };
-                let cls = if labels.shape().len() == 2 { labels[[0, i]] } else { labels[[i]] };
-                s.push_str(&format!(
-                    "[heron] det[{}] cls={} conf={:.3} box=({:.2}, {:.2}, {:.2}, {:.2})\n",
-                    i, cls, conf, b0, b1, b2, b3
-                ));
-            }
-            eprintln!("{}", s);
-            match std::fs::File::create(&path).and_then(|mut f| f.write_all(s.as_bytes())) {
-                Ok(_) => eprintln!("[heron-diag] wrote {}", path.display()),
-                Err(e) => eprintln!("[heron-diag] /tmp write failed: {}", e),
-            }
-            if let Some(alt) = alt_path {
-                match std::fs::File::create(&alt).and_then(|mut f| f.write_all(s.as_bytes())) {
-                    Ok(_) => eprintln!("[heron-diag] also wrote {}", alt.display()),
-                    Err(e) => eprintln!("[heron-diag] cache_dir write failed: {}", e),
-                }
-            }
-        });
 
         let dets = parse_detections(
             &labels, &boxes, &scores,

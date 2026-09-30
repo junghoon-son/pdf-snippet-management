@@ -2,7 +2,13 @@
 """Run Docling layout detection on a PDF, output figures as JSON.
 
 Usage:
-  python3 docling_detect.py <pdf_path>
+  python3 docling_detect.py <pdf_path> [--model NAME]
+
+  --model NAME  Layout model preset: heron (default), heron-101,
+                egret-medium, egret-large, egret-xlarge, v2 (legacy).
+                heron-101 is the accuracy ceiling (78% mAP, RT-DETRv2
+                ResNet-101); egret-xlarge is the D-FINE alternative.
+                Models download from Hugging Face on first use.
 
 Output (stdout, JSON):
   {
@@ -16,11 +22,21 @@ Output (stdout, JSON):
     ]
   }
 
-Errors are written to stderr as JSON: {"error": "..."} with exit code 1-3.
+Errors are written to stderr as JSON: {"error": "..."} with exit code 1-4.
 """
 
 import json
 import sys
+
+
+MODEL_SPECS = {
+    "heron": "DOCLING_LAYOUT_HERON",
+    "heron-101": "DOCLING_LAYOUT_HERON_101",
+    "egret-medium": "DOCLING_LAYOUT_EGRET_MEDIUM",
+    "egret-large": "DOCLING_LAYOUT_EGRET_LARGE",
+    "egret-xlarge": "DOCLING_LAYOUT_EGRET_XLARGE",
+    "v2": "DOCLING_LAYOUT_V2",
+}
 
 
 def err_out(msg, code=1):
@@ -29,21 +45,49 @@ def err_out(msg, code=1):
 
 
 def main():
-    if len(sys.argv) < 2:
-        err_out("usage: docling_detect.py <pdf_path>", 1)
+    positional = []
+    model_name = "heron"
+    argv = sys.argv[1:]
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--model":
+            if i + 1 >= len(argv):
+                err_out(f"--model requires one of: {', '.join(MODEL_SPECS)}", 1)
+            model_name = argv[i + 1]
+            i += 2
+        else:
+            positional.append(argv[i])
+            i += 1
+    if not positional:
+        err_out("usage: docling_detect.py <pdf_path> [--model NAME]", 1)
+    if model_name not in MODEL_SPECS:
+        err_out(f"unknown model '{model_name}'. Choose: {', '.join(MODEL_SPECS)}", 1)
 
-    pdf_path = sys.argv[1]
+    pdf_path = positional[0]
 
     try:
-        from docling.document_converter import DocumentConverter
+        from docling.document_converter import DocumentConverter, PdfFormatOption
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import (
+            LayoutOptions,
+            PdfPipelineOptions,
+        )
+        import docling.datamodel.pipeline_options as po
     except ImportError:
         err_out(
             "docling not installed. Install: pip install docling (or uv pip install docling)",
             2,
         )
 
+    model_spec = getattr(po, MODEL_SPECS[model_name])
+    pipeline_options = PdfPipelineOptions(
+        layout_options=LayoutOptions(model_spec=model_spec)
+    )
+    converter = DocumentConverter(
+        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
+    )
+
     try:
-        converter = DocumentConverter()
         result = converter.convert(pdf_path)
     except Exception as e:
         err_out(f"docling conversion failed: {e}", 3)
@@ -108,13 +152,17 @@ def main():
             width_norm = max(0.0, min(1.0 - left_norm, width_norm))
             height_norm = max(0.0, min(1.0 - top_norm, height_norm))
 
+            # captions are RefItems (e.g. '#/texts/88') — resolve them
+            # against the document to get the actual caption text.
             caption = ""
-            cap = getattr(item, "captions", None) or getattr(item, "caption", None)
-            if cap:
+            for ref in getattr(item, "captions", None) or []:
                 try:
-                    caption = str(cap) if not isinstance(cap, list) else " ".join(str(c) for c in cap)
+                    resolved = ref.resolve(doc)
+                    text = getattr(resolved, "text", "")
+                    if text:
+                        caption = (caption + " " + text).strip()
                 except Exception:
-                    caption = ""
+                    pass
 
             figures_by_page.setdefault(page_no, []).append({
                 "bbox": {

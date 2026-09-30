@@ -29,9 +29,7 @@ export function clearOnnxLayoutCache(key) {
 // resident in memory after first call). Per-doc cache so repeat
 // queries on the same content hash skip re-inference.
 export async function runOnnxLayout(pageImages, cacheKey, onProgress) {
-  // Cache disabled during ONNX bring-up — re-infer every call so coord
-  // fixes apply without per-doc cache reset.
-  // if (cacheKey && cache.has(cacheKey)) return cache.get(cacheKey);
+  if (cacheKey && cache.has(cacheKey)) return cache.get(cacheKey);
   const out = [];
   for (let i = 0; i < pageImages.length; i++) {
     const pg = pageImages[i];

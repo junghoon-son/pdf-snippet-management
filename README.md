@@ -74,6 +74,32 @@ bun run annotate serve --port 1421 --key SECRET
 
 `serve` exposes every CLI command at `POST /annotate/<command>` with JSON in/out. See `bun run annotate --help`.
 
+## Layout detection models
+
+Figure/table detection has three paths, in priority order: the bundled ONNX detector (desktop), the model-free PDF operator/canvas heuristics (`src/ai/figure-detect.js`), and the Docling Python bridge (`scripts/docling_detect.py`).
+
+**Bundled ONNX (Rust `detect_page_layout`).** Ships with Docling's `heron` layout model (RT-DETRv2, Apache-2.0), downloaded on first use into the app data dir. To upgrade to the higher-accuracy **heron-101** (78% mAP vs 75.1% on DocLayNet-v2):
+
+```bash
+# one-time: needs python3 with torch + transformers<5 + onnx + onnxruntime
+python3 scripts/export-layout-onnx.py --repo ds4sd/docling-layout-heron-101 \
+  --out "$HOME/Library/Application Support/Marklee/models/docling-heron101-rtdetrv2.onnx"
+```
+
+The app prefers that file automatically when present; `MARKLEE_LAYOUT_ONNX=/path/to/model.onnx` overrides entirely. The export script validates numerical parity against the PyTorch model before writing.
+
+**Docling Python bridge.** Docling requires `transformers<5` (5.x mis-loads RT-DETRv2 — detections come back as garbage), so it runs from an isolated venv:
+
+```bash
+uv venv .venv-docling --python 3.12
+uv pip install --python .venv-docling/bin/python docling "transformers<5"
+
+.venv-docling/bin/python scripts/docling_detect.py file.pdf --model heron-101
+```
+
+`--model` accepts `heron` (default), `heron-101`, `egret-medium`, `egret-large`, `egret-xlarge`, `v2` (legacy). Models download from Hugging Face on first use and run on Apple Silicon via MPS.
+
+
 ## Project layout
 
 ```
