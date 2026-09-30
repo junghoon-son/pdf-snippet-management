@@ -52,7 +52,7 @@ import { runGeminiSegment } from "./ai/gemini-segment.js";
 import { exportWorkspace, importWorkspace } from "./workspace-export.js";
 import {
   isOnnxLayoutEnabled, setOnnxLayoutEnabled,
-  runOnnxLayout,
+  runOnnxLayout, clearOnnxLayoutCache,
 } from "./ai/onnx-layout.js";
 import {
   hasApiKey,
@@ -3408,13 +3408,22 @@ async function loadAnyDocument(path) {
 
   if (myToken !== docLoadToken) return;
   let contentHash = existing.source?.contentHash || null;
-  if (!contentHash) {
-    try {
-      contentHash = await hashBytes(bytes);
-    } catch (err) {
-      console.warn("hashBytes failed", err);
-    }
+  try {
+    const freshHash = await hashBytes(bytes);
     if (myToken !== docLoadToken) return;
+    if (!contentHash) {
+      contentHash = freshHash;
+    } else if (contentHash !== freshHash) {
+      // Same path, new bytes — the document changed in place. Adopt the
+      // new hash so caches, permalinks, and zoom keys track the current
+      // content, and drop the old hash's layout cache. Text anchors
+      // re-resolve (or orphan) via the fuzzy matcher on their own.
+      debug(`[doc] content changed in place: ${path}`);
+      clearOnnxLayoutCache(contentHash);
+      contentHash = freshHash;
+    }
+  } catch (err) {
+    console.warn("hashBytes failed", err);
   }
   state.source = {
     path,
